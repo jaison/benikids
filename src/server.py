@@ -213,10 +213,47 @@ def has_media(path):
     return path_has_media(path, patterns=EXTS)
 
 
+# Cache da configuração: cada requisição do menu (uso a cada 5 s, horários,
+# timer, overlay...) chamava load_cfg(), que relê, migra, valida e copia o
+# config.json inteiro (~12 ms num Celeron). Só refaz quando o arquivo (ou o
+# recommendations.json) muda; devolve sempre uma cópia nova (json.loads).
+_cfg_cache = {"key": None, "stored": None, "active": None}
+_cfg_cache_lock = threading.Lock()
+
+
+def _cfg_cache_key():
+    try:
+        info = os.stat(CFG)
+    except OSError:
+        return None
+    try:
+        rec = os.stat(RECOMMENDATIONS_FILE)
+        rec_key = (rec.st_mtime_ns, rec.st_size)
+    except OSError:
+        rec_key = None
+    return (CFG, info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_ino, rec_key)
+
+
 def load_stored_cfg():
+    key = _cfg_cache_key()
+    if key is not None:
+        with _cfg_cache_lock:
+            if _cfg_cache["key"] == key and _cfg_cache["stored"] is not None:
+                return json.loads(_cfg_cache["stored"])
+    data = _load_stored_cfg_from_disk()
+    try:
+        texto = json.dumps(data)
+    except (TypeError, ValueError):
+        return data
+    with _cfg_cache_lock:
+        _cfg_cache.update(key=_cfg_cache_key(), stored=texto, active=None)
+    return data
+
+
+def _load_stored_cfg_from_disk():
     data = read_config(CFG)
     data, migrated = migrate_config(data)
-    recs = load_recommendations()
+    recs = load_recommendations(check_installed=False)
     rec_by_first_cmd = {}
     for rec in recs:
         if rec.get("cmd"):
@@ -255,7 +292,20 @@ def load_stored_cfg():
 
 
 def load_cfg():
-    return active_config(load_stored_cfg())
+    key = _cfg_cache_key()
+    if key is not None:
+        with _cfg_cache_lock:
+            if _cfg_cache["key"] == key and _cfg_cache["active"] is not None:
+                return json.loads(_cfg_cache["active"])
+    data = active_config(load_stored_cfg())
+    try:
+        texto = json.dumps(data)
+    except (TypeError, ValueError):
+        return data
+    with _cfg_cache_lock:
+        if key is not None and _cfg_cache["key"] == key:
+            _cfg_cache["active"] = texto
+    return data
 
 
 # Mesma lista de theme-runtime.js (COZY_WORLD_THEME_IDS).
@@ -596,14 +646,39 @@ def legacy_update_status(timeout=5):
     )
 
 
-def load_recommendations():
-    if not os.path.isfile(RECOMMENDATIONS_FILE):
+_recommendations_cache = {"key": None, "recs": []}
+_recommendations_lock = threading.Lock()
+
+
+def _read_recommendations():
+    """recommendations.json, relido só quando o arquivo muda."""
+    try:
+        info = os.stat(RECOMMENDATIONS_FILE)
+    except OSError:
         return []
+    key = (info.st_mtime_ns, info.st_size)
+    with _recommendations_lock:
+        if _recommendations_cache["key"] == key:
+            return _recommendations_cache["recs"]
     try:
         with open(RECOMMENDATIONS_FILE, "r", encoding="utf-8") as fh:
             recs = json.load(fh)
     except Exception:
         return []
+    if not isinstance(recs, list):
+        recs = []
+    with _recommendations_lock:
+        _recommendations_cache.update(key=key, recs=recs)
+    return recs
+
+
+def load_recommendations(check_installed=True):
+    """Recomendações com "installed". Com check_installed=False não procura os
+    programas no PATH (dezenas de stat por chamada): load_stored_cfg roda a cada
+    requisição do menu e só precisa dos comandos."""
+    recs = _read_recommendations()
+    if not check_installed:
+        return recs
     result = []
     for rec in recs:
         all_cmds = []

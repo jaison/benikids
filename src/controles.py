@@ -16,6 +16,7 @@ DFInput numeram os botões e eixos do mesmo jeito) são calculados a partir das
 capacidades do dispositivo.
 """
 
+import copy
 import fcntl
 import json
 import os
@@ -362,12 +363,33 @@ def script_navegador(dispositivos, mapas):
 
 # --------------------------------------------------------------- armazenamento
 
-def carregar(caminho):
+_cache_carregar = {}
+_trava_cache = threading.Lock()
+
+
+def _ler_json(caminho):
+    """Lê o JSON só quando o arquivo muda (a thread dos controles consulta muito)."""
+    try:
+        info = os.stat(caminho)
+    except OSError:
+        return {}
+    chave = (info.st_mtime_ns, info.st_size, info.st_ino)
+    with _trava_cache:
+        guardado = _cache_carregar.get(caminho)
+        if guardado and guardado[0] == chave:
+            return copy.deepcopy(guardado[1])
     try:
         with open(caminho, encoding="utf-8") as arquivo:
             dados = json.load(arquivo)
     except (OSError, ValueError):
-        dados = {}
+        return {}
+    with _trava_cache:
+        _cache_carregar[caminho] = (chave, dados)
+    return copy.deepcopy(dados)
+
+
+def carregar(caminho):
+    dados = _ler_json(caminho)
     if not isinstance(dados, dict):
         dados = {}
     controles = dados.get("controles")
@@ -587,6 +609,7 @@ class Controles:
 
     def _loop(self):
         proxima_busca = 0.0
+        util_ate = 0.0  # até quando houve evento útil (botão/direcional) recente
         while not self.parar.is_set():
             agora = time.monotonic()
             if agora >= proxima_busca:
@@ -615,14 +638,27 @@ class Controles:
                     if tipo == EV_KEY and valor in (0, 1):
                         apertados = self.segurados.setdefault(evento, set())
                         (apertados.add if valor else apertados.discard)(codigo)
+                        util_ate = time.monotonic() + 3
                     token = self._token(tipo, codigo, valor, faixas, estado)
                     if token:
+                        util_ate = time.monotonic() + 3
                         self._acionado(dispositivo, token)
-            self._verificar_saida(time.monotonic())
+            agora = time.monotonic()
+            self._verificar_saida(agora)
+            if prontos and agora > util_ate:
+                # Só ruído (ex.: eixo solto de controle barato mandando dezenas de
+                # eventos por segundo): junta os eventos em vez de acordar a cada um.
+                self.parar.wait(0.1)
 
     def _verificar_saida(self, agora, dados=None):
         """Start + Select seguros por SEGURAR_PARA_SAIR_S fecham o app aberto."""
         if self.ao_sair is None or self.capturando():
+            return
+        if not any(len(apertados) >= 2 for apertados in self.segurados.values()):
+            # ninguém segurando dois botões: não há Start + Select em andamento
+            # (evita ler o controles.json a cada evento dos analógicos)
+            self.combo_desde.clear()
+            self.combo_disparado.clear()
             return
         dados = dados or carregar(self.arquivo)
         for evento, (_fd, dispositivo, _f, _e) in list(self.abertos.items()):

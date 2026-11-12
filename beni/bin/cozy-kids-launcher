@@ -156,6 +156,51 @@ process_alive() {
   python3 "$PROCESS_STATE" alive "$1" "$2" 9>&- >/dev/null 2>&1
 }
 
+# Espera 1 s sem criar processo (o "sleep" externo, a cada segundo, também pesa).
+esperar_1s() {
+  if [[ -z "${ESPERA_FD:-}" ]]; then
+    exec {ESPERA_FD}<> <(:) 2>/dev/null || ESPERA_FD="nao"
+  fi
+  if [[ "$ESPERA_FD" == "nao" ]]; then
+    sleep 1 9>&-
+  else
+    read -r -t 1 -u "$ESPERA_FD" _ 2>/dev/null || true
+  fi
+}
+
+# Mesma checagem de process_state.py alive (PID + início no kernel + papel +
+# marcador na linha de comando), mas em bash puro: o laço abaixo pergunta isso
+# toda hora, e abrir um python3 por vez gastava ~18% de um núcleo num Celeron,
+# inclusive com um jogo aberto. Registro com caracteres escapados → python.
+process_alive_rapido() {
+  local arquivo="$1" papel="$2" registro pid inicio marcador stat campos parte achou
+  [[ -r "$arquivo" ]] || return 1
+  registro="$(<"$arquivo")" 2>/dev/null || return 1
+  if [[ "$registro" == *\\* ]]; then
+    process_alive "$arquivo" "$papel"
+    return
+  fi
+  [[ "$registro" =~ \"recordVersion\":1[,}] ]] || return 1
+  [[ "$registro" =~ \"pid\":([0-9]+) ]] || return 1
+  pid="${BASH_REMATCH[1]}"
+  [[ "$registro" =~ \"startTime\":([0-9]+) ]] || return 1
+  inicio="${BASH_REMATCH[1]}"
+  [[ "$registro" =~ \"role\":\"([a-z0-9-]+)\" ]] && [[ "${BASH_REMATCH[1]}" == "$papel" ]] || return 1
+  marcador=""
+  if [[ "$registro" =~ \"marker\":\"([^\"]*)\" ]]; then marcador="${BASH_REMATCH[1]}"; fi
+  [[ -r /proc/"$pid"/stat ]] || return 1
+  stat="$(</proc/"$pid"/stat)" 2>/dev/null || return 1
+  stat="${stat##*) }"
+  read -r -a campos <<<"$stat"
+  [[ "${campos[0]}" != "Z" && "${campos[19]}" == "$inicio" ]] || return 1
+  [[ -z "$marcador" ]] && return 0
+  achou=1
+  while IFS= read -r -d '' parte; do
+    if [[ "$parte" == "$marcador" ]]; then achou=0; break; fi
+  done < /proc/"$pid"/cmdline
+  return "$achou"
+}
+
 record_process() {
   python3 "$PROCESS_STATE" record "$1" "$2" "$3" 9>&- >/dev/null 2>&1
 }
@@ -487,7 +532,7 @@ while true; do
   fi
   RUNTIME_REASON=""
   # Poll until browser exits, update/exit is requested, or the server fails.
-  while process_alive "$BROWSER_PIDFILE" browser; do
+  while process_alive_rapido "$BROWSER_PIDFILE" browser; do
     if [[ -f "$APP_ROOT/update-trigger.sh" ]]; then
       RUNTIME_REASON="update"
       break
@@ -496,11 +541,11 @@ while true; do
       RUNTIME_REASON="exit"
       break
     fi
-    if ! process_alive "$PIDFILE" server; then
+    if ! process_alive_rapido "$PIDFILE" server; then
       RUNTIME_REASON="server-failed"
       break
     fi
-    sleep 1 9>&-
+    esperar_1s
   done
 
   if [[ -z "$RUNTIME_REASON" ]]; then
