@@ -384,10 +384,21 @@ function focusTileByDir(dir){
   const naEscolha=typeof escolhaNaTela==='function'&&escolhaNaTela();
   const tiles=naEscolha?escolhaOpcoes():tilesForPage(cfg.currentPage);
   const cols=naEscolha?tiles.length:(cfg.layoutMode==='klein'?3:2);
+  const row=Math.floor(focusedTileIndex/cols);
   if(dir==='right'){
     if((focusedTileIndex+1)%cols!==0&&focusedTileIndex+1<tiles.length) focusedTileIndex++;
+    else if(!naEscolha&&cfg.currentPage<pageCount()-1){
+      // na borda direita, a seta (do teclado ou do controle) vai para a próxima página,
+      // na mesma linha
+      changePage(1);
+      focusedTileIndex=Math.min(row*cols,tilesForPage(cfg.currentPage).length-1);
+    }
   }else if(dir==='left'){
     if(focusedTileIndex%cols!==0) focusedTileIndex--;
+    else if(!naEscolha&&cfg.currentPage>0){
+      changePage(-1);
+      focusedTileIndex=Math.min(row*cols+cols-1,tilesForPage(cfg.currentPage).length-1);
+    }
   }else if(dir==='down'){
     if(focusedTileIndex+cols<tiles.length) focusedTileIndex+=cols;
   }else if(dir==='up'){
@@ -419,6 +430,13 @@ document.addEventListener('keydown',function(e){
   const naListaEscolha=typeof escolhaNaLista==='function'&&escolhaNaLista();
   if(tiles.length===0&&!naListaEscolha) return;
   const tileFocused=document.activeElement&&document.activeElement.matches('#grid .tile:not(.placeholder)');
+  const arrowKey=e.key==='ArrowRight'||e.key==='ArrowLeft'||e.key==='ArrowDown'||e.key==='ArrowUp';
+  if(!tileFocused&&arrowKey&&(!document.activeElement||document.activeElement===document.body)){
+    // nada focado (ex.: logo depois de abrir): a 1ª seta, do teclado ou do controle, escolhe um ícone
+    e.preventDefault();
+    updateTileFocus();
+    return;
+  }
   const tileKey=tileFocused&&(e.key==='ArrowRight'||e.key==='ArrowLeft'||e.key==='ArrowDown'||e.key==='ArrowUp');
   if(tileKey||e.key==='Escape'){
     e.preventDefault();
