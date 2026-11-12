@@ -3,6 +3,10 @@
 # coleções do itch.io em segundo plano (os jogos novos aparecem quando a página
 # do menu recarregar, por exemplo ao voltar de um jogo). Enquanto o menu abre,
 # mostra a tela "Abrindo o menu…" (cozy-carregando), que some sozinha.
+if [ -x "$HOME/.local/bin/cozy-usuario-permitido" ] && ! "$HOME/.local/bin/cozy-usuario-permitido"; then
+  # trava de usuário (/etc/beni-launcher/launcher.conf): não é o usuário das crianças
+  exit 0
+fi
 LOCK="$HOME/.cache/cozy-kids-launcher/launcher.lock"
 if [ -f "$LOCK" ] && command -v flock >/dev/null 2>&1 && ! flock -n "$LOCK" true 2>/dev/null; then
   # o menu já está aberto: nada para esperar

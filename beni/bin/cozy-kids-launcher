@@ -3,6 +3,12 @@ set -euo pipefail
 # Sem gerenciamento de sessão do XFCE: o Firefox (e os jogos) tentam se registrar
 # no xfce4-session e, se ele não responde, ficam parados para sempre sem abrir.
 unset SESSION_MANAGER
+# Trava de usuário (/etc/beni-launcher/launcher.conf): fora do usuário das
+# crianças o menu não abre, para não tomar a porta 38431 da sessão delas.
+if [[ -x "$HOME/.local/bin/cozy-usuario-permitido" ]] && ! "$HOME/.local/bin/cozy-usuario-permitido"; then
+  echo "cozy-kids-launcher: o menu está travado para outro usuário (veja /etc/beni-launcher/launcher.conf)" >&2
+  exit 0
+fi
 if [[ -d /snap/bin ]] && [[ ":$PATH:" != *":/snap/bin:"* ]]; then
   export PATH="$PATH:/snap/bin"
 fi

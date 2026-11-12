@@ -108,6 +108,15 @@ JANELA_FIM=5
 EOF
 fi
 chmod 0644 /etc/beni-launcher/atualizar.conf
+if [[ ! -f /etc/beni-launcher/launcher.conf ]]; then
+  cat > /etc/beni-launcher/launcher.conf <<EOF
+# Trava de usuário do Beni Launcher (lida por cozy-usuario-permitido)
+# O menu só abre nestes usuários (separados por espaço). Vazio = qualquer um.
+# Evita que o menu abra na conta dos pais e tome a porta da sessão das crianças.
+USUARIOS_PERMITIDOS=$USUARIO
+EOF
+fi
+chmod 0644 /etc/beni-launcher/launcher.conf
 touch /var/log/beni-atualizar.log; chmod 0644 /var/log/beni-atualizar.log
 systemctl daemon-reload
 systemctl enable beni-atualizar-aplicar.service >/dev/null

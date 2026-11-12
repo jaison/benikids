@@ -1,0 +1,22 @@
+#!/bin/sh
+# Trava de usuário: o menu só abre nos usuários listados em
+# /etc/beni-launcher/launcher.conf (USUARIOS_PERMITIDOS=beni, separados por
+# espaço ou vírgula). Sem o arquivo ou com a lista vazia, abre em qualquer um.
+#
+# Por quê: o servidor do menu usa a porta fixa 38431. Se ele abre em outro
+# usuário (por exemplo o dos pais, pelo autostart), a sessão das crianças não
+# consegue abrir o seu e fica com tela branca.
+#
+# Uso: cozy-usuario-permitido [USUARIO]   -> sai com 0 se pode abrir, 1 se não.
+# COZY_KIDS_IGNORAR_TRAVA_USUARIO=1 pula a trava (para testar como outro usuário).
+CONF="${COZY_KIDS_TRAVA_CONF:-/etc/beni-launcher/launcher.conf}"
+QUEM="${1:-$(id -un)}"
+[ "${COZY_KIDS_IGNORAR_TRAVA_USUARIO:-}" = "1" ] && exit 0
+[ -r "$CONF" ] || exit 0
+LISTA=$(sed -n 's/^[[:space:]]*USUARIOS_PERMITIDOS[[:space:]]*=[[:space:]]*//p' "$CONF" \
+  | tail -n 1 | tr -d "\"'" | tr ',' ' ')
+[ -z "$(printf '%s' "$LISTA" | tr -d '[:space:]')" ] && exit 0
+for u in $LISTA; do
+  [ "$u" = "$QUEM" ] && exit 0
+done
+exit 1

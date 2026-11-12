@@ -64,8 +64,9 @@ Base: [TrissyGE/cozy-kids-launcher](https://github.com/TrissyGE/cozy-kids-launch
 ## Fora do launcher (`beni/`)
 | Pasta/arquivo | Instalado em | Para quê |
 |---|---|---|
-| `bin/cozy-kids-launcher` | `~/.local/bin` | Script de início do launcher, já preenchido (porta 38431, Firefox em modo quiosque). |
-| `bin/cozy-iniciar` | `~/.local/bin` | Usado no login: espera a rede, sincroniza o itch.io e abre o launcher. |
+| `bin/cozy-kids-launcher` | `~/.local/bin` | Script de início do launcher, já preenchido (porta 38431, Firefox em modo quiosque). Respeita a trava de usuário (`cozy-usuario-permitido`). |
+| `bin/cozy-usuario-permitido` | `~/.local/bin` | Trava de usuário: o menu só abre nos usuários de `USUARIOS_PERMITIDOS=` em `/etc/beni-launcher/launcher.conf` (criado pelo `instalar-sistema.sh` com o usuário das crianças; vazio ou sem arquivo = qualquer usuário). Impede que o autostart de outra conta (a dos pais) tome a porta 38431 e deixe o menu da criança com tela branca. Para testar em outra conta: `COZY_KIDS_IGNORAR_TRAVA_USUARIO=1`. |
+| `bin/cozy-iniciar` | `~/.local/bin` | Usado no login: confere a trava de usuário, abre o launcher (com a tela "Abrindo o menu…") e sincroniza o itch.io em segundo plano. |
 | `bin/cozy-itch-sync` | `~/.local/bin` + timer systemd | Coleções do itch.io → tiles `itch-*` com capa, tamanho do jogo e corte da faixa do Unity. |
 | `bin/navegador-jogos` | `~/.local/bin` | Chromium em modo quiosque com aceleração, pt-BR, sem barra de tradução, mais a tela "Carregando…". |
 | `bin/cozy-fullscreen` | `~/.local/bin` | Põe em tela cheia apps que abrem em janela (`wmctrl`). |
