@@ -178,6 +178,12 @@ impl Menu {
             },
         );
         ciclo(cx, Duration::from_secs(5), |m, cx| m.atualizar_uso(cx));
+        // se o uso não chegar, a escolha aparece mesmo assim depois de 4 s
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(4100)).await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
         ciclo(cx, Duration::from_secs(10), |m, cx| {
             m.atualizar_timer(cx);
             m.atualizar_disp(cx);
@@ -1184,7 +1190,12 @@ impl Menu {
             linear_color_stop(hsla(t.bg2), 1.),
         ));
         let Fundo::Imagem(arq) = t.fundo else { return base.into_any_element() };
-        let caminho = self.o.app_root.join("themes").join(arq);
+        let mut caminho = self.o.app_root.join("themes").join(arq);
+        if arq.ends_with(".svg") {
+            // largura estável (a janela começa menor antes de ir para tela cheia)
+            let largura = ((1366. * p.e.max(1.)) / 100.).ceil() as u32 * 100;
+            caminho = fundo_rasterizado(&caminho, largura);
+        }
         let movimento = dados::verdade(&self.cfg, "themeMotionEnabled")
             && !dados::verdade(&self.cfg, "accessibilityReducedMotion")
             && arq.ends_with(".jpg")
@@ -1260,7 +1271,14 @@ impl Menu {
                 topo = topo.child(self.chip(p, o));
             }
         }
-        let corpo = if escolha { self.escolha_el(p, cx) } else { self.grade(p, cx) };
+        let corpo = if escolha && self.uso.is_null() && self.iniciado.elapsed() < Duration::from_secs(4) {
+            // sem o uso ainda não se sabe se tem Passatempo: espera (evita a tela "pular")
+            div().h(p.z(420.)).into_any_element()
+        } else if escolha {
+            self.escolha_el(p, cx)
+        } else {
+            self.grade(p, cx)
+        };
         div()
             .absolute()
             .top(px(0.))
@@ -2112,6 +2130,53 @@ fn ciclo_ate(cx: &mut Context<Menu>, intervalo: Duration, mut f: impl FnMut(&mut
         }
     })
     .detach();
+}
+
+/// Fundo SVG já convertido em PNG (no cache), se existir; senão devolve o SVG e
+/// converte em segundo plano com o rsvg-convert (quando instalado) para a próxima
+/// vez. O gpui rasteriza o SVG a cada início (~1 s num Celeron); o PNG abre logo.
+fn fundo_rasterizado(svg: &std::path::Path, largura: u32) -> PathBuf {
+    use std::sync::Mutex;
+    static PEDIDOS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    let Ok(info) = std::fs::metadata(svg) else { return svg.to_path_buf() };
+    let marca = info
+        .modified()
+        .ok()
+        .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let nome = svg.file_stem().and_then(|n| n.to_str()).unwrap_or("fundo");
+    let png = estado_dir().join("menu-fundos").join(format!("{nome}-{largura}-{marca}-{}.png", info.len()));
+    if png.exists() {
+        return png;
+    }
+    let mut pedidos = PEDIDOS.lock().unwrap();
+    if !pedidos.contains(&png) {
+        pedidos.push(png.clone());
+        let (svg, destino) = (svg.to_path_buf(), png);
+        std::thread::spawn(move || {
+            let Some(dir) = destino.parent() else { return };
+            if std::fs::create_dir_all(dir).is_err() {
+                return;
+            }
+            let tmp = destino.with_extension("tmp");
+            let ok = std::process::Command::new("rsvg-convert")
+                .args(["--width", &largura.to_string(), "--keep-aspect-ratio", "--format", "png", "--output"])
+                .arg(&tmp)
+                .arg(&svg)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success());
+            if ok {
+                let _ = std::fs::rename(&tmp, &destino);
+            } else {
+                let _ = std::fs::remove_file(&tmp);
+            }
+        });
+    }
+    svg.to_path_buf()
 }
 
 /// Lista estática de uma cor de cartão (tema "Cores próprias"). Guarda as que já
