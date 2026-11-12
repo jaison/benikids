@@ -36,11 +36,17 @@ impl Resposta {
 pub struct Api {
     pub porta: u16,
     cookie: Arc<Mutex<Option<String>>>,
+    demo: Option<Arc<Mutex<crate::demo::Demo>>>,
 }
 
 impl Api {
     pub fn new(porta: u16) -> Self {
-        Self { porta, cookie: Arc::new(Mutex::new(None)) }
+        Self { porta, cookie: Arc::new(Mutex::new(None)), demo: None }
+    }
+
+    /// Sem servidor: responde com os dados de exemplo (modo --demo).
+    pub fn demo() -> Self {
+        Self { porta: 0, cookie: Arc::new(Mutex::new(None)), demo: Some(Arc::new(Mutex::new(crate::demo::Demo::new()))) }
     }
 
     pub fn base(&self) -> String {
@@ -75,6 +81,15 @@ impl Api {
         corpo: Option<&str>,
         limite: Duration,
     ) -> std::io::Result<Resposta> {
+        if let Some(demo) = &self.demo {
+            let corpo = corpo.and_then(|c| serde_json::from_str(c).ok()).unwrap_or(Value::Null);
+            let (status, json) = demo.lock().unwrap().responder(metodo, caminho, &corpo);
+            return Ok(Resposta {
+                status,
+                cabecalhos: vec![],
+                corpo: json.map(|j| j.to_string().into_bytes()).unwrap_or_default(),
+            });
+        }
         let endereco = SocketAddr::from(([127, 0, 0, 1], self.porta));
         let mut s = TcpStream::connect_timeout(&endereco, Duration::from_secs(3))?;
         s.set_read_timeout(Some(limite))?;

@@ -1,0 +1,1231 @@
+{
+ "perfis": {
+  "default": {
+   "configVersion": 2,
+   "language": "pt",
+   "parentLabel": "Pais",
+   "exitLabel": "Sair",
+   "shutdownLabel": "Desligar",
+   "autoScanDone": true,
+   "setupCompleted": true,
+   "activityTrackingEnabled": false,
+   "name": "Beni",
+   "avatar": "🕸️",
+   "title": "E aí, Beni!",
+   "theme": "heroi",
+   "themeMotionEnabled": false,
+   "themeTimeOfDayEnabled": false,
+   "soundFeedbackEnabled": false,
+   "speechFeedbackEnabled": false,
+   "celebrationEnabled": false,
+   "accessibilityLargeText": false,
+   "accessibilityHighContrast": false,
+   "accessibilityReducedMotion": false,
+   "accessibilityKeyboardFocus": false,
+   "layoutMode": "gross",
+   "currentPage": 0,
+   "timerMinutes": 30,
+   "timerWarningMinutes": 5,
+   "tiles": [
+    {
+     "id": "itch-mingle",
+     "label": "Mingle",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "itch-pikwip",
+     "label": "Pikwip",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "itch-fossil-quest",
+     "label": "Fossil Quest",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "itch-serenitrove",
+     "label": "Serenitrove",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "paint",
+     "label": "Desenhar",
+     "emoji": "🎨",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "autodraw",
+     "label": "Autodraw",
+     "emoji": "✏️",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "colorir",
+     "label": "Colorir",
+     "emoji": "🖍️",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "teachyourmonster",
+     "label": "Teach Your Monster",
+     "emoji": "👾",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "kiddogames",
+     "label": "Kiddo Games",
+     "emoji": "🐸",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "games",
+     "label": "Jogos educativos",
+     "emoji": "🧩",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "scratch",
+     "label": "Scratch",
+     "emoji": "🐱",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "pista-turbo",
+     "label": "Pista Turbo",
+     "emoji": "🏎️",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "luanti",
+     "label": "Luanti",
+     "emoji": "⛏️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "supertux",
+     "label": "SuperTux",
+     "emoji": "🐧",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "supertuxkart",
+     "label": "SuperTuxKart",
+     "emoji": "🏎️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "snes",
+     "label": "Super Nintendo",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "ps1",
+     "label": "PlayStation",
+     "emoji": "🕹️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "pingus",
+     "label": "Pingus",
+     "emoji": "🧊",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "hexahop",
+     "label": "Hex-a-hop",
+     "emoji": "🔷",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "klotski",
+     "label": "Klotski",
+     "emoji": "🧱",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "blockly",
+     "label": "Blockly Games",
+     "emoji": "🧠",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "frogatto",
+     "label": "Frogatto",
+     "emoji": "🐸",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "stellarium",
+     "label": "Planetário",
+     "emoji": "🔭",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "klavaro",
+     "label": "Digitação",
+     "emoji": "⌨️",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "musiclab",
+     "label": "Music Lab",
+     "emoji": "🎹",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-arena",
+     "label": "Rabisco Arena",
+     "emoji": "🥊",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-boom",
+     "label": "Rabisco Boom",
+     "emoji": "💣",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-corrida",
+     "label": "Corrida Rabisco",
+     "emoji": "🏁",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-fight",
+     "label": "Rabisco Fight",
+     "emoji": "🤼",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-guerra",
+     "label": "Guerra Rabisco",
+     "emoji": "🚀",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-ultimo",
+     "label": "Último Rabisco",
+     "emoji": "⚔️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-ovo",
+     "label": "Rabisco Rouba-Ovo",
+     "emoji": "🥚",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-eldoria",
+     "label": "Bastiões de Eldoria",
+     "emoji": "🏰",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-fliperama",
+     "label": "Fliperama Rabisco",
+     "emoji": "🕹️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "browser",
+     "label": "Escola Games",
+     "emoji": "🌐",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "codeorg",
+     "label": "Code.org",
+     "emoji": "🧑‍💻",
+     "visible": false,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "khan",
+     "label": "Khan Academy",
+     "emoji": "📚",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "phet",
+     "label": "Ciências (PhET)",
+     "emoji": "🔬",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "music",
+     "label": "Filmes e música",
+     "emoji": "🎵",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "youtube-kids",
+     "label": "YouTube Kids",
+     "emoji": "📺",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "netflix-kids",
+     "label": "Netflix Kids",
+     "emoji": "🎬",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "disney-plus",
+     "label": "Disney+",
+     "emoji": "✨",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "prime-kids",
+     "label": "Prime Kids",
+     "emoji": "📦",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "pbs-kids",
+     "label": "PBS Kids",
+     "emoji": "🎓",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "zdf-tivi",
+     "label": "ZDFtivi",
+     "emoji": "📺",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "kika",
+     "label": "KiKA",
+     "emoji": "🧸",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "tuxmath",
+     "label": "Matemática",
+     "emoji": "🧮",
+     "visible": false,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    }
+   ],
+   "categoryLimits": {
+    "enabled": true,
+    "totalMinutes": 60,
+    "categories": {
+     "jogos": {
+      "minutes": 30
+     },
+     "educativo": {
+      "minutes": 30
+     },
+     "passatempo": {
+      "minutes": null,
+      "pool": "jogos"
+     }
+    },
+    "learningRule": {
+     "enabled": true,
+     "goalPercent": 50,
+     "reducedPercent": 50,
+     "mode": "proportional"
+    }
+   },
+   "choiceScreenEnabled": true,
+   "activeProfileId": "default",
+   "profiles": [
+    {
+     "id": "default",
+     "name": "Beni",
+     "avatar": "🕸️"
+    },
+    {
+     "id": "child-2501513b5fcb",
+     "name": "Bea",
+     "avatar": "👑"
+    }
+   ],
+   "pinConfigured": false
+  },
+  "child-2501513b5fcb": {
+   "configVersion": 2,
+   "language": "pt",
+   "parentLabel": "Pais",
+   "exitLabel": "Sair",
+   "shutdownLabel": "Desligar",
+   "autoScanDone": true,
+   "setupCompleted": true,
+   "activityTrackingEnabled": false,
+   "name": "Bea",
+   "avatar": "👑",
+   "title": "Oi, Bea!",
+   "theme": "gelo",
+   "themeMotionEnabled": false,
+   "themeTimeOfDayEnabled": false,
+   "soundFeedbackEnabled": true,
+   "speechFeedbackEnabled": false,
+   "celebrationEnabled": true,
+   "accessibilityLargeText": false,
+   "accessibilityHighContrast": false,
+   "accessibilityReducedMotion": false,
+   "accessibilityKeyboardFocus": false,
+   "layoutMode": "klein",
+   "currentPage": 0,
+   "timerMinutes": 30,
+   "timerWarningMinutes": 5,
+   "tiles": [
+    {
+     "id": "itch-dog-wash",
+     "label": "Dog Wash",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "itch-little-chef",
+     "label": "Little Chef: Prototype",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "bea-dollmaker",
+     "label": "Criar Boneca",
+     "emoji": "🧸",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "bea-kitty",
+     "label": "Vestir Gatinho",
+     "emoji": "🐱",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "bea-darling",
+     "label": "Maquiagem",
+     "emoji": "💄",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "bea-missy",
+     "label": "Vestir Missy",
+     "emoji": "👗",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "paint",
+     "label": "Desenhar",
+     "emoji": "🎨",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "autodraw",
+     "label": "Autodraw",
+     "emoji": "✏️",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "colorir",
+     "label": "Colorir",
+     "emoji": "🖍️",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "teachyourmonster",
+     "label": "Teach Your Monster",
+     "emoji": "👾",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "kiddogames",
+     "label": "Kiddo Games",
+     "emoji": "🐸",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "games",
+     "label": "Jogos educativos",
+     "emoji": "🧩",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "scratch",
+     "label": "Scratch",
+     "emoji": "🐱",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "luanti",
+     "label": "Luanti",
+     "emoji": "⛏️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "supertux",
+     "label": "SuperTux",
+     "emoji": "🐧",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "supertuxkart",
+     "label": "SuperTuxKart",
+     "emoji": "🏎️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "snes",
+     "label": "Super Nintendo",
+     "emoji": "🎮",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "ps1",
+     "label": "PlayStation",
+     "emoji": "🕹️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "pingus",
+     "label": "Pingus",
+     "emoji": "🧊",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "hexahop",
+     "label": "Hex-a-hop",
+     "emoji": "🔷",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "klotski",
+     "label": "Klotski",
+     "emoji": "🧱",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "blockly",
+     "label": "Blockly Games",
+     "emoji": "🧠",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "frogatto",
+     "label": "Frogatto",
+     "emoji": "🐸",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "stellarium",
+     "label": "Planetário",
+     "emoji": "🔭",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "klavaro",
+     "label": "Digitação",
+     "emoji": "⌨️",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "musiclab",
+     "label": "Music Lab",
+     "emoji": "🎹",
+     "visible": true,
+     "category": "passatempo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-arena",
+     "label": "Rabisco Arena",
+     "emoji": "🥊",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-boom",
+     "label": "Rabisco Boom",
+     "emoji": "💣",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-corrida",
+     "label": "Corrida Rabisco",
+     "emoji": "🏁",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-fight",
+     "label": "Rabisco Fight",
+     "emoji": "🤼",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-guerra",
+     "label": "Guerra Rabisco",
+     "emoji": "🚀",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-ultimo",
+     "label": "Último Rabisco",
+     "emoji": "⚔️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-ovo",
+     "label": "Rabisco Rouba-Ovo",
+     "emoji": "🥚",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-eldoria",
+     "label": "Bastiões de Eldoria",
+     "emoji": "🏰",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "rb-fliperama",
+     "label": "Fliperama Rabisco",
+     "emoji": "🕹️",
+     "visible": true,
+     "category": "jogos",
+     "gamepad": true,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "browser",
+     "label": "Escola Games",
+     "emoji": "🌐",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "codeorg",
+     "label": "Code.org",
+     "emoji": "🧑‍💻",
+     "visible": false,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "khan",
+     "label": "Khan Academy",
+     "emoji": "📚",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "phet",
+     "label": "Ciências (PhET)",
+     "emoji": "🔬",
+     "visible": true,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "music",
+     "label": "Filmes e música",
+     "emoji": "🎵",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "youtube-kids",
+     "label": "YouTube Kids",
+     "emoji": "📺",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "netflix-kids",
+     "label": "Netflix Kids",
+     "emoji": "🎬",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "disney-plus",
+     "label": "Disney+",
+     "emoji": "✨",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "prime-kids",
+     "label": "Prime Kids",
+     "emoji": "📦",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "pbs-kids",
+     "label": "PBS Kids",
+     "emoji": "🎓",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "zdf-tivi",
+     "label": "ZDFtivi",
+     "emoji": "📺",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "kika",
+     "label": "KiKA",
+     "emoji": "🧸",
+     "visible": false,
+     "category": "jogos",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    },
+    {
+     "id": "tuxmath",
+     "label": "Matemática",
+     "emoji": "🧮",
+     "visible": false,
+     "category": "educativo",
+     "gamepad": false,
+     "cmd": [
+      "demo"
+     ]
+    }
+   ],
+   "categoryLimits": {
+    "enabled": true,
+    "totalMinutes": 60,
+    "categories": {
+     "jogos": {
+      "minutes": 30
+     },
+     "educativo": {
+      "minutes": 30
+     },
+     "passatempo": {
+      "minutes": null,
+      "pool": "jogos"
+     }
+    }
+   },
+   "choiceScreenEnabled": true,
+   "activeProfileId": "child-2501513b5fcb",
+   "profiles": [
+    {
+     "id": "default",
+     "name": "Beni",
+     "avatar": "🕸️"
+    },
+    {
+     "id": "child-2501513b5fcb",
+     "name": "Bea",
+     "avatar": "👑"
+    }
+   ],
+   "pinConfigured": false
+  }
+ },
+ "uso": {
+  "enabled": true,
+  "totalMinutes": 60,
+  "totalUsedSeconds": 900,
+  "totalRemainingSeconds": 2700,
+  "totalExhausted": false,
+  "categories": [
+   {
+    "id": "jogos",
+    "label": "Jogos",
+    "emoji": "🎮",
+    "minutes": 30,
+    "pool": "jogos",
+    "usedSeconds": 600,
+    "poolUsedSeconds": 600,
+    "availableSeconds": 1200,
+    "exhausted": false
+   },
+   {
+    "id": "educativo",
+    "label": "Aprender",
+    "emoji": "📚",
+    "minutes": 30,
+    "pool": "educativo",
+    "usedSeconds": 300,
+    "poolUsedSeconds": 300,
+    "availableSeconds": 1500,
+    "exhausted": false
+   },
+   {
+    "id": "passatempo",
+    "label": "Passatempo",
+    "emoji": "🎨",
+    "minutes": null,
+    "pool": "jogos",
+    "usedSeconds": 0,
+    "poolUsedSeconds": 600,
+    "availableSeconds": 1200,
+    "exhausted": false
+   }
+  ],
+  "blockedTileIds": [],
+  "blockedReasons": {},
+  "tileCategories": {},
+  "learningRule": {
+   "enabled": true,
+   "active": false,
+   "reason": "goal_met",
+   "category": "jogos",
+   "today": {
+    "goalSeconds": 900,
+    "learnedSeconds": 300,
+    "met": false
+   }
+  }
+ }
+}

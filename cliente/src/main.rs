@@ -5,13 +5,17 @@
 //! abre em menos de 1 s e gasta ~1/4 da memória do Firefox.
 //!
 //! Uso: beni-menu [--porta 38431] [--app-root DIR] [--web-cmd firefox]
-//!                [--web-familia firefox|chromium] [--web-perfil DIR]
+//!                [--web-familia firefox|chromium] [--web-perfil DIR] [--demo]
 //!
 //! Sai com código 75 quando não há GPU utilizável (só renderização por CPU):
 //! quem chamou (cozy-kids-launcher) volta para o menu no navegador.
 
+// No Windows, sem janela de console atrás do menu.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod api;
 mod dados;
+mod demo;
 mod icones;
 mod menu;
 mod sons;
@@ -36,6 +40,7 @@ fn opcoes() -> Opcoes {
         web_cmd: "firefox".into(),
         web_familia: "firefox".into(),
         web_perfil: casa.join(".cache/cozy-kids-launcher/firefox-profile"),
+        demo: false,
     };
     let mut a = std::env::args().skip(1);
     while let Some(x) = a.next() {
@@ -46,6 +51,7 @@ fn opcoes() -> Opcoes {
             "--web-cmd" => o.web_cmd = valor(),
             "--web-familia" => o.web_familia = valor(),
             "--web-perfil" => o.web_perfil = valor().into(),
+            "--demo" => o.demo = true,
             "--versao" | "--version" => {
                 println!("beni-menu {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
@@ -58,7 +64,16 @@ fn opcoes() -> Opcoes {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("beni_menu=info,warn")).init();
-    let o = opcoes();
+    let mut o = opcoes();
+    // Sem servidor (ex.: testar no Windows): modo demonstração. Também quando o
+    // executável se chama "*demo*" (dá para abrir com dois cliques).
+    let nome = std::env::current_exe().ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+    if nome.is_some_and(|n| n.contains("demo")) {
+        o.demo = true;
+    }
+    if o.demo {
+        o.app_root = demo::preparar_arquivos();
+    }
     let t0 = Instant::now();
     // Sem GPU de verdade (ex.: sessão sem acesso ao /dev/dri) o menu nativo ficaria
     // pesado: recusa o llvmpipe e deixa o script voltar para o navegador.

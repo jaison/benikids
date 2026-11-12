@@ -77,3 +77,44 @@ jobs:
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
             saida/beni-menu-linux-x86_64 saida/beni-menu-linux-x86_64.sha256 --clobber
+
+  windows:
+    name: Compilar beni-menu (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust estável
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            cliente/target
+          key: menu-nativo-${{ runner.os }}-${{ hashFiles('cliente/Cargo.lock', 'cliente/vendor/**') }}
+          restore-keys: menu-nativo-${{ runner.os }}-
+
+      - name: Testes
+        working-directory: cliente
+        run: cargo test --locked --release
+
+      - name: Compilar (perfil dist)
+        working-directory: cliente
+        shell: bash
+        run: |
+          cargo build --locked --profile dist
+          mkdir -p ../saida
+          # o nome com "demo" abre o modo demonstração com dois cliques
+          cp target/dist/beni-menu.exe ../saida/beni-menu-demo.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: beni-menu-windows-demo
+          path: saida/
+          if-no-files-found: error

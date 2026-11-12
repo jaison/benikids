@@ -29,6 +29,7 @@ pub struct Opcoes {
     pub web_cmd: String,
     pub web_familia: String, // "firefox" | "chromium"
     pub web_perfil: PathBuf,
+    pub demo: bool,
 }
 
 // ---------------------------------------------------------------- estado
@@ -103,7 +104,7 @@ const ARQ_ESTADO: &str = "menu-estado.json";
 
 impl Menu {
     pub fn new(o: Opcoes, focus: FocusHandle) -> Self {
-        let api = Api::new(o.porta);
+        let api = if o.demo { Api::demo() } else { Api::new(o.porta) };
         let ultimos = std::fs::read(estado_dir().join(ARQ_ESTADO))
             .ok()
             .and_then(|b| serde_json::from_slice::<HashMap<String, String>>(&b).ok())
@@ -738,6 +739,15 @@ impl Menu {
     /// Abre uma página do servidor no navegador (área dos pais, site embutido,
     /// biblioteca de mídia). Quando a página volta para o menu, o navegador fecha.
     pub fn abrir_web(&mut self, caminho: &str, cx: &mut Context<Self>) {
+        if self.o.demo {
+            self.inicio = None;
+            self.mostrar_mensagem(
+                "Modo demonstração".into(),
+                "Aqui a área dos pais (e as páginas web) abririam no navegador.".into(),
+            );
+            self.agendar_fechar_mensagem(cx);
+            return;
+        }
         if let Some((filho, _)) = self.web.as_mut() {
             if matches!(filho.try_wait(), Ok(None)) {
                 return; // já tem um aberto
@@ -785,10 +795,10 @@ impl Menu {
                 self.tarefa(
                     cx,
                     |api| api.get_json("/api/cliente/estado").and_then(|v| dados::numero(&v, "voltar")),
-                    move |_, r, _| {
+                    move |m, r, _| {
                         if r.is_some_and(|n| n as u64 > base) {
                             log::info!("a página pediu para voltar ao menu; fechando o navegador");
-                            let _ = std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+                            fechar_processo(m.web.as_mut().map(|(c, _)| c), pid);
                         }
                     },
                 );
@@ -2214,33 +2224,11 @@ fn cor_hex(s: &str) -> Option<u32> {
     }
 }
 
-/// Hora e minuto locais (sem dependência de fuso: usa o `date` uma vez e guarda o deslocamento).
+/// Hora e minuto locais.
 pub fn agora_local() -> (u32, u32) {
-    use std::sync::OnceLock;
-    static DESLOCAMENTO: OnceLock<i64> = OnceLock::new();
-    let desl = *DESLOCAMENTO.get_or_init(|| {
-        std::process::Command::new("date")
-            .arg("+%z")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| {
-                let s = s.trim();
-                let sinal = if s.starts_with('-') { -1 } else { 1 };
-                let n = s.trim_start_matches(['+', '-']);
-                let h: i64 = n.get(0..2)?.parse().ok()?;
-                let m: i64 = n.get(2..4)?.parse().ok()?;
-                Some(sinal * (h * 3600 + m * 60))
-            })
-            .unwrap_or(0)
-    });
-    let agora = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-        + desl;
-    let dia = agora.rem_euclid(86400);
-    ((dia / 3600) as u32, ((dia % 3600) / 60) as u32)
+    use chrono::Timelike;
+    let agora = chrono::Local::now();
+    (agora.hour(), agora.minute())
 }
 
 fn ler_bateria() -> Option<(u32, bool)> {
@@ -2258,7 +2246,27 @@ fn ler_bateria() -> Option<(u32, bool)> {
     None
 }
 
+/// Fecha o navegador aberto pelo menu (TERM no Linux, para ele salvar o perfil).
+fn fechar_processo(filho: Option<&mut Child>, pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = filho;
+        let _ = std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        if let Some(c) = filho {
+            let _ = c.kill();
+        }
+    }
+}
+
 /// Traz a janela do menu para a frente (depois que o navegador fecha).
+#[cfg(not(unix))]
+fn trazer_para_frente() {}
+
+#[cfg(unix)]
 fn trazer_para_frente() {
     let pid = std::process::id().to_string();
     std::thread::spawn(move || {
