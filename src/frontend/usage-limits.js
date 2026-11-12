@@ -54,13 +54,13 @@ function usageLearningReducedFor(categoryId){
   return r&&r.active&&cat&&cat.learningReduced?r:null;
 }
 function usageLearningKidText(r){ return 'Hoje '+r.minutes+' min — ontem faltou aprender 📚'; }
-// Dica no cartão Aprender: quanto falta hoje para Jogar ficar inteiro amanhã
+// Dica no cartão Aprender: quanto falta hoje para o tempo de Jogar vir completo amanhã
 function usageLearningGoalKidText(){
   const r=usageLearningRule();
   const t=r&&r.today;
   if(!t||t.goalSeconds===null||t.goalSeconds===undefined||t.goalSeconds<=0) return '';
   if(t.met) return 'Meta de hoje cumprida! ⭐';
-  return 'Aprenda '+usageMinutes(t.goalSeconds-t.learnedSeconds)+' min e amanhã tem Jogar inteiro ⭐';
+  return 'Aprenda mais '+usageMinutes(t.goalSeconds-t.learnedSeconds)+' min e amanhã o tempo de jogar fica completo ⭐';
 }
 function usageLearningParentText(){
   const r=usageLearningRule();

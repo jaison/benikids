@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Tela "Abrindo o menu…" enquanto o launcher carrega no login.
+
+Uso: cozy-carregando --pid PID
+Fecha sozinha, o que vier primeiro:
+  - quando a janela do navegador do menu aparece;
+  - RESERVA_S segundos depois de o launcher marcar "running" (lifecycle.json),
+    caso a janela não seja percebida;
+  - quando o processo PID (o launcher) termina;
+  - depois de LIMITE_S segundos.
+"""
+
+import datetime
+import json
+import os
+import sys
+import time
+
+LIMITE_S = 180
+DEPOIS_DA_JANELA_S = 1.5  # deixa o navegador pintar a página antes de sair da frente
+RESERVA_S = 8
+NAVEGADORES = ("firefox", "navigator", "chromium", "chrome")
+LIFECYCLE = os.path.expanduser("~/.cache/cozy-kids-launcher/lifecycle.json")
+
+CSS = b"""
+window { background-image: linear-gradient(160deg, #3b2a7a, #1e3a8a); }
+#emoji  { font-size: 96px; }
+#titulo { color: #ffffff; font-size: 44px; font-weight: 800; }
+#sub    { color: #e0e7ff; font-size: 24px; }
+spinner { color: #fde047; min-width: 72px; min-height: 72px; }
+"""
+
+
+def processo_vivo(pid):
+    if not pid:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def menu_rodando_desde(inicio_epoch):
+    """True se o launcher marcou "running" depois que esta tela abriu."""
+    try:
+        with open(LIFECYCLE, encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+        quando = datetime.datetime.strptime(dados["updatedAt"], "%Y-%m-%dT%H:%M:%SZ")
+        quando = quando.replace(tzinfo=datetime.timezone.utc).timestamp()
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return dados.get("state") == "running" and quando >= inicio_epoch - 1
+
+
+def main():
+    pid = 0
+    if len(sys.argv) == 3 and sys.argv[1] == "--pid" and sys.argv[2].isdigit():
+        pid = int(sys.argv[2])
+
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, GLib, Gtk
+
+    wnck = None
+    try:
+        gi.require_version("Wnck", "3.0")
+        from gi.repository import Wnck as wnck
+    except (ImportError, ValueError):
+        wnck = None
+
+    provider = Gtk.CssProvider()
+    provider.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+
+    janela = Gtk.Window(title="Abrindo o menu")
+    janela.set_decorated(False)
+    janela.set_keep_above(True)
+    janela.set_skip_taskbar_hint(True)
+    janela.set_accept_focus(False)       # o foco fica para o menu quando ele abrir
+    janela.set_focus_on_map(False)
+    janela.fullscreen()
+    janela.connect("destroy", Gtk.main_quit)
+
+    caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
+    caixa.set_halign(Gtk.Align.CENTER)
+    caixa.set_valign(Gtk.Align.CENTER)
+    for nome, texto in (("emoji", "🚀"), ("titulo", "Abrindo o menu…"), ("sub", "Só um instantinho ✨")):
+        rotulo = Gtk.Label(label=texto)
+        rotulo.set_name(nome)
+        caixa.pack_start(rotulo, False, False, 0)
+    girando = Gtk.Spinner()
+    girando.start()
+    caixa.pack_start(girando, False, False, 12)
+    janela.add(caixa)
+    janela.show_all()
+
+    inicio = time.monotonic()
+    inicio_epoch = time.time()
+    estado = {"saindo": False, "rodando_em": None}
+
+    def sair():
+        if not estado["saindo"]:
+            estado["saindo"] = True
+            GLib.timeout_add(int(DEPOIS_DA_JANELA_S * 1000), lambda: Gtk.main_quit() or False)
+
+    def e_navegador(janela_x):
+        nomes = " ".join(
+            (n or "").lower()
+            for n in (janela_x.get_class_group_name(), janela_x.get_class_instance_name())
+        )
+        return any(nome in nomes for nome in NAVEGADORES)
+
+    if wnck is not None:
+        tela = wnck.Screen.get_default()
+        if tela is not None:
+            tela.force_update()
+            ja_abertas = {j.get_xid() for j in tela.get_windows()}
+
+            def janela_nova(_tela, janela_x):
+                if janela_x.get_xid() not in ja_abertas and e_navegador(janela_x):
+                    sair()
+
+            tela.connect("window-opened", janela_nova)
+
+    def vigiar():
+        agora = time.monotonic()
+        if not processo_vivo(pid) or agora - inicio > LIMITE_S:
+            Gtk.main_quit()
+            return False
+        if estado["rodando_em"] is None:
+            if menu_rodando_desde(inicio_epoch):
+                estado["rodando_em"] = agora
+        elif agora - estado["rodando_em"] > RESERVA_S:
+            Gtk.main_quit()
+            return False
+        return True
+
+    GLib.timeout_add(500, vigiar)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        # A tela de carregamento nunca pode atrapalhar o menu de abrir.
+        sys.exit(0)

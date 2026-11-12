@@ -254,6 +254,54 @@ def load_cfg():
     return active_config(load_stored_cfg())
 
 
+# Mesma lista de theme-runtime.js (COZY_WORLD_THEME_IDS).
+WORLD_THEME_IDS = frozenset((
+    "wald", "weltraum", "ocean", "dinosaurier", "baustelle", "prinzessin", "bauernhof",
+    "katzen", "hunde", "heroi", "blocos", "ninja", "gelo", "casinha", "castelo",
+))
+INDEX_BODY_TAG = '<body class="theme-rosa">'
+
+
+def theme_period_at(hour):
+    if 5 <= hour < 11:
+        return "morning"
+    if 11 <= hour < 17:
+        return "day"
+    if 17 <= hour < 21:
+        return "evening"
+    return "night"
+
+
+def index_body_tag(cfg, hour=None):
+    """A tag <body> já com o tema escolhido, igual a applyThemeRuntime().
+
+    Sem isso a página abre no tema padrão (rosa) e só troca depois de carregar a
+    configuração, o que aparece por alguns segundos quando o computador liga.
+    """
+    theme = cfg.get("theme") if isinstance(cfg, dict) else None
+    if not isinstance(theme, str) or not re.fullmatch(r"[a-z0-9-]{1,40}", theme):
+        theme = "rosa"
+    classes = ["theme-" + theme]
+    period = None
+    if theme in WORLD_THEME_IDS:
+        classes.append("theme-world")
+        if cfg.get("themeMotionEnabled") is True:
+            classes.append("theme-world-motion")
+        if cfg.get("themeTimeOfDayEnabled") is True:
+            period = theme_period_at(time.localtime().tm_hour if hour is None else hour)
+            classes.append("theme-time-" + period)
+    tag = '<body class="' + " ".join(classes) + '"'
+    if period:
+        tag += ' data-theme-period="' + period + '"'
+    return tag + ">"
+
+
+def themed_index_html(cfg, hour=None):
+    with open(os.path.join(APP_ROOT, "index.html"), encoding="utf-8") as source:
+        html = source.read()
+    return html.replace(INDEX_BODY_TAG, index_body_tag(cfg, hour), 1).encode("utf-8")
+
+
 def save_stored_cfg(data):
     validated = validate_stored_config(
         data,
@@ -878,6 +926,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         request_url = urlparse(self.path)
+        if request_url.path in ("/", "/index.html"):
+            try:
+                cfg = load_cfg()
+            except Exception:
+                cfg = {}
+            try:
+                body = themed_index_html(cfg)
+            except OSError:
+                return super().do_GET()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if request_url.path == "/browser.html":
             try:
                 self.browser_content_security_policy = browser_wrapper_policy(

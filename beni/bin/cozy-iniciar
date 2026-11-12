@@ -1,6 +1,20 @@
 #!/bin/sh
-# Cozy Kids Launcher no login: primeiro atualiza os jogos das coleções do itch.io
-# (no máximo ~60 s, esperando a internet até 20 s), depois abre o launcher.
-nm-online -q -t 20 2>/dev/null
-timeout 60 "$HOME/.local/bin/cozy-itch-sync" >/dev/null 2>&1
+# Cozy Kids Launcher no login: abre o menu logo e sincroniza os jogos das
+# coleções do itch.io em segundo plano (os jogos novos aparecem quando a página
+# do menu recarregar, por exemplo ao voltar de um jogo). Enquanto o menu abre,
+# mostra a tela "Abrindo o menu…" (cozy-carregando), que some sozinha.
+LOCK="$HOME/.cache/cozy-kids-launcher/launcher.lock"
+if [ -f "$LOCK" ] && command -v flock >/dev/null 2>&1 && ! flock -n "$LOCK" true 2>/dev/null; then
+  # o menu já está aberto: nada para esperar
+  exec "$HOME/.local/bin/cozy-kids-launcher" "$@"
+fi
+if [ -n "${DISPLAY:-}" ] && [ -x "$HOME/.local/bin/cozy-carregando" ]; then
+  # $$ continua sendo o launcher depois do exec lá embaixo
+  "$HOME/.local/bin/cozy-carregando" --pid $$ >/dev/null 2>&1 &
+fi
+if [ -x "$HOME/.local/bin/cozy-itch-sync" ]; then
+  # espera a internet (até 60 s) e sincroniza (até 120 s), sem segurar o menu
+  setsid sh -c 'nm-online -q -t 60; timeout 120 "$HOME/.local/bin/cozy-itch-sync"' \
+    </dev/null >/dev/null 2>&1 &
+fi
 exec "$HOME/.local/bin/cozy-kids-launcher" "$@"

@@ -483,6 +483,21 @@ class ServerApiTests(unittest.TestCase):
         parsed = json.loads(raw.decode("utf-8")) if raw else None
         return response.status, parsed, response.headers
 
+    def test_home_page_arrives_with_the_chosen_theme(self):
+        Path(server_module.APP_ROOT, "index.html").write_text(
+            '<!doctype html><body class="theme-rosa"><main></main></body>', encoding="utf-8"
+        )
+        config = base_config()
+        config["theme"] = "ninja"
+        server_module.save_cfg(config)
+        for path in ("/", "/index.html", "/index.html?x=1"):
+            with urllib.request.urlopen(self.base_url + path, timeout=5) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers["Content-Type"], "text/html; charset=utf-8")
+                self.assertIn("no-store", response.headers["Cache-Control"])
+                html = response.read().decode("utf-8")
+            self.assertIn('<body class="theme-ninja theme-world"><main>', html)
+
     def enable_pin(self, pin="1234"):
         config = base_config(server_module.hash_pin(pin, salt="11" * 16))
         server_module.save_cfg(config)
@@ -2329,3 +2344,35 @@ class FrontendSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThemedIndexTests(unittest.TestCase):
+    """A página já sai do servidor com o tema escolhido (sem piscar o rosa)."""
+
+    def test_world_list_matches_theme_runtime(self):
+        import re as regex
+        source = (REPOSITORY_ROOT / "src" / "frontend" / "theme-runtime.js").read_text(encoding="utf-8")
+        block = source.split("COZY_WORLD_THEME_IDS=Object.freeze([", 1)[1].split("])", 1)[0]
+        self.assertEqual(set(regex.findall(r"'([a-z0-9-]+)'", block)), server_module.WORLD_THEME_IDS)
+
+    def test_index_template_has_the_default_body_tag(self):
+        html = (REPOSITORY_ROOT / "src" / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(html.count(server_module.INDEX_BODY_TAG), 1)
+
+    def test_body_tag_follows_theme_runtime(self):
+        tag = server_module.index_body_tag
+        self.assertEqual(tag({"theme": "rosa"}), '<body class="theme-rosa">')
+        self.assertEqual(tag({"theme": "heroi"}), '<body class="theme-heroi theme-world">')
+        self.assertEqual(
+            tag({"theme": "ocean", "themeMotionEnabled": True, "themeTimeOfDayEnabled": True}, hour=19),
+            '<body class="theme-ocean theme-world theme-world-motion theme-time-evening" data-theme-period="evening">',
+        )
+        self.assertEqual(tag({"theme": '"><script>'}), '<body class="theme-rosa">')
+        self.assertEqual(tag({}), '<body class="theme-rosa">')
+
+    def test_index_is_served_with_the_chosen_theme(self):
+        with tempfile.TemporaryDirectory() as root:
+            Path(root, "index.html").write_text('<html><body class="theme-rosa"><p>oi</p></body></html>', encoding="utf-8")
+            with mock.patch.object(server_module, "APP_ROOT", root):
+                html = server_module.themed_index_html({"theme": "ninja"}).decode("utf-8")
+        self.assertIn('<body class="theme-ninja theme-world"><p>oi</p>', html)
