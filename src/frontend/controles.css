@@ -1,0 +1,25 @@
+/* Pais → Sistema → Controles (controles.js) */
+.controle-panel { margin-top:var(--space-5,20px); }
+.controle-list { display:grid; gap:var(--space-3,12px); margin-top:var(--space-3,12px); }
+.controle-row {
+  display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:var(--space-2,8px) var(--space-3,12px);
+}
+.controle-row .controle-nome { font-weight:800; }
+.controle-row .controle-status { grid-column:1; grid-row:2; font-size:.9rem; }
+.controle-row button { grid-row:1 / span 2; }
+.controle-wizard {
+  margin-top:var(--space-4,16px); padding:var(--space-4,16px); border-radius:16px;
+  border:2px solid currentColor; display:grid; gap:var(--space-2,8px); text-align:center;
+}
+.controle-wizard-prompt { font-size:1.6rem; font-weight:800; }
+.controle-wizard-actions, .controle-actions { display:flex; flex-wrap:wrap; gap:var(--space-2,8px); justify-content:center; margin-top:var(--space-2,8px); }
+.controle-actions { justify-content:flex-start; }
+@media (max-width:700px) { .controle-row { grid-template-columns:1fr; } .controle-row button, .controle-row .controle-status { grid-row:auto; } }
+/* selo 🎮 no tile do menu e lista de jogos na área dos pais */
+.tile .tile-gamepad {
+  position:absolute; top:10px; left:10px; font-size:2.1rem; line-height:1;
+  padding:6px 8px; border-radius:999px; background:#fff7cc; border:2px solid #f5c400;
+  box-shadow:0 2px 6px rgba(0,0,0,.25); pointer-events:none;
+}
+.controle-jogos-titulo { margin:var(--space-5,20px) 0 0; }
+.controle-jogos { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--space-2,8px) var(--space-4,16px); margin-top:var(--space-3,12px); }

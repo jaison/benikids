@@ -78,6 +78,9 @@ def _validate_flat_config(data, existing_pin_hash="", allow_pin_hash=False):
             validated_tile["category"] = validate_tile_category(
                 tile["category"], f"tiles[{index}].category"
             )
+        if "gamepad" in tile and not isinstance(tile["gamepad"], bool):
+            # Beni Launcher: selo 🎮 no tile (funciona com o controle)
+            raise ValueError(f"tiles[{index}].gamepad must be a boolean")
         if "browserAllowedOrigins" in tile:
             validated_tile["browserAllowedOrigins"] = normalize_browser_allowed_origins(
                 tile["browserAllowedOrigins"]

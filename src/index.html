@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/frontend/cozy-temas.css">
 <link rel="stylesheet" href="/frontend/usage-limits.css">
 <link rel="stylesheet" href="/frontend/site-logins.css">
+<link rel="stylesheet" href="/frontend/controles.css">
 <link rel="stylesheet" href="/frontend/escolha.css">
 </head>
 <body class="theme-rosa">
@@ -486,6 +487,33 @@
               <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importConfig(this)">
             </div>
             <div id="importMsg" class="muted"></div>
+            <section id="controlePanel" class="backup-panel controle-panel" aria-labelledby="controleTitle">
+              <h3 id="controleTitle">🎮 Controles</h3>
+              <p class="muted">Configure cada controle uma vez: o assistente pede um botão de cada vez. Vale para o menu, o Super Nintendo, o PlayStation e jogos como SuperTux e SuperTuxKart.</p>
+              <label class="chk" for="controleNavegar">
+                <input id="controleNavegar" type="checkbox" onchange="definirNavegacaoControle(this.checked)">
+                <span>Usar o controle no menu (direcional escolhe, ✕ abre, ◯ volta)</span>
+              </label>
+              <div id="controleList" class="controle-list"></div>
+              <div id="controleWizard" class="controle-wizard" role="dialog" aria-live="polite" hidden>
+                <div id="controleWizardDevice" class="muted"></div>
+                <div id="controleWizardStep" class="muted"></div>
+                <div id="controleWizardPrompt" class="controle-wizard-prompt"></div>
+                <div id="controleWizardHint" class="muted"></div>
+                <div class="controle-wizard-actions">
+                  <button id="controleWizardBack" type="button" class="smallbtn" onclick="voltarPassoControle()">Voltar um passo</button>
+                  <button id="controleWizardSkip" type="button" class="smallbtn" onclick="pularPassoControle()">Pular</button>
+                  <button type="button" class="smallbtn" onclick="pararAssistenteControle()">Cancelar</button>
+                </div>
+              </div>
+              <div class="controle-actions">
+                <button type="button" class="smallbtn" onclick="loadControles()">Procurar de novo</button>
+              </div>
+              <h4 class="controle-jogos-titulo">Jogos que funcionam com o controle</h4>
+              <p class="muted">Os marcados ganham o selo 🎮 no menu desta criança. Depois de marcar, toque em <strong>Salvar</strong>.</p>
+              <div id="controleJogos" class="controle-jogos"></div>
+              <div id="controleMessage" class="ui-state" aria-live="polite" hidden></div>
+            </section>
             <section class="backup-panel" aria-labelledby="backupTitle">
               <h3 id="backupTitle">Backups</h3>
               <div id="backupPinPreserved" class="muted">O PIN atual dos pais é mantido ao restaurar um backup.</div>
@@ -521,6 +549,7 @@
 <script defer src="/frontend/schedule-controls.js"></script>
 <script defer src="/frontend/usage-limits.js"></script>
 <script defer src="/frontend/site-logins.js"></script>
+<script defer src="/frontend/controles.js"></script>
 <script defer src="/frontend/activity-dashboard.js"></script>
 <script defer src="/frontend/parent-settings.js"></script>
 <script defer src="/frontend/first-run.js"></script>

@@ -80,6 +80,14 @@ mkdir -p "$HOME/.local/share/cozy-jogos" "$HOME/.config/cozy-jogos" "$CHROMIUM_D
 cp "$REPO/beni/cozy-jogos/jogos.py" "$HOME/.local/share/cozy-jogos/"
 cp "$REPO/beni/emuladores/retroarch.cfg" "$HOME/.config/cozy-jogos/"
 cp "$REPO/beni/chromium/cozy-jogo.html" "$CHROMIUM_DIR/"
+# Controles USB nos jogos de navegador: extensão que corrige a numeração dos botões
+# (o mapa.js é gerado pelo launcher a partir da área dos pais; não sobrescreve)
+mkdir -p "$CHROMIUM_DIR/cozy-controle"
+cp "$REPO/beni/chromium/controle/manifest.json" "$REPO/beni/chromium/controle/controle.js" "$CHROMIUM_DIR/cozy-controle/"
+[[ -f "$CHROMIUM_DIR/cozy-controle/mapa.js" ]] || cp "$REPO/beni/chromium/controle/mapa.js" "$CHROMIUM_DIR/cozy-controle/"
+# Sem /run/udev o Chromium do flatpak não encontra nenhum controle
+flatpak override --user --filesystem=/run/udev:ro org.chromium.Chromium 2>/dev/null || \
+  aviso "não consegui liberar /run/udev para o Chromium (controles nos jogos de navegador)"
 mkdir -p "$HOME/Jogos/SNES" "$HOME/Jogos/PS1/BIOS" "$HOME/Jogos/.saves/ps1-memcards" "$HOME/Jogos/.saves/snes"
 cp "$REPO/beni/emuladores/Jogos-LEIA-ME.txt" "$HOME/Jogos/LEIA-ME.txt"
 mkdir -p "$HOME/.pcsxr/plugins"

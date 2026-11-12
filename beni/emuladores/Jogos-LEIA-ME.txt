@@ -18,6 +18,7 @@ Como a criança joga:
   - Setas + Enter, mouse ou controle USB funcionam na lista.
   - Para sair do jogo: tecla Esc (Super Nintendo) ou Start+Select no controle.
   - O botão X no canto superior esquerdo fecha tudo e volta ao menu.
+  - Segurar Start+Select por 2 segundos também fecha tudo e volta ao menu.
 
 Saves: ~/Jogos/.saves
 

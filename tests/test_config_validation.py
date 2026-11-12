@@ -67,6 +67,14 @@ class ConfigValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "goalPercent"):
             config_validation.validate_config(data)
 
+    def test_tile_gamepad_badge_is_a_boolean(self):
+        data = base_config()
+        data["tiles"][0]["gamepad"] = True
+        self.assertIs(config_validation.validate_config(data)["tiles"][0]["gamepad"], True)
+        data["tiles"][0]["gamepad"] = "sim"
+        with self.assertRaisesRegex(ValueError, "gamepad"):
+            config_validation.validate_config(data)
+
     def test_imported_pin_hash_must_use_a_supported_format(self):
         data = base_config()
         data["pinHash"] = parent_auth.hash_pin("1234", salt="00" * 16)

@@ -1691,6 +1691,62 @@ class ServerApiTests(unittest.TestCase):
         self.assertIn("Too many", data["message"])
 
 
+    def controles_de_teste(self):
+        import controles
+        home = Path(self.temp_dir.name) / "home"
+        servico = controles.Controles(str(home / "controles.json"), str(home))
+        servico.dispositivos = [{
+            "evento": "event10", "js": "js0", "nome": "Pad", "bus": "0003",
+            "vendor": "0079", "product": "0006", "version": "0110",
+            "chave": "0079:0006", "teclas": 0xFFF << 0x120, "eixos": 0x3002F,
+        }]
+        servico.thread = mock.Mock()
+        patcher = mock.patch.object(controles, "listar_dispositivos", lambda: servico.dispositivos)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        sdl = os.environ.get("SDL_GAMECONTROLLERCONFIG")
+        self.addCleanup(lambda: os.environ.__setitem__("SDL_GAMECONTROLLERCONFIG", sdl)
+                        if sdl is not None else os.environ.pop("SDL_GAMECONTROLLERCONFIG", None))
+        server_module._controles = servico
+        self.addCleanup(setattr, server_module, "_controles", None)
+        return servico, home
+
+    def test_controles_lista_captura_e_salva(self):
+        servico, home = self.controles_de_teste()
+        status, data, _ = self.request("/api/controles")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["dispositivos"][0]["chave"], "0079:0006")
+        status, _, _ = self.request("/api/controles/captura", method="POST",
+                                    body={"acao": "iniciar"}, origin=self.base_url)
+        self.assertEqual(status, 200)
+        self.assertTrue(servico.capturando())
+        servico._acionado(servico.dispositivos[0], "k:290")
+        status, data, _ = self.request("/api/controles/captura?depois=0")
+        self.assertEqual(data["captura"]["token"], "k:290")
+        mapa = {"up": "a:17:-1", "down": "a:17:1", "left": "a:16:-1", "right": "a:16:1",
+                "a": "k:290", "b": "k:289", "x": "k:291", "y": "k:288"}
+        status, data, _ = self.request("/api/controles/salvar", method="POST", origin=self.base_url,
+                                       body={"chave": "0079:0006", "nome": "Pad", "mapa": mapa})
+        self.assertEqual(status, 200)
+        self.assertEqual(data["dispositivos"][0]["mapa"]["a"], "k:290")
+        self.assertTrue((home / ".pcsxr" / "plugins" / "dfinput.cfg").is_file())
+        status, data, _ = self.request("/api/controles/salvar", method="POST", origin=self.base_url,
+                                       body={"chave": "0079:0006", "nome": "Pad", "mapa": {"up": "x"}})
+        self.assertEqual(status, 400)
+
+    def test_controles_exigem_os_pais(self):
+        self.controles_de_teste()
+        server_module.save_cfg(base_config(pin_hash=server_module.hash_pin("1234")))
+        status, _, _ = self.request("/api/controles")
+        self.assertEqual(status, 403)
+        status, _, _ = self.request("/api/controles/navegacao", method="POST",
+                                    body={"ligada": False}, origin=self.base_url)
+        self.assertEqual(status, 403)
+        status, _, _ = self.request("/api/controles/captura", method="POST",
+                                    body={"acao": "iniciar"}, origin="https://example.com")
+        self.assertEqual(status, 403)
+
+
 class FrontendSafetyTests(unittest.TestCase):
     def test_frontend_uses_focused_external_assets(self):
         source = (REPOSITORY_ROOT / "src" / "index.html").read_text(encoding="utf-8")

@@ -90,6 +90,8 @@ function activateAdminSection(section,focusHeading=false){
     panel.hidden=panel.dataset.adminPanel!==section;
   });
   if(section==='children'&&typeof loadSiteLogins==='function') loadSiteLogins();
+  if(section==='system'&&typeof loadControles==='function') loadControles();
+  if(section!=='system'&&typeof pararAssistenteControle==='function'&&controleAssistente) pararAssistenteControle();
   const activePanel=document.querySelector('[data-admin-panel="'+section+'"]');
   if(changed) playAdminPanelTransition(activePanel);
   if(focusHeading){

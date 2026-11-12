@@ -253,6 +253,16 @@ function renderKids(){
       const tileLabel=document.createElement('div');
       tileLabel.textContent=tile.label||'';
       btn.append(tileEmoji,tileLabel);
+      if(tile.gamepad===true){
+        // selo 🎮: dá para jogar só com o controle (Pais → Sistema → Controles)
+        const pad=document.createElement('span');
+        pad.className='tile-gamepad';
+        pad.textContent='🎮';
+        pad.title='Funciona com o controle';
+        pad.setAttribute('aria-hidden','true');
+        btn.appendChild(pad);
+        btn.setAttribute('aria-label',(tile.label||'')+' — funciona com o controle');
+      }
       if(tile.id===lastLaunched){
         const star=createLocalIcon('star','last-star');
         btn.appendChild(star);

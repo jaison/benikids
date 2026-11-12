@@ -10,6 +10,7 @@ import threading
 import time
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import controles
 import site_logins
 from app_detection import (
     BROWSER_CANDIDATES,
@@ -104,6 +105,7 @@ from parent_auth import (
     verify_pin,
 )
 from process_state import (
+    owned_process,
     owned_process_alive,
     remove_process_record,
     terminate_owned_process,
@@ -155,6 +157,8 @@ LEGACY_VERSION_URL = f"{LEGACY_RAW_URL}/VERSION"
 CFG = os.path.join(HOME, ".config", "cozy-kids-launcher", "config.json")
 # e-mail/senha dos sites por perfil (site_logins.py); nunca vai para a página
 SITE_LOGINS_FILE = os.path.join(HOME, ".config", "cozy-kids-launcher", "site-logins.json")
+# mapeamento dos controles USB (controles.py), feito na área dos pais
+CONTROLES_FILE = os.path.join(HOME, ".config", "cozy-kids-launcher", "controles.json")
 BACKUP_ROOT = os.path.join(HOME, ".local", "share", "cozy-kids-launcher-backups")
 LOG_FILE = os.path.join(HOME, ".local", "state", "cozy-kids-launcher", "runtime.jsonl")
 ACTIVITY_FILE = os.path.join(HOME, ".local", "state", "cozy-kids-launcher", "activity.json")
@@ -741,6 +745,46 @@ def usage_tracker():
         return _usage_tracker
 
 
+_controles = None
+_controles_lock = threading.Lock()
+
+
+def menu_na_frente():
+    """O controle só vira teclado do menu quando a janela do menu está na frente
+    e nenhum app/site está aberto (jogos de navegador leem o controle sozinhos)."""
+    browser = owned_process(BROWSER_PIDFILE, "browser")
+    if not browser:
+        return False
+    if controles.janela_ativa_pid() != browser.get("pid"):
+        return False
+    try:
+        return not usage_status(load_cfg()).get("active")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def fechar_app_pelo_controle():
+    """Start + Select seguros: fecha o app aberto como o ✕ do overlay e mostra o menu."""
+    if not owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
+        return
+    reset_active_tile()
+    log_runtime_event("controles.app_closed")
+    browser = owned_process(BROWSER_PIDFILE, "browser")
+    if browser and shutil.which("xdotool"):
+        subprocess.run(["xdotool", "search", "--pid", str(browser["pid"]), "windowactivate"],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=5, check=False)
+
+
+def controles_service():
+    global _controles
+    with _controles_lock:
+        if _controles is None:
+            _controles = controles.Controles(CONTROLES_FILE, HOME, pode_navegar=menu_na_frente,
+                                             ao_sair=fechar_app_pelo_controle)
+        return _controles
+
+
 def usage_status(cfg):
     profile_id = cfg.get("activeProfileId", "")
     profile = stored_profiles_cached().get(profile_id) or cfg
@@ -1074,6 +1118,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not self.require_admin(data):
                 return
             return self.json_response({"backups": available_config_backups()})
+        if request_url.path in ("/api/controles", "/api/controles/captura"):
+            if not self.require_admin():
+                return
+            servico = controles_service()
+            if request_url.path == "/api/controles":
+                return self.json_response(servico.estado())
+            try:
+                depois = int(parse_qs(request_url.query).get("depois", ["0"])[0])
+            except ValueError:
+                depois = 0
+            return self.json_response({"captura": servico.ultima_captura(depois)})
         if request_url.path == "/api/site-logins":
             data = load_stored_cfg()
             if not self.require_admin(active_config(data)):
@@ -1553,6 +1608,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "safetyBackupId": safety_backup["id"],
             })
             return
+        if action.startswith("api/controles/"):
+            if not self.require_admin():
+                return
+            body = self.read_json_body()
+            if body is None:
+                return
+            servico = controles_service()
+            try:
+                if action == "api/controles/captura":
+                    if body.get("acao") == "iniciar":
+                        servico.iniciar_captura()
+                    else:
+                        servico.parar_captura()
+                elif action == "api/controles/salvar":
+                    servico.salvar(body.get("chave"), body.get("nome"), body.get("mapa"))
+                    log_runtime_event("controles.saved")
+                elif action == "api/controles/esquecer":
+                    servico.esquecer(body.get("chave"))
+                elif action == "api/controles/navegacao":
+                    servico.definir_navegacao(body.get("ligada") is True)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+            except ValueError as exc:
+                self.json_response({"status": "error", "message": str(exc)}, 400)
+                return
+            except OSError as exc:
+                self.json_response({"status": "error", "message": type(exc).__name__}, 500)
+                return
+            self.json_response({"status": "ok", **servico.estado()})
+            return
         if action == "api/site-logins":
             data = load_stored_cfg()
             if not self.require_admin(active_config(data)):
@@ -1923,6 +2010,12 @@ def main():
             log_runtime_event("server.started", version=get_version())
             usage_tracker().start()
             try:
+                controles_service().aplicar()
+                controles_service().garantir_thread()
+            except Exception as exc:  # noqa: BLE001
+                log_runtime_event("controles.failed", level="warning",
+                                  exceptionType=type(exc).__name__)
+            try:
                 recovery_attempt = int(
                     os.environ.get("COZY_KIDS_RECOVERY_ATTEMPT", "0")
                 )
@@ -1945,6 +2038,8 @@ def main():
         embedded_activity_sessions().finish_all()
         if _usage_tracker is not None:
             _usage_tracker.shutdown()
+        if _controles is not None:
+            _controles.encerrar()
         if _speech_feedback is not None:
             _speech_feedback.close()
         remove_process_record(PIDFILE, expected_pid=os.getpid())
