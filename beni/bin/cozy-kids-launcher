@@ -37,6 +37,19 @@ if [[ -f "$BROWSER_OVERRIDE" ]]; then
   BROWSER_CMD="$(cat "$BROWSER_OVERRIDE")"
 fi
 BROWSER_BIN=$(basename "$BROWSER_CMD")
+# Menu nativo (beni-menu, Rust/gpui-fast): a tela da criança abre nele, bem mais
+# leve que o navegador; a área dos pais continua no navegador. Para voltar ao
+# menu web: echo web > ~/.config/cozy-kids-launcher/menu
+MENU_NATIVO="$APP_ROOT/beni-menu"
+MENU_PREFERENCIA="$HOME/.config/cozy-kids-launcher/menu"
+MENU_NATIVO_LOG="$CACHE_ROOT/menu-nativo.log"
+USAR_NATIVO=0
+if [[ -x "$MENU_NATIVO" ]] && [[ "$(cat "$MENU_PREFERENCIA" 2>/dev/null || true)" != "web" ]]; then
+  USAR_NATIVO=1
+fi
+NATIVO_EM_USO=0
+NATIVO_INICIO=0
+NATIVO_FALHAS=0
 
 case "$BROWSER_BIN" in
   chromium|chromium-browser|google-chrome|google-chrome-stable|brave|brave-browser|opera|opera-stable|vivaldi|vivaldi-stable|microsoft-edge|microsoft-edge-stable|edge|cachy-browser)
@@ -489,6 +502,18 @@ while true; do
   else
     configure_firefox_profile
   fi
+  NATIVO_EM_USO=0
+  if [[ "$USAR_NATIVO" == "1" ]]; then
+    if [[ "$BROWSER_FAMILY" == "chromium" ]]; then MENU_PERFIL_WEB="$CHROMIUM_PROFILE"; else MENU_PERFIL_WEB="$FIREFOX_PROFILE"; fi
+    # mantém só o fim do log
+    if [[ -f "$MENU_NATIVO_LOG" ]] && (( $(stat -c %s "$MENU_NATIVO_LOG" 2>/dev/null || echo 0) > 200000 )); then
+      tail -c 50000 "$MENU_NATIVO_LOG" > "$MENU_NATIVO_LOG.tmp" 2>/dev/null && mv -f "$MENU_NATIVO_LOG.tmp" "$MENU_NATIVO_LOG"
+    fi
+    "$MENU_NATIVO" --porta "$PORT" --app-root "$APP_ROOT" --web-cmd "$BROWSER_CMD" \
+      --web-familia "$BROWSER_FAMILY" --web-perfil "$MENU_PERFIL_WEB" 9>&- </dev/null >>"$MENU_NATIVO_LOG" 2>&1 &
+    NATIVO_EM_USO=1
+    NATIVO_INICIO=$SECONDS
+  else
   case "$LAUNCH_MODE" in
     kiosk)
       if [[ "$BROWSER_FAMILY" == "chromium" ]]; then
@@ -512,6 +537,7 @@ while true; do
       fi
       ;;
   esac
+  fi
   BROWSER_CHILD_PID="$!"
   if ! record_process "$BROWSER_PIDFILE" "$BROWSER_CHILD_PID" browser; then
     kill "$BROWSER_CHILD_PID" 2>/dev/null || true
@@ -522,7 +548,7 @@ while true; do
     show_recovery_failure
     exit 1
   fi
-  confirm_chromium_fullscreen
+  [[ "$NATIVO_EM_USO" == "1" ]] || confirm_chromium_fullscreen
   if [[ "$RUNTIME_START_REASON" == "recovery" ]]; then
     lifecycle_transition running recovered "$ACTIVE_RECOVERY_ATTEMPT"
   elif [[ "$RUNTIME_START_REASON" == "update-complete" ]]; then
@@ -599,6 +625,27 @@ while true; do
     LIFECYCLE_FAILURE_REASON="unexpected-exit"
     # loop back to restart with updated files
   else
+    if [[ "$NATIVO_EM_USO" == "1" ]]; then
+      NATIVO_STATUS=0
+      wait "$BROWSER_CHILD_PID" 2>/dev/null || NATIVO_STATUS=$?
+      remove_process_record "$BROWSER_PIDFILE" "$BROWSER_CHILD_PID"
+      BROWSER_CHILD_PID=""
+      # 75 = sem GPU utilizável (ex.: sessão sem acesso ao /dev/dri); outro erro
+      # logo no começo = o menu nativo não funciona aqui. Nos dois casos, segue
+      # com o menu no navegador nesta sessão.
+      if [[ "$NATIVO_STATUS" == "75" ]] || { [[ "$NATIVO_STATUS" != "0" ]] && (( SECONDS - NATIVO_INICIO < 20 )); }; then
+        echo "$(date '+%F %T') menu nativo saiu com $NATIVO_STATUS; usando o navegador" >>"$MENU_NATIVO_LOG"
+        USAR_NATIVO=0
+        continue
+      fi
+      # caiu depois de um tempo aberto: reabre (até 3 vezes; depois, navegador)
+      if [[ "$NATIVO_STATUS" != "0" ]]; then
+        NATIVO_FALHAS=$((NATIVO_FALHAS + 1))
+        echo "$(date '+%F %T') menu nativo caiu ($NATIVO_STATUS), vez $NATIVO_FALHAS" >>"$MENU_NATIVO_LOG"
+        (( NATIVO_FALHAS >= 3 )) && USAR_NATIVO=0
+        continue
+      fi
+    fi
     LIFECYCLE_STOP_REASON="browser-exited"
     lifecycle_transition stopping browser-exited
     remove_process_record "$BROWSER_PIDFILE" "$BROWSER_CHILD_PID"

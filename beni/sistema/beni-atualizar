@@ -24,6 +24,7 @@ todos; sem nada da família). Log: /var/log/beni-atualizar.log.
 """
 
 import datetime
+import hashlib
 import json
 import os
 import pwd
@@ -148,6 +149,54 @@ def check_package(root, version):
         raise RuntimeError(f"VERSION do pacote ({inside}) não bate com a tag ({version})")
 
 
+MENU_ASSET = "beni-menu-linux-x86_64"
+MENU_WAIT_S = 90 * 60
+
+
+def release_is_fresh(release):
+    """True se a Release saiu há menos de MENU_WAIT_S (o binário ainda pode chegar)."""
+    try:
+        published = datetime.datetime.fromisoformat(release.get("published_at", "").replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    age = datetime.datetime.now(datetime.timezone.utc) - published
+    return age.total_seconds() < MENU_WAIT_S
+
+
+def download_native_menu(release, dest):
+    """Baixa o menu nativo (binário do GitHub Actions anexado à Release), se houver.
+
+    Confere o SHA-256 publicado junto ("<nome>.sha256"). Sem o binário (ou com
+    erro), a atualização segue: o menu continua no navegador ou no binário antigo.
+    """
+    assets = {a.get("name"): a.get("browser_download_url") for a in release.get("assets") or []}
+    url, url_sha = assets.get(MENU_ASSET), assets.get(MENU_ASSET + ".sha256")
+    if not url or not url_sha:
+        log("verificar: release sem o menu nativo")
+        return False
+    try:
+        with fetch(url_sha) as resp:
+            expected = resp.read(200).decode("ascii", "replace").split()[0].lower()
+        target = os.path.join(dest, "beni-menu")
+        digest = hashlib.sha256()
+        with fetch(url, timeout=120) as resp, open(target, "wb") as out:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                out.write(chunk)
+        if digest.hexdigest() != expected:
+            os.unlink(target)
+            log("verificar: menu nativo com SHA-256 errado; ignorado")
+            return False
+        os.chmod(target, 0o755)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log(f"verificar: menu nativo não baixou ({exc}); segue sem ele")
+        return False
+
+
 # ----------------------------------------------------------------- verificar
 
 def cmd_verificar():
@@ -204,6 +253,11 @@ def cmd_verificar():
         root = safe_extract(archive, os.path.join(tmp, "x"))
         check_package(root, latest)
         shutil.rmtree(os.path.join(tmp, "x"))
+        if not download_native_menu(release, tmp) and release_is_fresh(release):
+            # o GitHub Actions ainda está compilando o menu nativo desta versão
+            shutil.rmtree(tmp, ignore_errors=True)
+            log(f"verificar: {latest} publicada há pouco; esperando o menu nativo ficar pronto")
+            return 0
         with open(os.path.join(tmp, "versao"), "w", encoding="utf-8") as handle:
             handle.write(latest)
         notes = (release.get("body") or "").strip()
@@ -257,6 +311,7 @@ def launcher_pids(user):
         line = b" ".join(args)
         if (b"/.local/bin/cozy-kids-launcher" in line or b"/.local/bin/cozy-iniciar" in line
                 or b"cozy-kids-launcher/server.py" in line
+                or b"cozy-kids-launcher/beni-menu" in line
                 or (b"cozy-kids-launcher/firefox-profile" in line and b"-contentproc" not in line)):
             pids.append(int(name))
     return pids
@@ -411,6 +466,10 @@ def cmd_aplicar():
     try:
         root = safe_extract(archive, work)
         check_package(root, version)
+        menu = os.path.join(STAGED, "beni-menu")
+        if os.path.isfile(menu):
+            os.makedirs(os.path.join(root, "cliente", "bin"), exist_ok=True)
+            shutil.copy2(menu, os.path.join(root, "cliente", "bin", "beni-menu"))
         os.chmod(work, 0o755)
         subprocess.run(["chown", "-R", f"{user.pw_uid}:{user.pw_gid}", root], check=True)
         backup_user(user)

@@ -58,6 +58,23 @@ cp "$REPO"/themes/*.jpg "$REPO"/themes/*.svg "$APP_ROOT/themes/"
 cp "$REPO"/themes/fonts/* "$APP_ROOT/themes/fonts/"
 mkdir -p "$APP_ROOT/themes/themes" && cp "$REPO"/themes/*.jpg "$APP_ROOT/themes/themes/"
 tr -d ' \n' < "$REPO/VERSION" > "$APP_ROOT/version"   # versão deste projeto (Releases vX.Y.Z)
+
+# Menu nativo (beni-menu, ver cliente/): binário compilado no GitHub Actions e
+# baixado pelo atualizador junto com a Release (fica em cliente/bin/). Quem
+# compilou na mão pode deixá-lo em cliente/target/*/beni-menu. Sem binário, o
+# menu continua no navegador como antes.
+MENU_BIN=""
+for candidato in "$REPO/cliente/bin/beni-menu" "$REPO/cliente/target/dist/beni-menu" "$REPO/cliente/target/release/beni-menu"; do
+  if [[ -f "$candidato" ]] && [[ "$(uname -m)" == "x86_64" ]]; then MENU_BIN="$candidato"; break; fi
+done
+if [[ -n "$MENU_BIN" ]]; then
+  install -m 0755 "$MENU_BIN" "$APP_ROOT/beni-menu.novo" && mv -f "$APP_ROOT/beni-menu.novo" "$APP_ROOT/beni-menu"
+  echo "  menu nativo instalado ($("$APP_ROOT/beni-menu" --versao 2>/dev/null || echo '?'))"
+elif [[ -x "$APP_ROOT/beni-menu" ]]; then
+  echo "  menu nativo: este pacote não trouxe binário; mantido o que já estava instalado."
+else
+  echo "  menu nativo: sem binário; o menu abre no navegador."
+fi
 cp "$REPO/beni/ferramentas/"gerar-temas*.py "$APP_ROOT/themes/"
 
 # Jogo de corrida do Scratch: a cópia da criança fica em Imagens/Scratch (nunca sobrescrita)

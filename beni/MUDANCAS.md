@@ -21,6 +21,25 @@ Base: [TrissyGE/cozy-kids-launcher](https://github.com/TrissyGE/cozy-kids-launch
 | `sites/phet.html` | Pré-tela do tile "Ciências (PhET)": Física, Matemática, Química, Terra e Espaço e Biologia. Cada uma abre o PhET já filtrado no Ensino Fundamental 1 (para mudar o nível, troque `NIVEL` no arquivo). Servida pelo próprio launcher em `http://127.0.0.1:38431/sites/phet.html`. |
 | `../themes/*.svg`, `../themes/fonts/` | Fundos dos temas novos e fontes (OFL). |
 
+## Menu nativo (`cliente/`) e desempenho
+A tela das crianças passou a ser um programa nativo em Rust (`cliente/`, `beni-menu`, com gpui-fast),
+no lugar do Firefox em quiosque. A área dos pais continua no navegador. Detalhes, medições e como
+compilar: [cliente/LEIA-ME.md](../cliente/LEIA-ME.md).
+
+| Arquivo | Mudança |
+|---|---|
+| `cliente/` | O menu nativo. `vendor/gpui-fast-wgpu` é o gpui-fast-wgpu 0.1.14 com patch para GL sem compute (Intel HD 2000) e emojis coloridos (`vendor/LEIA-ME.md`). |
+| `src/cliente.html`, `src/frontend/cliente-nativo.js` | Páginas abertas pelo menu nativo (área dos pais, sites embutidos, biblioteca de mídia): marcam a aba e, quando voltariam para o menu, avisam o servidor para o menu nativo fechar o navegador. Com `?pais=1`, abre direto a área dos pais. Sem a marca da aba, não fazem nada. |
+| `src/server.py` | `GET /api/cliente/estado` e `POST /api/cliente/voltar`. **Cache** da configuração lida (`load_cfg`/`load_stored_cfg`): só relê, migra e valida quando o `config.json` ou o `recommendations.json` mudam; antes eram ~12 ms por requisição num Celeron. `load_recommendations(check_installed=False)`: a configuração não procura mais ~40 programas no PATH a cada requisição. |
+| `src/controles.py` | O `controles.json` é lido só quando muda; o Start+Select não lê nada quando ninguém segura dois botões; com só "ruído" de analógico (o DragonRise manda dezenas de eventos por segundo), a thread acorda no máximo 10×/s. |
+| `beni/bin/cozy-kids-launcher` | Abre o `beni-menu` (se instalado e sem `~/.config/cozy-kids-launcher/menu` = `web`) e volta para o navegador quando ele sai com 75 (sem GPU), cai logo no começo ou cai 3 vezes. Checagem dos processos em bash puro (`process_alive_rapido`, igual ao `process_state.py alive`) e espera de 1 s sem processo externo: o laço gastava ~18% de um núcleo. |
+| `beni/bin/cozy-carregando` | Também reconhece a janela `beni-menu`. |
+| `beni/sistema/beni-atualizar` | Baixa `beni-menu-linux-x86_64` da Release, confere o SHA-256 e passa para o `instalar.sh`; espera até 90 min o binário de uma Release recém-publicada. |
+| `instalar.sh` | Instala o `beni-menu` (de `cliente/bin/` ou `cliente/target/`). |
+| `themes/fonts/Fredoka-SemiBold.ttf` | Instância estática da Fredoka (o menu nativo não aplica o eixo de peso). |
+| `.github/workflows/menu-nativo.yml` | Compila e testa o menu nativo; numa Release, anexa o binário. |
+| `tests/test_menu_nativo.py` | Endpoints, cache, controles, `process_alive_rapido` × `process_state.py` e o atualizador. |
+
 ## Arquivos alterados (`src/`)
 | Arquivo | Mudança |
 |---|---|

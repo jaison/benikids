@@ -19,7 +19,7 @@ import time
 LIMITE_S = 180
 DEPOIS_DA_JANELA_S = 1.5  # deixa o navegador pintar a página antes de sair da frente
 RESERVA_S = 8
-NAVEGADORES = ("firefox", "navigator", "chromium", "chrome")
+NAVEGADORES = ("beni-menu", "firefox", "navigator", "chromium", "chrome")
 LIFECYCLE = os.path.expanduser("~/.cache/cozy-kids-launcher/lifecycle.json")
 
 CSS = b"""

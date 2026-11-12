@@ -1,0 +1,31 @@
+[package]
+name = "beni-menu"
+version = "0.1.0"
+edition = "2024"
+description = "Menu das crianças do Beni Launcher, nativo (gpui-fast), falando com o servidor Python local"
+license = "MIT"
+publish = false
+
+[dependencies]
+# gpui-fast fixado na versão testada no notebook (Intel HD 2000). O pacote
+# gpui-fast-wgpu vem de vendor/ com o patch para GL sem compute (ver vendor/LEIA-ME.md).
+gpui = { package = "gpui-fast", version = "=0.1.14" }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.14", features = ["x11"] }
+env_logger = "0.11"
+log = "0.4"
+serde_json = "1"
+
+# "release" fica igual ao do protótipo para reaproveitar o que já foi compilado no
+# notebook (compilar tudo do zero leva ~30 min num Celeron). O binário distribuído
+# sai do perfil "dist" (no GitHub Actions), mais enxuto.
+[profile.release]
+debug = false
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[patch.crates-io]
+gpui-fast-wgpu = { path = "vendor/gpui-fast-wgpu" }

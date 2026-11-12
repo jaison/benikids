@@ -823,6 +823,23 @@ def usage_tracker():
 _controles = None
 _controles_lock = threading.Lock()
 
+# Menu nativo (beni-menu): as páginas web que ele abre (área dos pais, sites
+# embutidos, biblioteca de mídia) avisam aqui quando voltariam para o menu.
+_cliente_voltar = 0
+_cliente_lock = threading.Lock()
+
+
+def cliente_voltar_registrar():
+    global _cliente_voltar
+    with _cliente_lock:
+        _cliente_voltar += 1
+        return _cliente_voltar
+
+
+def cliente_voltar_contador():
+    with _cliente_lock:
+        return _cliente_voltar
+
 
 def menu_na_frente():
     """O controle só vira teclado do menu quando a janela do menu está na frente
@@ -1139,6 +1156,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.json_response(
                 browser_statuses(BROWSER_CANDIDATES, which=shutil.which)
             )
+        if self.path == "/api/cliente/estado":
+            # Menu nativo (beni-menu): quantas vezes uma página aberta por ele pediu
+            # para voltar ao menu (ele fecha o navegador quando o número muda).
+            return self.json_response({"voltar": cliente_voltar_contador()})
         if self.path == "/api/timer/status":
             return self.json_response(timer_status(load_cfg()))
         if self.path == "/api/availability/status":
@@ -1253,6 +1274,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.json_response({"status": "error", "message": "Cross-site request rejected"}, 403)
             return
         action = self.path.strip("/")
+        if action == "api/cliente/voltar":
+            self.json_response({"voltar": cliente_voltar_registrar()})
+            return
         if action == "api/feedback/speak":
             body = self.read_json_body()
             if body is None:

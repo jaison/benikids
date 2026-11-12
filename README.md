@@ -170,6 +170,8 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
    gh release create v1.1.1 --title "1.1.1" --notes "Correção do login [forcar]"
    ```
    A tag tem que bater com o `VERSION`, senão o notebook recusa o pacote. Rascunhos e pré-releases são ignorados.
+   Ao publicar a Release, o GitHub Actions compila o menu nativo (`menu-nativo.yml`, ~15 min) e anexa
+   `beni-menu-linux-x86_64` + `.sha256`. Os notebooks esperam até 90 min por esse binário antes de instalar.
 5. Para acompanhar num notebook: `beni-atualizar estado` e `/var/log/beni-atualizar.log`.
 
 O endereço do repositório e a janela da madrugada ficam em `/etc/beni-launcher/atualizar.conf`.
@@ -192,6 +194,9 @@ O endereço do repositório e a janela da madrugada ficam em `/etc/beni-launcher
 | Jogos 3D de navegador lentos no Firefox | jogos de navegador abrem no Chromium com aceleração forçada (≈2× mais FPS neste hardware) |
 | Jogos do Escola Games ficavam em "Loading…" com bloqueador de anúncios | o uBlock só bloqueia o script do Google (o jogo tem saída quando ele falha) |
 | O DNS global do NetworkManager 1.46 era ignorado | o DNS com filtro vai direto no `systemd-resolved` |
+| O menu no Firefox ocupava ~600 MB e até 29% de um núcleo parado | **menu nativo** (`cliente/`): ~200 MB, ~1% parado, abre em ~1 s ([detalhes](cliente/LEIA-ME.md)) |
+| O script do launcher gastava ~18% de um núcleo o tempo todo (abria `python3` 2× por segundo), inclusive com jogo aberto | checagem dos processos em bash puro: 0,7% |
+| O servidor gastava ~3% parado (relia e validava a configuração a cada requisição) | cache da configuração e dos controles: 0,6% |
 
 A lista detalhada, arquivo por arquivo, está em [beni/MUDANCAS.md](beni/MUDANCAS.md).
 
@@ -252,7 +257,9 @@ salvos nem os jogos. Use `./instalar.sh --sem-apps` para não mexer em apt/flatp
 ```
 login → ~/.config/autostart → cozy-iniciar
           ├─ cozy-itch-sync      (coleções do itch.io → tiles "itch-*" no config.json)
-          └─ cozy-kids-launcher  (servidor Python em 127.0.0.1:38431 + Firefox em modo quiosque)
+          └─ cozy-kids-launcher  (servidor Python em 127.0.0.1:38431 + menu nativo beni-menu;
+                 │                    sem GPU utilizável, Firefox em modo quiosque)
+                 ├─ Pais → Firefox só com a área dos pais (fecha ao voltar)
                  ├─ usage_limits.py   (tempo por categoria, dia da semana, reforço de aprendizagem)
                  └─ tocar num ícone → process_supervisor.py + overlay.py (❌, tempo, ‹ Voltar)
                         ├─ apps locais: atalhos em ~/.local/bin (supertux, gcompris, …)
@@ -265,6 +272,7 @@ login → ~/.config/autostart → cozy-iniciar
 | Onde | O quê |
 |---|---|
 | `src/` | código do launcher (original + mudanças) → `~/.local/share/cozy-kids-launcher` |
+| `cliente/` | **menu nativo** (`beni-menu`, Rust + gpui-fast): a tela das crianças sem navegador. Veja [cliente/LEIA-ME.md](cliente/LEIA-ME.md) |
 | `src/usage_limits.py`, `src/frontend/usage-limits.*` | tempo de tela por categoria, dia da semana e reforço de aprendizagem |
 | `src/site_logins.py`, `src/frontend/site-logins.*` | login automático nos sites (senhas em `~/.config/cozy-kids-launcher/site-logins.json`) |
 | `src/frontend/escolha.*` | tela Aprender/Passatempo/Jogar |
@@ -288,9 +296,10 @@ O código ainda usa os nomes internos do original (`cozy-kids-launcher`, porta 3
 correções de lá.
 
 ### Testes
-`python3 -m unittest discover -s tests` roda **329 testes**, os do projeto original e os novos:
+`python3 -m unittest discover -s tests` roda **381 testes**, os do projeto original e os novos:
 limites por categoria e dia da semana, categorias que dividem tempo, reforço de aprendizagem,
-login automático, atualizador e mudanças de catálogo. Três testes do original foram ajustados ao comportamento novo: textos já
+login automático, atualizador, mudanças de catálogo e a integração com o menu nativo. O menu nativo
+tem os seus em Rust (`cd cliente && cargo test --release`). Três testes do original foram ajustados ao comportamento novo: textos já
 traduzidos e o campo `limitBlocked`.
 
 ---

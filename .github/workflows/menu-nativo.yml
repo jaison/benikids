@@ -1,0 +1,79 @@
+name: Menu nativo
+
+# Compila o menu nativo (cliente/, Rust + gpui-fast) e, numa Release publicada,
+# anexa o binário (beni-menu-linux-x86_64 + .sha256). O atualizador dos
+# notebooks (beni/sistema/beni-atualizar) baixa esse binário junto com o pacote.
+# Compila no Ubuntu 22.04 (glibc 2.35) para rodar também no Mint 21.
+on:
+  push:
+    branches: [main, develop]
+    paths: ["cliente/**", ".github/workflows/menu-nativo.yml"]
+  pull_request:
+    paths: ["cliente/**", ".github/workflows/menu-nativo.yml"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compilar:
+    name: Compilar beni-menu
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # só usado para anexar o binário na Release
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Bibliotecas do sistema (X11, fontes, Vulkan/GL)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            libxkbcommon-x11-dev libxkbcommon-dev libx11-xcb-dev libxcb1-dev \
+            libfontconfig-dev libfreetype-dev libvulkan-dev libzstd-dev \
+            libwayland-dev clang cmake pkg-config
+
+      - name: Rust estável
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            cliente/target
+          key: menu-nativo-${{ runner.os }}-${{ hashFiles('cliente/Cargo.lock', 'cliente/vendor/**') }}
+          restore-keys: menu-nativo-${{ runner.os }}-
+
+      - name: Testes
+        working-directory: cliente
+        run: cargo test --locked --release
+
+      - name: Compilar (perfil dist)
+        working-directory: cliente
+        run: |
+          cargo build --locked --profile dist
+          ls -la target/dist/beni-menu
+          ./target/dist/beni-menu --versao
+          mkdir -p ../saida
+          cp target/dist/beni-menu ../saida/beni-menu-linux-x86_64
+          cd ../saida && sha256sum beni-menu-linux-x86_64 > beni-menu-linux-x86_64.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: beni-menu-linux-x86_64
+          path: saida/
+          if-no-files-found: error
+
+      - name: Anexar à Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            saida/beni-menu-linux-x86_64 saida/beni-menu-linux-x86_64.sha256 --clobber

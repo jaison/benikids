@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Beni</title>
+<style>html,body{margin:0;background:#fff;font-family:system-ui,sans-serif}</style>
+</head>
+<body>
+<script>
+// Aberto pelo menu nativo (beni-menu) para mostrar uma página do servidor no
+// navegador: área dos pais, site embutido ou biblioteca de mídia. Marca a aba
+// como "do menu nativo" (frontend/cliente-nativo.js usa isso para devolver a
+// tela ao menu quando a página voltaria para /index.html) e segue para a página.
+(function () {
+  var ir = new URLSearchParams(location.search).get('ir') || '/index.html?pais=1';
+  if (ir.charAt(0) !== '/' || ir.charAt(1) === '/' || ir.indexOf('\\') !== -1) ir = '/index.html?pais=1';
+  try { sessionStorage.setItem('beniCliente', '1'); } catch (e) {}
+  location.replace(ir);
+})();
+</script>
+</body>
+</html>

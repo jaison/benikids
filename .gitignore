@@ -8,3 +8,7 @@ __pycache__/
 *.pyc
 .test-artifacts/
 .claude/
+
+# Menu nativo (Rust): compilação local e binário baixado pelo atualizador
+cliente/target/
+cliente/bin/
