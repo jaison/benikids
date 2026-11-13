@@ -15,6 +15,7 @@ import sys
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(RAIZ, "src"))
 
+import catalogo_windows  # noqa: E402
 from config_validation import validate_stored_config  # noqa: E402
 
 
@@ -36,6 +37,9 @@ def main(saida):
     cfg["setupCompleted"] = False
     for perfil in cfg.get("profiles", []):
         perfil["tiles"] = [t for t in perfil.get("tiles", []) if portavel(t)]
+        # catálogo do Windows: todos ligados por padrão (os pais desligam)
+        ids_sites = {t["id"] for t in perfil["tiles"]}
+        perfil["tiles"] += [t for t in catalogo_windows.tiles() if t["id"] not in ids_sites]
         ids = {t["id"] for t in perfil["tiles"]}
         perfil["favorites"] = [i for i in perfil.get("favorites", []) if i in ids]
         for chave in ("appLimits", "appAvailability"):

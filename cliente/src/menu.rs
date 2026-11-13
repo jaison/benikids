@@ -701,6 +701,14 @@ impl Menu {
                     Ok(r) => {
                         log::warn!("abrir {}: o servidor respondeu {}", tile.id, r.status);
                         m.inicio = None;
+                        let faltando = r.json().is_some_and(|v| dados::texto(&v, "status") == "missing");
+                        let (titulo, texto) = if faltando {
+                            ("Ainda não instalado", "Peça para a mamãe ou o papai instalar este app.")
+                        } else {
+                            ("Não deu para abrir", "Tente de novo daqui a pouco.")
+                        };
+                        m.mostrar_mensagem(format!("{} {}", tile.emoji, titulo), texto.into());
+                        m.agendar_fechar_mensagem(cx);
                     }
                     Err(e) => {
                         log::warn!("abrir {}: {e}", tile.id);

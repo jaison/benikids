@@ -114,6 +114,13 @@ def main():
     except (OSError, ValueError, ImportError) as e:
         print(f"início automático: {e}")
 
+    # catálogo: jogos e programas livres (todos ligados; os pais desligam os que não quiserem)
+    if aviso("Instalar agora os jogos e programas do Benikids?\n\n"
+             "São apps livres para crianças (GCompris, Tux Paint, SuperTux, Scratch...). "
+             "Leva alguns minutos; alguns pedem a senha de um administrador do computador.",
+             estilo=0x24) == 6:
+        subprocess.run([pythonw, os.path.join(APP_ROOT, "instalar_apps.py")], cwd=APP_ROOT)
+
     texto = "O Benikids foi instalado.\n\nUse o ícone \"Benikids\" na área de trabalho. Ele também abre sozinho quando alguém entra neste usuário do Windows."
     texto += "\n\nAbrir agora?"
     if aviso(texto, estilo=0x44) == 6:  # Sim

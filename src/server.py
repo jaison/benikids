@@ -10,6 +10,7 @@ import threading
 import time
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import catalogo_windows
 import controles
 import inicio_automatico
 import site_logins
@@ -1211,6 +1212,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.json_response({
                 "shutdownAvailable": shutdown_ok,
                 "speechFeedbackAvailable": speech_feedback().available(),
+                "catalogInstallAvailable": os.name == "nt",
             })
         if self.path == "/api/browsers":
             return self.json_response(
@@ -1635,6 +1637,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 configVersion=data.get("configVersion", CURRENT_CONFIG_VERSION),
             )
             self.json_response({"status": "ok", "config": public_config(data)})
+            return
+        if action == "api/catalogo/instalar":
+            # Windows: instala os apps do catálogo que faltam (janela com o andamento)
+            if not self.require_admin():
+                return
+            if os.name != "nt":
+                self.json_response({"status": "error", "message": "Windows only"}, 404)
+                return
+            try:
+                subprocess.Popen(
+                    [sys.executable, os.path.join(APP_ROOT, "instalar_apps.py")],
+                    cwd=APP_ROOT, close_fds=True,
+                )
+            except OSError as exc:
+                self.json_response({"status": "error", "message": str(exc)}, 503)
+                return
+            self.json_response({"status": "ok"})
             return
         if action == "api/setup":
             body = self.read_json_body()
@@ -2139,6 +2158,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(204)
                 self.end_headers()
                 return
+            if clean[0].startswith(catalogo_windows.PREFIXO):
+                resolved = catalogo_windows.comando(clean)
+                if not resolved:
+                    reset_active_tile()
+                    log_runtime_event("launch.failed", level="warning", actionType="app", result="missing")
+                    self.json_response({"status": "missing", "message": "App not installed"}, 404)
+                    return
+                clean = resolved
             clean = direct_app_command(clean)
             try:
                 # The supervisor still launches argv directly and never invokes a shell.

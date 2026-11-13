@@ -1655,6 +1655,9 @@ install -m 0644 "$SRC_DIR/controles.py" "$APP_ROOT/controles.py"
 # Benikids: abrir ao entrar no computador e a tela de primeira configuração
 install -m 0644 "$SRC_DIR/inicio_automatico.py" "$APP_ROOT/inicio_automatico.py"
 install -m 0644 "$SRC_DIR/configurar.html" "$APP_ROOT/configurar.html"
+install -m 0644 "$SRC_DIR/catalogo_windows.py" "$APP_ROOT/catalogo_windows.py"
+install -d -m 0755 "$APP_ROOT/catalogo"
+install -m 0644 "$SRC_DIR/catalogo/windows.json" "$APP_ROOT/catalogo/windows.json"
 install -d -m 0755 "$APP_ROOT/sites"
 install -m 0644 "$SRC_DIR/sites/phet.html" "$APP_ROOT/sites/phet.html"
 render_template "$SRC_DIR/index.html" "$INDEX_FILE" 0644

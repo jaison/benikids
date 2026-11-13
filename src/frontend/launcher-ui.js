@@ -59,6 +59,8 @@ async function loadFeatures(){
       features=data;
       const shutdownBtn=document.getElementById('shutdownBtn');
       if(shutdownBtn) shutdownBtn.style.display=features.shutdownAvailable?'':'none';
+      const catalogRow=document.getElementById('catalogInstallRow');
+      if(catalogRow) catalogRow.hidden=!features.catalogInstallAvailable;
       announceFocusedTile();
     }
   }catch(e){}
@@ -429,3 +431,18 @@ function renderThemeChooser(){
     container.appendChild(el);
   }
 }
+
+// Benikids (Windows): instalar os apps do catálogo que faltam
+document.addEventListener('click',async event=>{
+  const button=event.target.closest&&event.target.closest('#catalogInstallBtn');
+  if(!button) return;
+  const msg=document.getElementById('catalogInstallMsg');
+  button.disabled=true;
+  try{
+    const r=await fetch('/api/catalogo/instalar',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(msg) msg.textContent=r.ok?'A janela de instalação foi aberta.':'Não deu para começar a instalação.';
+  }catch(e){
+    if(msg) msg.textContent='Não deu para começar a instalação.';
+  }
+  setTimeout(()=>{button.disabled=false;},5000);
+});
