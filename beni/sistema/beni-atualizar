@@ -64,7 +64,7 @@ def log(msg):
 
 
 def read_conf():
-    conf = {"USUARIO": "", "REPO": "jaison/beni-launcher", "JANELA_INICIO": "2", "JANELA_FIM": "5"}
+    conf = {"USUARIO": "", "REPO": "jaison/benikids", "JANELA_INICIO": "2", "JANELA_FIM": "5"}
     try:
         with open(CONF, encoding="utf-8") as handle:
             for raw in handle:

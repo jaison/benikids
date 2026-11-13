@@ -29,6 +29,11 @@ def main(saida):
     cfg = json.loads(texto)
     cfg["pinHash"] = ""
     cfg["browser"] = ""  # o primeiro que existir: Edge, Chrome, Firefox, Brave
+    # Uma criança-modelo (sites, limites, horários): a tela de primeira configuração
+    # (configurar.html) cria um perfil por criança a partir dela e pede o PIN.
+    cfg["profiles"] = cfg.get("profiles", [])[:1]
+    cfg["activeProfileId"] = cfg["profiles"][0]["id"]
+    cfg["setupCompleted"] = False
     for perfil in cfg.get("profiles", []):
         perfil["tiles"] = [t for t in perfil.get("tiles", []) if portavel(t)]
         ids = {t["id"] for t in perfil["tiles"]}

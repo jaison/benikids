@@ -37,6 +37,7 @@ _SAFE_EVENT_FIELDS = {
     "profile.created": set(),
     "profile.removed": set(),
     "profile.selected": set(),
+    "setup.completed": {"profiles"},
     "request.rejected": {"statusCode"},
     "server.crashed": {"exceptionType"},
     "site_login.finished": {"result", "exceptionType"},

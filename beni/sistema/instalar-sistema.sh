@@ -101,7 +101,7 @@ if [[ ! -f /etc/beni-launcher/atualizar.conf ]]; then
 # Usuário das crianças (onde o launcher está instalado)
 USUARIO=$USUARIO
 # Repositório do GitHub de onde vêm as Releases (tag vX.Y.Z)
-REPO=jaison/beni-launcher
+REPO=jaison/benikids
 # Notebook sempre ligado: versão não forçada é instalada nesta janela (horas)
 JANELA_INICIO=2
 JANELA_FIM=5

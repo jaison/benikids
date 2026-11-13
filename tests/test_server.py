@@ -1561,6 +1561,54 @@ class ServerApiTests(unittest.TestCase):
         self.assertFalse(removed_resume.exists())
         self.assertTrue((retained_resume / "position").is_file())
 
+    def test_first_setup_creates_children_profiles_and_parent_pin_once(self):
+        config = base_config()
+        config["setupCompleted"] = False
+        server_module.save_cfg(config)
+        status, body, _ = self.request("/api/setup", "POST", {
+            "children": [{"name": "  Lívia  ", "icon": "menina"}, {"name": "Beni", "icon": "menino"}],
+            "pin": "1234",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual([p["name"] for p in body["profiles"]], ["Lívia", "Beni"])
+        stored = server_module.load_stored_cfg()
+        self.assertTrue(stored["setupCompleted"])
+        self.assertTrue(server_module.verify_pin(stored["pinHash"], "1234"))
+        livia, beni = stored["profiles"]
+        self.assertEqual(stored["activeProfileId"], livia["id"])
+        self.assertEqual((livia["avatar"], livia["theme"], livia["title"]), ("👧", "gelo", "Oi, Lívia!"))
+        self.assertEqual((beni["avatar"], beni["theme"]), ("👦", "heroi"))
+        self.assertNotEqual(livia["id"], beni["id"])
+        self.assertEqual(livia["tiles"], beni["tiles"])
+        # depois de configurado (e com PIN), não aceita de novo
+        status, _, _ = self.request("/api/setup", "POST", {
+            "children": [{"name": "Outro", "icon": "menino"}], "pin": "9999",
+        })
+        self.assertEqual(status, 403)
+        self.assertTrue(server_module.verify_pin(server_module.load_stored_cfg()["pinHash"], "1234"))
+
+    def test_first_setup_validates_names_icons_and_pin(self):
+        config = base_config()
+        config["setupCompleted"] = False
+        server_module.save_cfg(config)
+        for children, pin in (
+            ([], "1234"),
+            ([{"name": "", "icon": "menina"}], "1234"),
+            ([{"name": "Ana", "icon": "dragão"}], "1234"),
+            ([{"name": "Ana", "icon": "menina"}], "12"),
+            ([{"name": "Ana", "icon": "menina"}], "abcd"),
+        ):
+            status, _, _ = self.request("/api/setup", "POST", {"children": children, "pin": pin})
+            self.assertEqual(status, 400, (children, pin))
+        self.assertFalse(server_module.load_stored_cfg()["setupCompleted"])
+
+    def test_first_setup_is_rejected_when_already_configured(self):
+        server_module.save_cfg(base_config())
+        status, _, _ = self.request("/api/setup", "POST", {
+            "children": [{"name": "Ana", "icon": "menina"}], "pin": "1234",
+        })
+        self.assertEqual(status, 403)
+
     def test_profile_api_rejects_deleting_the_active_profile(self):
         status, data, _ = self.request(
             "/api/profiles/delete",

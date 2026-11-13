@@ -223,10 +223,11 @@ impl Menu {
                 m.erro_inicio = false;
                 if primeira {
                     log::info!("menu: configuração carregada em {:?}", m.iniciado.elapsed());
-                    if !dados::verdade(&m.cfg, "setupCompleted") && m.cfg.get("setupCompleted").is_some() {
-                        // primeira vez: o assistente fica na área dos pais (web)
-                        m.abrir_web("/index.html?pais=1", cx);
-                    }
+                }
+                if !dados::verdade(&m.cfg, "setupCompleted") && m.cfg.get("setupCompleted").is_some() {
+                    // primeira vez: crianças e PIN dos pais (configurar.html, no navegador).
+                    // Enquanto não terminar, reabre (abrir_web ignora se já está aberto).
+                    m.abrir_web("/configurar.html", cx);
                 }
             }
             _ => {
@@ -1559,7 +1560,9 @@ impl Menu {
         };
         let bloqueados = self.bloqueados();
         let ultimo = self.ultimos.get(&self.perfil_id()).cloned().unwrap_or_default();
-        let mut grade = div().flex().flex_wrap().gap(p.z(gap)).w(p.z(1180.));
+        // folga de alguns px: com a escala (ex.: 2560×1080 → 1,406) o arredondamento
+        // da largura dos cartões passava de 1180 e a 3ª coluna quebrava de linha
+        let mut grade = div().flex().flex_wrap().gap(p.z(gap)).w(p.z(1180.) + px(6.));
         for i in 0..self.por_pagina() {
             let Some(tile) = tiles.get(i) else {
                 grade = grade.child(div().w(p.z(largura)).h(p.z(altura)));

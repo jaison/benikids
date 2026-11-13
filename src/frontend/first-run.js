@@ -13,6 +13,11 @@ function firstRunText(){
 
 function maybeOpenFirstRun(){
   const overlay=document.getElementById('firstRunOverlay');
+  if(cfg&&cfg.setupCompleted===false&&!cfg.pinConfigured){
+    // Benikids: a primeira configuração (crianças + PIN dos pais) é configurar.html
+    location.replace('/configurar.html');
+    return;
+  }
   if(!cfg||cfg.setupCompleted!==false){
     overlay.classList.add('hidden');
     return;

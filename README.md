@@ -231,7 +231,7 @@ Em Mint Cinnamon/MATE quase tudo funciona, mas os ajustes de barra e bloqueio s�
 1. Instale o **Linux Mint XFCE**, crie o usuário e ative o **login automático**.
 2. Baixe este repositório e rode o instalador **como o usuário da criança**, sem `sudo` (ele pede a senha quando precisa):
    ```bash
-   git clone https://github.com/jaison/beni-launcher.git
+   git clone https://github.com/jaison/benikids.git
    cd beni-launcher
    ./instalar.sh
    ```

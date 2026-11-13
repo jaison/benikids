@@ -46,6 +46,7 @@ from config_validation import (
 )
 from profile_config import (
     active_config,
+    active_profile,
     add_profile,
     merge_active_config,
     profile_summaries,
@@ -147,11 +148,11 @@ UPDATE_SCRIPT = os.path.join(APP_ROOT, "update.sh")
 UPDATE_CHANNEL_FILE = os.path.join(APP_ROOT, "update-channel")
 LATEST_RELEASE_API = os.environ.get(
     "COZY_KIDS_RELEASE_API_URL",
-    "https://api.github.com/repos/jaison/beni-launcher/releases/latest",
+    "https://api.github.com/repos/jaison/benikids/releases/latest",
 )
 LEGACY_RAW_URL = os.environ.get(
     "COZY_KIDS_RAW_URL",
-    "https://raw.githubusercontent.com/jaison/beni-launcher/main",
+    "https://raw.githubusercontent.com/jaison/benikids/main",
 ).rstrip("/")
 LEGACY_VERSION_URL = f"{LEGACY_RAW_URL}/VERSION"
 CFG = os.path.join(HOME, ".config", "cozy-kids-launcher", "config.json")
@@ -959,6 +960,51 @@ def timer_status(cfg):
     return calculate_timer_status(load_timer(), cfg, now=time.time())
 
 
+# Primeira configuração (configurar.html): crianças (nome + menino/menina) e o
+# PIN dos pais. Só vale enquanto setupCompleted é false e ainda não há PIN.
+SETUP_ICONES = {
+    "menino": {"avatar": "👦", "theme": "heroi"},
+    "menina": {"avatar": "👧", "theme": "gelo"},
+}
+SETUP_MAX_CRIANCAS = 8
+
+
+def first_setup_config(stored, children, pin):
+    """Perfis novos a partir do perfil-modelo (tiles, limites, horários) + PIN."""
+    if stored.get("setupCompleted") is not False or stored.get("pinHash"):
+        raise PermissionError("Setup already completed")
+    if not isinstance(children, list) or not 1 <= len(children) <= SETUP_MAX_CRIANCAS:
+        raise ValueError(f"Informe de 1 a {SETUP_MAX_CRIANCAS} crianças")
+    modelo = active_profile(stored)
+    perfis = []
+    for indice, crianca in enumerate(children):
+        if not isinstance(crianca, dict):
+            raise ValueError("Criança inválida")
+        nome = " ".join(str(crianca.get("name", "")).split())[:40]
+        icone = SETUP_ICONES.get(crianca.get("icon"))
+        if not nome:
+            raise ValueError("Digite o nome de cada criança")
+        if icone is None:
+            raise ValueError("Escolha menino ou menina")
+        perfil = json.loads(json.dumps(modelo))
+        perfil["id"] = modelo["id"] if indice == 0 else f"child-{os.urandom(6).hex()}"
+        perfil.update(
+            name=nome,
+            avatar=icone["avatar"],
+            title=f"Oi, {nome}!",
+            theme=icone["theme"],
+            currentPage=0,
+            favorites=[],
+        )
+        perfis.append(perfil)
+    resultado = json.loads(json.dumps(stored))
+    resultado["profiles"] = perfis
+    resultado["activeProfileId"] = perfis[0]["id"]
+    resultado["pinHash"] = hash_pin(pin if isinstance(pin, str) else "")
+    resultado["setupCompleted"] = True
+    return resultado
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     server_version = "CozyKidsLauncher"
     sys_version = ""
@@ -1585,6 +1631,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 configVersion=data.get("configVersion", CURRENT_CONFIG_VERSION),
             )
             self.json_response({"status": "ok", "config": public_config(data)})
+            return
+        if action == "api/setup":
+            body = self.read_json_body()
+            if body is None:
+                return
+            try:
+                stored = first_setup_config(
+                    load_stored_cfg(), body.get("children"), body.get("pin", ""),
+                )
+                stored = save_stored_cfg(stored)
+                clear_timer()
+            except PermissionError:
+                self.json_response({"status": "error", "message": "Setup already completed"}, 403)
+                return
+            except (OSError, ValueError) as exc:
+                self.json_response({"status": "error", "message": str(exc)}, 400)
+                return
+            clear_admin_sessions()
+            log_runtime_event("setup.completed", profiles=len(stored["profiles"]))
+            self.json_response({"status": "ok", "profiles": profile_summaries(stored)})
             return
         if action == "api/verify-pin":
             if pin_attempt_blocked():
