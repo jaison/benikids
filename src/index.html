@@ -246,6 +246,12 @@
                 <label class="admin-field-label" for="cfgProfileAvatar"><span id="profileAvatarLabel"></span>
                   <input id="cfgProfileAvatar" maxlength="16">
                 </label>
+                <label class="admin-field-label" for="cfgBirthMonth"><span>Nascimento (mês e ano)</span>
+                  <input id="cfgBirthMonth" type="month" min="2000-01">
+                </label>
+                <label class="admin-field-label" for="cfgGender"><span>Menino ou menina</span>
+                  <select id="cfgGender"><option value="">Não informar</option><option value="menino">Menino</option><option value="menina">Menina</option></select>
+                </label>
                 <label class="admin-field-label" for="cfgTitle"><span id="profileLauncherTitleLabel"></span>
                   <input id="cfgTitle" placeholder="Título" oninput="renderAppearancePreview()">
                 </label>
@@ -495,7 +501,12 @@
               <input id="cfgTelemetry" type="checkbox">
               <span>Ajudar o Benikids enviando, uma vez por dia, informações anônimas sobre este computador (sistema, processador, memória, placa de vídeo, tela). Nada sobre as crianças.</span>
             </label>
-            <p class="muted" style="margin:4px 0 0;"><a href="#" id="telemetryPreviewLink">Ver exatamente o que é enviado</a></p>
+            <label class="chk" for="cfgUsageTelemetry" style="margin-top:8px;">
+              <input id="cfgUsageTelemetry" type="checkbox">
+              <span>Compartilhar, de forma anônima, quais apps cada criança usa e por quanto tempo (número aleatório por criança, faixa de idade, menino ou menina; nunca o nome). Ajuda a escolher os apps do catálogo.</span>
+            </label>
+            <p class="muted" style="margin:4px 0 0;"><a href="#" id="telemetryPreviewLink">Ver exatamente o que é enviado</a>
+              · <a href="#" id="telemetryDeleteLink">Apagar os dados já enviados</a></p>
             <pre id="telemetryPreview" class="muted" style="white-space:pre-wrap;font-size:.85rem;" hidden></pre>
             <div id="catalogInstallRow" style="margin-top:8px;" hidden>
               <button type="button" class="smallbtn" id="catalogInstallBtn">Instalar jogos e programas que faltam</button>

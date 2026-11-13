@@ -144,9 +144,23 @@ def _validate_flat_config(data, existing_pin_hash="", allow_pin_hash=False):
         "choiceScreenEnabled",
         "startOnLogin",
         "telemetryEnabled",
+        "usageTelemetryEnabled",
     ):
         if field in result and not isinstance(result[field], bool):
             raise ValueError(f"{field} must be a boolean")
+
+    # Benikids: nascimento (só mês/ano, fica no computador), menino/menina e o número
+    # aleatório da criança na telemetria de uso; vazio/None = não informado
+    for field, padrao in (
+        ("birthMonth", r"(19|20)\d\d-(0[1-9]|1[0-2])"),
+        ("gender", r"menino|menina"),
+        ("telemetryId", r"[0-9a-f]{32}"),
+    ):
+        if field in result:
+            if result[field] in ("", None):
+                result.pop(field)
+            elif not isinstance(result[field], str) or not re.fullmatch(padrao, result[field]):
+                raise ValueError(f"{field} is invalid")
 
     if "customColors" in result:
         colors = result["customColors"]

@@ -18,9 +18,23 @@ What is sent (`src/telemetria.py`, `dados()`):
 - CPU model, total RAM in GB, graphics card name(s), screen resolution, OS language;
 - whether the kids' menu is the native one or the browser one.
 
-Nothing about the children, their profiles, apps used, screen time, names, files or
-logins is sent. The receiver (`telemetria/`, a Cloudflare Worker with a D1 database)
-stores one row per installation ID and does not store IP addresses or request headers.
+This device report carries nothing about the children. The receiver (`telemetria/`,
+a Cloudflare Worker with a D1 database at `telemetria.benikids.app`) does not store IP
+addresses or request headers.
+
+**Problem reports** (same switch): when the installer, a catalog app install, the native
+menu or an app launch fails, the error code and the end of the relevant log are queued
+and sent. Before leaving the computer the text is cleaned: the user folder and user name
+become `%USERPROFILE%`/`<usuario>` and e-mail addresses become `<email>`.
+
+**Children's usage report** (separate switch, **off unless a parent turns it on**, in the
+first-run setup and in Parents → System): per child, a random ID (not the name or the
+profile ID), the age band computed locally from the birth month/year (the date itself
+never leaves the computer), boy/girl, and minutes per app and per category for each
+finished day. Only days from the moment it was turned on are sent. Usage is deleted
+after 12 months and problem reports after 6 months. "Apagar os dados já enviados" in
+Parents → System asks the receiver to delete everything this installation and its
+children sent.
 
 ## Local-first
 

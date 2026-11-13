@@ -125,7 +125,7 @@ from schedule_rules import (
     availability_summary as schedule_availability_summary,
     tile_availability as schedule_tile_availability,
 )
-from usage_limits import UsageTracker, tile_category as usage_tile_category
+from usage_limits import UsageTracker, load_usage, tile_category as usage_tile_category
 from speech_feedback import SpeechFeedback
 from timer_state import (
     clear_timer as remove_timer_state,
@@ -368,6 +368,10 @@ def save_stored_cfg(data):
         existing_pin_hash=data.get("pinHash", ""),
         allow_pin_hash=True,
     )
+    for perfil in validated.get("profiles", []):
+        # número aleatório da criança no relatório de uso (perfis criados depois do cadastro)
+        if not perfil.get("telemetryId"):
+            perfil["telemetryId"] = os.urandom(16).hex()
     atomic_write_config(CFG, validated)
     return validated
 
@@ -990,7 +994,7 @@ SETUP_ICONES = {
 SETUP_MAX_CRIANCAS = 8
 
 
-def first_setup_config(stored, children, pin, start_on_login=True, telemetry=True):
+def first_setup_config(stored, children, pin, start_on_login=True, telemetry=True, usage_telemetry=False):
     """Perfis novos a partir do perfil-modelo (tiles, limites, horários) + PIN."""
     if stored.get("setupCompleted") is not False or stored.get("pinHash"):
         raise PermissionError("Setup already completed")
@@ -1007,6 +1011,11 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
             raise ValueError("Digite o nome de cada criança")
         if icone is None:
             raise ValueError("Escolha menino ou menina")
+        nascimento = crianca.get("birthMonth")
+        if nascimento is not None and (
+            not isinstance(nascimento, str) or not re.fullmatch(r"(19|20)\d\d-(0[1-9]|1[0-2])", nascimento)
+        ):
+            raise ValueError("Mês/ano de nascimento inválido")
         perfil = json.loads(json.dumps(modelo))
         perfil["id"] = modelo["id"] if indice == 0 else f"child-{os.urandom(6).hex()}"
         perfil.update(
@@ -1016,7 +1025,13 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
             theme=icone["theme"],
             currentPage=0,
             favorites=[],
+            gender=crianca.get("icon"),
+            telemetryId=os.urandom(16).hex(),
         )
+        if nascimento:
+            perfil["birthMonth"] = nascimento
+        else:
+            perfil.pop("birthMonth", None)
         perfis.append(perfil)
     resultado = json.loads(json.dumps(stored))
     resultado["profiles"] = perfis
@@ -1025,6 +1040,7 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
     resultado["setupCompleted"] = True
     resultado["startOnLogin"] = start_on_login is not False
     resultado["telemetryEnabled"] = telemetry is not False
+    resultado["usageTelemetryEnabled"] = usage_telemetry is True
     return resultado
 
 
@@ -1046,7 +1062,10 @@ _TELEMETRIA = []
 
 def telemetria_service():
     if not _TELEMETRIA:
-        _TELEMETRIA.append(telemetria.Telemetria(TELEMETRIA_FILE, load_stored_cfg, get_version, tipo_de_menu))
+        _TELEMETRIA.append(telemetria.Telemetria(
+            TELEMETRIA_FILE, load_stored_cfg, get_version, tipo_de_menu,
+            ler_historico=lambda: load_usage(USAGE_FILE).get("history", {}),
+        ))
     return _TELEMETRIA[0]
 
 
@@ -1171,7 +1190,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if request_url.path == "/api/telemetria/previa":
             if not self.require_admin():
                 return
-            return self.json_response(telemetria_service().previa())
+            servico = telemetria_service()
+            return self.json_response({"computador": servico.previa(), "uso_das_criancas": servico.previa_uso()})
         if request_url.path in ("/", "/index.html"):
             try:
                 cfg = load_cfg()
@@ -1702,6 +1722,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             self.json_response({"status": "ok"})
             return
+        if action == "api/telemetria/apagar":
+            if not self.require_admin():
+                return
+            ok = telemetria_service().apagar_dados_enviados(load_stored_cfg())
+            log_runtime_event("telemetria.apagar", result="ok" if ok else "failed")
+            self.json_response({"status": "ok" if ok else "error"}, 200 if ok else 503)
+            return
         if action == "api/setup":
             body = self.read_json_body()
             if body is None:
@@ -1711,6 +1738,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     load_stored_cfg(), body.get("children"), body.get("pin", ""),
                     body.get("startOnLogin", True),
                     body.get("telemetry", True),
+                    body.get("usageTelemetry", False),
                 )
                 stored = save_stored_cfg(stored)
                 clear_timer()
@@ -2239,6 +2267,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if app_fechou_sozinho(supervisor):
                 reset_active_tile()
                 log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
+                telemetria.relatar_problema(
+                    "app.fechou_sozinho", f"tile={tile_id} cmd={clean}", assinatura=f"app.fechou_sozinho:{tile_id}"
+                )
                 self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
                 return
 

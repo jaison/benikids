@@ -35,6 +35,9 @@ PROFILE_FIELDS = (
     "appAvailability",
     "categoryLimits",
     "choiceScreenEnabled",
+    "birthMonth",
+    "gender",
+    "telemetryId",
 )
 
 

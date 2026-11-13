@@ -196,6 +196,8 @@ async function saveConfig(){
   renderUiState(message,'loading',uiText.saveLoading);
   cfg.title=document.getElementById('cfgTitle').value;
   cfg.name=document.getElementById('cfgProfileName').value.trim();
+  cfg.birthMonth=document.getElementById('cfgBirthMonth').value||'';
+  cfg.gender=document.getElementById('cfgGender').value||'';
   cfg.avatar=document.getElementById('cfgProfileAvatar').value.trim();
   cfg.theme=document.getElementById('cfgTheme').value;
   cfg.themeMotionEnabled=document.getElementById('cfgThemeMotionEnabled').checked;
@@ -204,6 +206,7 @@ async function saveConfig(){
   cfg.speechFeedbackEnabled=document.getElementById('cfgSpeechFeedbackEnabled').checked;
   cfg.startOnLogin=document.getElementById('cfgStartOnLogin').checked;
   cfg.telemetryEnabled=document.getElementById('cfgTelemetry').checked;
+  cfg.usageTelemetryEnabled=document.getElementById('cfgUsageTelemetry').checked;
   cfg.celebrationEnabled=document.getElementById('cfgCelebrationEnabled').checked;
   cfg.accessibilityLargeText=document.getElementById('cfgAccessibilityLargeText').checked;
   cfg.accessibilityHighContrast=document.getElementById('cfgAccessibilityHighContrast').checked;

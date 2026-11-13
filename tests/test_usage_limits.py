@@ -314,6 +314,18 @@ class UsageHistoryTest(unittest.TestCase):
         self.assertEqual(cats_of(status)["jogos"]["minutes"], 15)
         self.assertEqual(tracker.usage["history"]["default"]["2026-10-18"]["categories"]["jogos"], 1200)
 
+    def test_minutes_per_app_go_to_history(self):
+        tracker = self.tracker()
+        self.play(tracker, "luanti", "jogos", 10 * 60)
+        self.play(tracker, "gcompris", "educativo", 5 * 60)
+        self.play(tracker, "luanti", "jogos", 2 * 60)
+        self.now = at(2026, 10, 19, 9)
+        tracker.status("default", self.profile)
+        dia = tracker.usage["history"]["default"]["2026-10-18"]
+        self.assertEqual(dia["tiles"], {"luanti": 720, "gcompris": 300})
+        # e sobrevive a reabrir o arquivo
+        self.assertEqual(self.tracker().usage["history"]["default"]["2026-10-18"]["tiles"]["luanti"], 720)
+
     def test_history_survives_restart_and_old_file(self):
         tracker = self.tracker()
         self.play(tracker, "khan", "educativo", 20 * 60)

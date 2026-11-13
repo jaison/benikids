@@ -19,13 +19,129 @@ import threading
 import time
 import urllib.request
 
-ENDERECO = os.environ.get("BENIKIDS_TELEMETRIA_URL", "https://benikids-telemetria.PREENCHER.workers.dev/v1/ping")
+BASE = os.environ.get("BENIKIDS_TELEMETRIA_URL", "https://telemetria.benikids.app").rstrip("/")
+ENDERECO = BASE + "/v1/ping"
+ENDERECO_USO = BASE + "/v1/uso"
+ENDERECO_PROBLEMA = BASE + "/v1/problema"
+ENDERECO_APAGAR = BASE + "/v1/apagar"
+FILA_PROBLEMAS = os.path.join(os.path.expanduser("~"), ".config", "cozy-kids-launcher", "problemas-pendentes.jsonl")
 INTERVALO = 24 * 3600
 SEM_CONSOLE = 0x08000000 if os.name == "nt" else 0
 
 
 def ligada(cfg):
     return cfg.get("telemetryEnabled", True) is not False
+
+
+def uso_ligado(cfg):
+    """Relatório de uso por criança: só com a caixinha marcada pelos pais (padrão desligado)."""
+    return cfg.get("usageTelemetryEnabled", False) is True
+
+
+# ------------------------------------------------------------------ relatório de uso
+
+
+FAIXAS = ((0, 3, "0-3"), (4, 5, "4-5"), (6, 7, "6-7"), (8, 10, "8-10"), (11, 13, "11-13"))
+
+
+def faixa_etaria(nascimento, dia):
+    """"AAAA-MM" + "AAAA-MM-DD" → faixa ("6-7"); a data em si nunca sai do computador."""
+    try:
+        ano, mes = (int(x) for x in nascimento.split("-"))
+        dia_ano, dia_mes = (int(x) for x in dia.split("-")[:2])
+    except (AttributeError, ValueError):
+        return None
+    idade = dia_ano - ano - (1 if dia_mes < mes else 0)
+    if idade < 0:
+        return None
+    for minimo, maximo, nome in FAIXAS:
+        if minimo <= idade <= maximo:
+            return nome
+    return "14+"
+
+
+def relatorio_de_uso(cfg, historico, depois_de=""):
+    """Dias fechados do histórico (perfil → dia → {totalSeconds, categories, tiles}) em
+    formato anônimo: número aleatório da criança, faixa de idade, menino/menina, minutos."""
+    dias = []
+    for perfil in cfg.get("profiles", []):
+        id_crianca = perfil.get("telemetryId")
+        if not id_crianca:
+            continue
+        tiles = {t.get("id"): t for t in perfil.get("tiles", []) if isinstance(t, dict)}
+        for dia, entrada in sorted((historico.get(perfil.get("id")) or {}).items()):
+            if dia <= depois_de:
+                continue
+            apps = []
+            for tile_id, segundos in sorted((entrada.get("tiles") or {}).items()):
+                minutos = round(segundos / 60)
+                if minutos < 1:
+                    continue
+                tile = tiles.get(tile_id, {})
+                apps.append({"app": tile_id, "nome": str(tile.get("label", ""))[:60],
+                             "categoria": tile.get("category") or "", "minutos": minutos})
+            dias.append({
+                "crianca": id_crianca,
+                "faixa": faixa_etaria(perfil.get("birthMonth"), dia),
+                "genero": perfil.get("gender"),
+                "dia": dia,
+                "minutos": round(float(entrada.get("totalSeconds", 0)) / 60),
+                "categorias": {k: round(v / 60) for k, v in (entrada.get("categories") or {}).items()},
+                "apps": apps,
+            })
+    return dias
+
+
+# ------------------------------------------------------------------ relatórios de problema
+
+
+def limpar(texto, limite=4000):
+    """Tira do texto o que identifica a família: pasta e nome do usuário, e-mails."""
+    texto = str(texto)
+    casa = os.path.expanduser("~")
+    usuario = os.environ.get("USERNAME") or os.environ.get("USER") or os.path.basename(casa)
+    for alvo, troca in ((casa, "%USERPROFILE%"), (casa.replace("\\", "/"), "%USERPROFILE%")):
+        if alvo and len(alvo) > 3:
+            texto = re.sub(re.escape(alvo), troca, texto, flags=re.I)
+    if usuario and len(usuario) > 1:
+        texto = re.sub(re.escape(usuario), "<usuario>", texto, flags=re.I)
+    texto = re.sub(r"[\w.+-]+@[\w-]+\.[\w.-]+", "<email>", texto)
+    return texto[-limite:]
+
+
+def relatar_problema(etapa, detalhe, assinatura=None, fila=None):
+    """Guarda um problema para o servidor enviar (se a telemetria estiver ligada).
+    Pode ser chamado de qualquer processo: instalador, iniciador, servidor."""
+    item = {
+        "etapa": str(etapa)[:60],
+        "assinatura": str(assinatura or etapa)[:120],
+        "detalhe": limpar(detalhe),
+        "quando": time.strftime("%Y-%m-%d"),
+    }
+    fila = fila or FILA_PROBLEMAS
+    try:
+        os.makedirs(os.path.dirname(fila), exist_ok=True)
+        with open(fila, "a", encoding="utf-8") as f:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def tirar_da_fila(fila=None, maximo=20):
+    fila = fila or FILA_PROBLEMAS
+    try:
+        with open(fila, encoding="utf-8") as f:
+            linhas = f.readlines()
+        os.remove(fila)
+    except OSError:
+        return []
+    itens = []
+    for linha in linhas[-maximo:]:
+        try:
+            itens.append(json.loads(linha))
+        except ValueError:
+            pass
+    return itens
 
 
 # ------------------------------------------------------------------ estado local
@@ -211,13 +327,16 @@ def enviar(corpo, endereco=ENDERECO, timeout=15):
 class Telemetria:
     """Envia uma vez por dia, numa thread de fundo, enquanto a config deixar."""
 
-    def __init__(self, caminho_estado, ler_config, versao, menu, enviar=enviar, agora=time.time):
+    def __init__(self, caminho_estado, ler_config, versao, menu, enviar=enviar, agora=time.time,
+                 ler_historico=lambda: {}, fila=None):
         self.caminho = caminho_estado
         self.ler_config = ler_config
         self.versao = versao
         self.menu = menu
         self._enviar = enviar
         self._agora = agora
+        self.ler_historico = ler_historico
+        self.fila = fila
         self._parar = threading.Event()
 
     def id(self):
@@ -229,8 +348,81 @@ class Telemetria:
     def previa(self):
         return dados(self.id(), self.versao(), self.menu())
 
+    def previa_uso(self):
+        try:
+            return relatorio_de_uso(self.ler_config(), self.ler_historico(),
+                                    ler_estado(self.caminho).get("uso_ate", ""))
+        except Exception:  # noqa: BLE001
+            return []
+
+    def enviar_problemas(self):
+        """Manda os problemas da fila (só com a telemetria ligada; senão, descarta)."""
+        itens = tirar_da_fila(self.fila)
+        if not itens:
+            return 0
+        try:
+            cfg = self.ler_config()
+        except Exception:  # noqa: BLE001
+            cfg = {}
+        if not ligada(cfg):
+            return 0
+        estado = ler_estado(self.caminho)
+        base = {"id": estado["id"], "versao": self.versao() or None,
+                "plataforma": "windows" if os.name == "nt" else "linux", "sistema": sistema()}
+        enviados = 0
+        for item in itens:
+            if self._enviar(dict(base, **item), ENDERECO_PROBLEMA):
+                enviados += 1
+            else:
+                relatar_problema(item.get("etapa"), item.get("detalhe"), item.get("assinatura"), self.fila)
+        return enviados
+
+    def enviar_uso(self):
+        """Manda os dias fechados de uso ainda não enviados (só com a caixinha marcada)."""
+        try:
+            cfg = self.ler_config()
+        except Exception:  # noqa: BLE001
+            return False
+        estado = ler_estado(self.caminho)
+        if not uso_ligado(cfg):
+            if estado.pop("uso_desde", None):  # desligou: se ligar de novo, conta a partir dali
+                gravar_estado(self.caminho, estado)
+            return False
+        if not estado.get("uso_desde"):
+            # só vai o uso a partir do dia em que os pais ligaram, nunca o que veio antes
+            estado["uso_desde"] = time.strftime("%Y-%m-%d", time.localtime(self._agora()))
+            gravar_estado(self.caminho, estado)
+            return False
+        desde = estado["uso_desde"]
+        dias = [d for d in relatorio_de_uso(cfg, self.ler_historico(), estado.get("uso_ate", ""))
+                if d["dia"] >= desde]
+        if not dias:
+            return False
+        if not self._enviar({"dias": dias}, ENDERECO_USO):
+            return False
+        estado["uso_ate"] = max(d["dia"] for d in dias)
+        try:
+            gravar_estado(self.caminho, estado)
+        except OSError:
+            pass
+        return True
+
+    def apagar_dados_enviados(self, cfg):
+        """Pede ao servidor para apagar o uso das crianças e o registro deste computador."""
+        estado = ler_estado(self.caminho)
+        criancas = [p["telemetryId"] for p in cfg.get("profiles", []) if p.get("telemetryId")]
+        return self._enviar({"id": estado["id"], "criancas": criancas}, ENDERECO_APAGAR)
+
     def talvez_enviar(self):
         """Envia se a config deixa e já passou um dia. Devolve True se enviou."""
+        try:
+            self.enviar_problemas()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.enviar_uso()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             if not ligada(self.ler_config()):
                 return False

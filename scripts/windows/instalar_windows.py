@@ -135,4 +135,12 @@ if __name__ == "__main__":
         import traceback
 
         aviso("Não deu para instalar o Benikids.\n\n" + traceback.format_exc()[-1500:], estilo=0x10)
+        try:
+            sys.path.insert(0, os.path.join(PACOTE, "app"))
+            import telemetria
+
+            telemetria.relatar_problema("instalar_benikids", traceback.format_exc(),
+                                        assinatura="instalar_benikids:" + type(sys.exc_info()[1]).__name__)
+        except Exception:  # noqa: BLE001
+            pass
         sys.exit(1)

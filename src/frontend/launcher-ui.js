@@ -458,3 +458,15 @@ document.addEventListener('click', async ev => {
   } catch (e) { pre.textContent = 'Não deu para montar a prévia agora.'; }
   pre.hidden = false;
 });
+
+document.addEventListener('click', async ev => {
+  if (!ev.target || ev.target.id !== 'telemetryDeleteLink') return;
+  ev.preventDefault();
+  if (!confirm('Pedir para apagar tudo o que este computador já enviou (computador e uso das crianças)?')) return;
+  const pre = document.getElementById('telemetryPreview');
+  try {
+    const r = await fetch('/api/telemetria/apagar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    pre.textContent = r.ok ? 'Pedido enviado: os dados enviados por este computador serão apagados.' : 'Não deu para enviar o pedido agora (sem internet?). Tente de novo depois.';
+  } catch (e) { pre.textContent = 'Não deu para enviar o pedido agora. Tente de novo depois.'; }
+  pre.hidden = false;
+});

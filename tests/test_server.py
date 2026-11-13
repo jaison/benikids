@@ -1567,7 +1567,8 @@ class ServerApiTests(unittest.TestCase):
         config["setupCompleted"] = False
         server_module.save_cfg(config)
         status, body, _ = self.request("/api/setup", "POST", {
-            "children": [{"name": "  Lívia  ", "icon": "menina"}, {"name": "Beni", "icon": "menino"}],
+            "children": [{"name": "  Lívia  ", "icon": "menina", "birthMonth": "2018-05"},
+                         {"name": "Beni", "icon": "menino"}],
             "pin": "1234",
         })
         self.assertEqual(status, 200)
@@ -1581,12 +1582,27 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual((beni["avatar"], beni["theme"]), ("👦", "heroi"))
         self.assertNotEqual(livia["id"], beni["id"])
         self.assertEqual(livia["tiles"], beni["tiles"])
+        self.assertEqual((livia["birthMonth"], livia["gender"], beni["gender"]), ("2018-05", "menina", "menino"))
+        self.assertNotIn("birthMonth", beni)
+        self.assertRegex(livia["telemetryId"], r"^[0-9a-f]{32}$")
+        self.assertNotEqual(livia["telemetryId"], beni["telemetryId"])
+        self.assertTrue(stored["telemetryEnabled"])
+        self.assertFalse(stored["usageTelemetryEnabled"])  # uso por criança: só se os pais marcarem
         # depois de configurado (e com PIN), não aceita de novo
         status, _, _ = self.request("/api/setup", "POST", {
             "children": [{"name": "Outro", "icon": "menino"}], "pin": "9999",
         })
         self.assertEqual(status, 403)
         self.assertTrue(server_module.verify_pin(server_module.load_stored_cfg()["pinHash"], "1234"))
+
+    def test_first_setup_rejects_an_invalid_birth_month(self):
+        config = base_config()
+        config["setupCompleted"] = False
+        server_module.save_cfg(config)
+        status, _, _ = self.request("/api/setup", "POST", {
+            "children": [{"name": "Ana", "icon": "menina", "birthMonth": "2018-13"}], "pin": "1234",
+        })
+        self.assertEqual(status, 400)
 
     def test_windows_reports_an_app_that_closes_right_away(self):
         import subprocess as sp

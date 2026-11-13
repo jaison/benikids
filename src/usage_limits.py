@@ -276,7 +276,7 @@ def _clean_entry(entry):
     cats = entry.get("categories", {})
     if isinstance(total, bool) or not isinstance(total, (int, float)) or not isinstance(cats, dict):
         return None
-    return {
+    limpo = {
         "totalSeconds": max(0.0, float(total)),
         "categories": {
             str(k): max(0.0, float(v))
@@ -284,6 +284,15 @@ def _clean_entry(entry):
             if isinstance(v, (int, float)) and not isinstance(v, bool)
         },
     }
+    # Benikids: segundos por app (tile), para o relatório de uso
+    tiles = entry.get("tiles")
+    if isinstance(tiles, dict):
+        limpo["tiles"] = {
+            str(k)[:80]: max(0.0, float(v))
+            for k, v in tiles.items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+    return limpo
 
 
 def _valid_day(value):
@@ -309,10 +318,13 @@ def archive_day(history, day, profiles, today):
     if _valid_day(day) and day < today:
         for profile_id, entry in profiles.items():
             if entry.get("totalSeconds", 0) > 0:
-                history.setdefault(profile_id, {})[day] = {
+                arquivado = {
                     "totalSeconds": round(entry["totalSeconds"], 1),
                     "categories": {k: round(v, 1) for k, v in entry.get("categories", {}).items()},
                 }
+                if entry.get("tiles"):
+                    arquivado["tiles"] = {k: round(v, 1) for k, v in entry["tiles"].items()}
+                history.setdefault(profile_id, {})[day] = arquivado
     return _prune_history(history, today)
 
 
@@ -718,6 +730,10 @@ class UsageTracker:
                 category = self.active.get("category")
                 if category:
                     entry["categories"][category] = entry["categories"].get(category, 0.0) + delta
+                tile_id = self.active.get("tileId")
+                if tile_id:
+                    tiles = entry.setdefault("tiles", {})
+                    tiles[tile_id] = tiles.get(tile_id, 0.0) + delta
                 self.dirty = True
         self.last_tick = now if self.active else None
 

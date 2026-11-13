@@ -258,6 +258,31 @@ def instalar_como_admin(pares, pasta, ao_terminar_app=None):
     return ler_resultados(resultados)
 
 
+def relatar_falha(item, codigo, pasta):
+    """Relatório de problema (vai só com a telemetria ligada): o código e o fim do log."""
+    log = os.path.join(pasta, "logs", f"{item['id']}.log")
+    fim = ""
+    try:
+        with open(log, encoding="utf-16", errors="replace") as f:  # o msiexec grava em UTF-16
+            fim = f.read()[-3000:]
+    except (OSError, UnicodeError):
+        try:
+            with open(log, encoding="utf-8", errors="replace") as f:
+                fim = f.read()[-3000:]
+        except OSError:
+            pass
+    try:
+        import telemetria
+
+        telemetria.relatar_problema(
+            "instalar_app",
+            f"app={item['id']} winget={item.get('winget')} tipo={item.get('instalador', '')} código={codigo}\n{fim}",
+            assinatura=f"instalar_app:{item['id']}:{codigo}",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def pasta_dos_instaladores():
     return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Benikids", "instaladores")
 
@@ -341,6 +366,8 @@ def trabalhar(itens, avisos, pasta=None):
         def terminou(item_id, codigo):
             ok = bool(catalogo_windows.localizar(por_id[item_id]))
             avisos.put((item_id, "ok" if ok else "erro", "instalado" if ok else f"não instalou (código {codigo})"))
+            if not ok:
+                relatar_falha(por_id[item_id], codigo, pasta)
 
         codigos = instalar_como_admin(pares, pasta, terminou)
         if "fim" not in codigos and not any(i in codigos for i in por_id):

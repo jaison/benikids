@@ -20,6 +20,7 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_ROOT)
 
 import plataforma_windows as win  # noqa: E402
+import telemetria  # noqa: E402
 from app_detection import browser_family, find_browser  # noqa: E402
 from process_state import (  # noqa: E402
     remove_process_record,
@@ -118,6 +119,17 @@ def navegador():
     except (OSError, ValueError):
         cfg = {}
     return find_browser(cfg)
+
+
+def relatar_menu(codigo):
+    """O menu nativo não ficou de pé: guarda o fim do log dele para o relatório de problema."""
+    try:
+        with open(MENU_LOG, encoding="utf-8", errors="replace") as f:
+            fim = f.read()[-3000:]
+    except OSError:
+        fim = ""
+    telemetria.relatar_problema("menu_nativo", f"código {codigo}\n{fim}",
+                                assinatura=f"menu_nativo:{'sem_gpu' if codigo == SEM_GPU else codigo}")
 
 
 def abrir_menu(usar_web):
@@ -242,12 +254,14 @@ def main():
             if tipo == "nativo":
                 if codigo == SEM_GPU or (codigo != 0 and vida < 20):
                     log(f"menu nativo saiu cedo (código {codigo}); usando o menu web")
+                    relatar_menu(codigo)
                     usar_web = True
                     continue
                 if codigo != 0:
                     quedas_menu += 1
                     log(f"menu nativo caiu (código {codigo}, {quedas_menu}ª vez)")
                     if quedas_menu >= 3:
+                        relatar_menu(codigo)
                         usar_web = True
                     continue
             # o menu foi fechado normalmente

@@ -40,6 +40,8 @@ function renderProfileAdmin(){
   document.getElementById('profileLauncherTitleLabel').textContent=text.launcherTitle;
   document.getElementById('profileCreateTitle').textContent=text.createTitle;
   document.getElementById('cfgProfileName').value=cfg.name||'';
+  document.getElementById('cfgBirthMonth').value=cfg.birthMonth||'';
+  document.getElementById('cfgGender').value=cfg.gender||'';
   document.getElementById('cfgProfileAvatar').value=cfg.avatar||'';
   const nameInput=document.getElementById('newProfileName');
   const avatarInput=document.getElementById('newProfileAvatar');

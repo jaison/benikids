@@ -12,8 +12,10 @@ main{max-width:760px;margin:0 auto;padding:40px 20px 60px}
 h1{font-size:2.2rem;margin:0 0 6px}
 .sub{color:var(--suave);font-size:1.15rem;margin:0 0 28px}
 section{background:var(--cartao);border-radius:22px;padding:24px;margin-bottom:22px;box-shadow:0 6px 24px #6d4aff1a}
+section.destaque{border:2px solid var(--cor)}
 h2{font-size:1.35rem;margin:0 0 16px}
-.crianca{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:end;padding:14px 0;border-top:1px solid var(--borda)}
+.crianca{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:end;padding:14px 0;border-top:1px solid var(--borda)}
+.nasc{display:flex;gap:6px}.nasc select{font:inherit;padding:10px 8px;border:2px solid var(--borda);border-radius:12px;background:#fff}
 .crianca:first-of-type{border-top:0;padding-top:0}
 label{display:block;font-weight:600;margin-bottom:6px}
 input{width:100%;font:inherit;font-size:1.2rem;padding:12px 14px;border:2px solid var(--borda);border-radius:14px;background:#fff;color:var(--texto)}
@@ -38,7 +40,7 @@ input:focus{outline:none;border-color:var(--cor)}
 .erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:0 0 12px}
 .pronto{text-align:center;padding:60px 20px}
 .pronto div{font-size:5rem}
-@media (max-width:620px){.crianca{grid-template-columns:1fr auto}.icones{grid-column:1/-1;order:3}.pins{grid-template-columns:1fr}}
+@media (max-width:760px){.crianca{grid-template-columns:1fr auto}.icones,.nascimento{grid-column:1/-1;order:3}.pins{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -68,7 +70,16 @@ input:focus{outline:none;border-color:var(--cor)}
       <span>Abrir o Benikids sozinho ao entrar no computador</span></label>
     <label class="opcao"><input type="checkbox" id="telemetria" checked>
       <span>Ajudar o Benikids com informações anônimas sobre este computador</span></label>
-    <p class="dica">Uma vez por dia: sistema, processador, memória, placa de vídeo e tela, para sabermos em que computadores testar. Nada sobre as crianças. Dá para mudar depois na área dos pais.</p>
+    <p class="dica">Uma vez por dia: sistema, processador, memória, placa de vídeo e tela, para sabermos em que computadores testar. Dá para mudar depois na área dos pais.</p>
+  </section>
+
+  <section class="destaque">
+    <label class="opcao"><input type="checkbox" id="telemetriaUso">
+      <span>Compartilhar, de forma anônima, quais apps cada criança usa e por quanto tempo</span></label>
+    <p class="dica">Para melhorarmos o catálogo: tiramos o que ninguém usa e trazemos mais do que as crianças gostam.
+      Vai por criança um número aleatório, a <strong>faixa de idade</strong> (não a data), menino ou menina e os minutos
+      por app em cada dia. <strong>Nunca</strong> o nome. Os dados são apagados depois de 12 meses, e dá para desligar e
+      pedir para apagar na área dos pais.</p>
   </section>
 
   <p class="erro" id="erro" role="alert"></p>
@@ -112,12 +123,23 @@ input:focus{outline:none;border-color:var(--cor)}
     document.getElementById('mais').hidden = linhas.length >= MAX;
   }
 
+  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+    .map(function (m, i) { return '<option value="' + String(i + 1).padStart(2, '0') + '">' + m + '</option>'; }).join('');
+  const ANOS = (function () {
+    const atual = new Date().getFullYear(); let s = '';
+    for (let a = atual - 1; a >= atual - 16; a--) s += '<option>' + a + '</option>';
+    return s;
+  })();
+
   function adicionar() {
     const n = lista.children.length + 1;
     const linha = document.createElement('div');
     linha.className = 'crianca';
     linha.innerHTML =
       '<div><label>Nome da criança</label><input class="nome" maxlength="40" autocomplete="off"></div>' +
+      '<div class="nascimento"><label>Nascimento</label><div class="nasc">' +
+      '<select class="mes" aria-label="Mês de nascimento"><option value="">Mês</option>' + MESES + '</select>' +
+      '<select class="ano" aria-label="Ano de nascimento"><option value="">Ano</option>' + ANOS + '</select></div></div>' +
       '<div class="icones" role="group" aria-label="Ícone">' +
       '<button type="button" class="icone menino" data-tipo="menino" aria-pressed="false"><span>👦</span>Menino</button>' +
       '<button type="button" class="icone menina" data-tipo="menina" aria-pressed="false"><span>👧</span>Menina</button>' +
@@ -141,13 +163,16 @@ input:focus{outline:none;border-color:var(--cor)}
       const nome = linha.querySelector('.nome').value.trim();
       if (!nome) { linha.querySelector('.nome').focus(); throw new Error('Digite o nome de cada criança.'); }
       if (!linha.dataset.tipo) { linha.querySelector('.icone').focus(); throw new Error('Escolha Menino ou Menina para ' + nome + '.'); }
-      criancas.push({ name: nome, icon: linha.dataset.tipo });
+      const mes = linha.querySelector('.mes').value, ano = linha.querySelector('.ano').value;
+      if (!mes || !ano) { linha.querySelector(mes ? '.ano' : '.mes').focus(); throw new Error('Escolha o mês e o ano de nascimento de ' + nome + '.'); }
+      criancas.push({ name: nome, icon: linha.dataset.tipo, birthMonth: ano + '-' + mes });
     }
     const pin = document.getElementById('pin').value;
     if (!/^\d{4,6}$/.test(pin)) { document.getElementById('pin').focus(); throw new Error('O PIN precisa ter de 4 a 6 números.'); }
     if (pin !== document.getElementById('pin2').value) { document.getElementById('pin2').focus(); throw new Error('Os dois PINs estão diferentes.'); }
     return { children: criancas, pin: pin, startOnLogin: document.getElementById('inicio').checked,
-             telemetry: document.getElementById('telemetria').checked };
+             telemetry: document.getElementById('telemetria').checked,
+             usageTelemetry: document.getElementById('telemetriaUso').checked };
   }
 
   async function comecar() {
