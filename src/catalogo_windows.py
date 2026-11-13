@@ -67,7 +67,34 @@ def comando(cmd, catalogo=None, bases=None):
     exe = localizar(item, bases)
     if not exe:
         return None
-    return [exe, *item.get("args", [])]
+    return [exe, *(preencher(arg, item) for arg in item.get("args", []))]
+
+
+def pasta_de_dados_ascii(item, usuario=None, raiz=None):
+    """Pasta de dados do app num caminho só com letras ASCII.
+
+    O SuperTux 0.7 não abre quando o caminho do usuário tem acento (ex.:
+    C:\\Users\\Lívia): ele não consegue criar a pasta em %APPDATA%. Aqui fica em
+    %ProgramData%\\Benikids\\dados\\<usuário sem acento>\\<app>, que qualquer usuário cria.
+    """
+    import unicodedata
+
+    usuario = usuario or os.environ.get("USERNAME") or "crianca"
+    limpo = unicodedata.normalize("NFKD", usuario).encode("ascii", "ignore").decode()
+    limpo = "".join(c if c.isalnum() or c in "-_." else "_" for c in limpo).strip("._") or "crianca"
+    raiz = raiz or os.environ.get("ProgramData", r"C:\ProgramData")
+    pasta = os.path.join(raiz, "Benikids", "dados", limpo, item["id"])
+    try:
+        os.makedirs(pasta, exist_ok=True)
+    except OSError:
+        pass
+    return pasta
+
+
+def preencher(arg, item):
+    if "{dados_ascii}" in arg:
+        return arg.replace("{dados_ascii}", pasta_de_dados_ascii(item))
+    return arg
 
 
 def tiles(catalogo=None):

@@ -129,4 +129,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:  # noqa: BLE001 — sem console (pythonw), o erro precisa aparecer numa janela
+        import traceback
+
+        aviso("Não deu para instalar o Benikids.\n\n" + traceback.format_exc()[-1500:], estilo=0x10)
+        sys.exit(1)

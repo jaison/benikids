@@ -34,7 +34,7 @@ light enough to bring that old laptop forgotten in a drawer back to life.
 ### Windows 10 and 11
 
 1. Sign in to the **child's Windows account**. It doesn't need administrator rights.
-2. Download [**Beni-Windows.zip**](https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip), unzip it and double-click **`Instalar Beni.cmd`**.
+2. Download [**Beni-Windows.zip**](https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip), unzip it and double-click **`Instalar Benikids.cmd`**.
 3. Accept installing the games and programs. A few of them ask **once** for the password of an administrator of the computer.
 4. The first time it opens, enter each child's name and the **parents' PIN**.
 

@@ -166,30 +166,94 @@ def _ps(texto):
     return "'" + texto.replace("'", "''") + "'"
 
 
-def instalar_como_admin(pares, pasta):
-    """Roda todos os instaladores "para todos" de uma vez, com um só pedido do UAC
-    (a conta da criança não é administradora: o Windows pede a senha de um adulto)."""
-    linhas = ["$ErrorActionPreference = 'Continue'"]
+def dependencias(arquivo):
+    """Instaladores que o winget download pôs em <pasta do app>\\Dependencies (ex.: VC++)."""
+    pasta = os.path.join(os.path.dirname(arquivo), "Dependencies")
+    achados = []
+    for raiz, _pastas, nomes in os.walk(pasta):
+        achados += [os.path.join(raiz, n) for n in sorted(nomes) if n.lower().endswith((".msi", ".exe"))]
+    return achados
+
+
+def _linha_instalar(rotulo, arquivo, tipo, logs, resultados):
+    """Uma linha do PowerShell que instala sem perguntas e anota "rótulo|código"."""
+    if tipo in ("msi", "wix") or arquivo.lower().endswith(".msi"):
+        log = os.path.join(logs, f"{rotulo}.log")
+        args = (f"@('/i', '\"' + {_ps(arquivo)} + '\"', '/qn', '/norestart', 'ALLUSERS=1', "
+                f"'/l*v', '\"' + {_ps(log)} + '\"')")
+        comando = f"Start-Process msiexec.exe -Wait -PassThru -ArgumentList {args}"
+    else:
+        args = ", ".join(_ps(a) for a in SILENCIOSO.get(tipo) or ["/S"])
+        comando = f"Start-Process -FilePath {_ps(arquivo)} -Wait -PassThru -ArgumentList @({args})"
+    return (f"try {{ $p = {comando}; $c = $p.ExitCode }} catch {{ $c = 'erro: ' + $_.Exception.Message }}; "
+            f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ({_ps(rotulo + '|')} + $c)")
+
+
+def script_admin(pares, pasta):
+    """O PowerShell do lote: dependências primeiro, depois cada app, anotando os códigos."""
+    logs = os.path.join(pasta, "logs")
+    resultados = os.path.join(pasta, "resultados.txt")
+    linhas = ["$ErrorActionPreference = 'Continue'",
+              f"New-Item -ItemType Directory -Force -Path {_ps(logs)} | Out-Null"]
     for item, arquivo in pares:
-        tipo = tipo_do_instalador(item)
-        if tipo in ("msi", "wix") or arquivo.lower().endswith(".msi"):
-            linhas.append(f"Start-Process msiexec.exe -Wait -ArgumentList @('/i', '\"' + {_ps(arquivo)} + '\"', '/qn', '/norestart')")
-        else:
-            args = ", ".join(_ps(a) for a in SILENCIOSO.get(tipo) or ["/S"])
-            linhas.append(f"Start-Process -FilePath {_ps(arquivo)} -Wait -ArgumentList @({args})")
+        for n, dep in enumerate(dependencias(arquivo)):
+            linhas.append(_linha_instalar(f"{item['id']}-dependencia{n + 1}", dep, "", logs, resultados))
+        linhas.append(_linha_instalar(item["id"], arquivo, tipo_do_instalador(item), logs, resultados))
+    linhas.append(f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value 'fim|0'")
+    return "\r\n".join(linhas) + "\r\n", resultados
+
+
+def ler_resultados(caminho):
+    """{rótulo: código} do arquivo que o lote vai escrevendo."""
+    saida = {}
+    try:
+        with open(caminho, encoding="utf-8-sig") as f:
+            for linha in f:
+                rotulo, _, codigo = linha.strip().partition("|")
+                if rotulo:
+                    saida[rotulo] = codigo
+    except OSError:
+        pass
+    return saida
+
+
+CODIGOS_OK = {"0", "1641", "3010"}  # 1641/3010: instalou e pede para reiniciar
+
+
+def instalar_como_admin(pares, pasta, ao_terminar_app=None):
+    """Roda todos os instaladores "para todos" de uma vez, com um só pedido do UAC
+    (a conta da criança não é administradora: o Windows pede a senha de um adulto).
+    Enquanto o lote roda, avisa ao_terminar_app(id, código) a cada app que termina."""
+    texto, resultados = script_admin(pares, pasta)
+    try:
+        os.remove(resultados)
+    except OSError:
+        pass
     script = os.path.join(pasta, "instalar-para-todos.ps1")
     with open(script, "w", encoding="utf-8-sig") as f:
-        f.write("\r\n".join(linhas) + "\r\n")
+        f.write(texto)
     pedido = (
         "Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList "
         f"@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '\"' + {_ps(script)} + '\"')"
     )
     try:
-        r = subprocess.run(["powershell.exe", "-NoProfile", "-Command", pedido], capture_output=True,
-                           creationflags=SEM_CONSOLE, timeout=3600)
-        return r.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+        proc = subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", pedido],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=SEM_CONSOLE)
+    except OSError:
+        return {}
+    avisados = set()
+    ids = {item["id"] for item, _ in pares}
+    while True:
+        terminou = proc.poll() is not None
+        for rotulo, codigo in ler_resultados(resultados).items():
+            if rotulo in ids and rotulo not in avisados:
+                avisados.add(rotulo)
+                if ao_terminar_app:
+                    ao_terminar_app(rotulo, codigo)
+        if terminou:
+            break
+        time.sleep(2)
+    return ler_resultados(resultados)
 
 
 def pasta_dos_instaladores():
@@ -268,12 +332,21 @@ def trabalhar(itens, avisos, pasta=None):
             pares.append((item, arquivo))
     if pares:
         for item, _arquivo in pares:
-            avisos.put((item["id"], "instalando", "esperando a senha do adulto..."))
+            avisos.put((item["id"], "instalando", "instala depois da senha"))
         avisos.put((None, "admin", ""))
-        instalar_como_admin(pares, pasta)
+        por_id = {item["id"]: item for item, _ in pares}
+
+        def terminou(item_id, codigo):
+            ok = bool(catalogo_windows.localizar(por_id[item_id]))
+            avisos.put((item_id, "ok" if ok else "erro", "instalado" if ok else f"não instalou (código {codigo})"))
+
+        codigos = instalar_como_admin(pares, pasta, terminou)
+        if "fim" not in codigos and not any(i in codigos for i in por_id):
+            avisos.put((None, "sem_senha", ""))  # o adulto não digitou a senha (ou cancelou)
         for item, _arquivo in pares:
-            ok = bool(catalogo_windows.localizar(item))
-            avisos.put((item["id"], "ok" if ok else "erro", "instalado" if ok else "não instalou"))
+            if item["id"] not in codigos:
+                ok = bool(catalogo_windows.localizar(item))
+                avisos.put((item["id"], "ok" if ok else "erro", "instalado" if ok else "não instalou"))
     avisos.put((None, "fim", ""))
 
 
@@ -283,7 +356,7 @@ def janela(itens):
     raiz = tk.Tk()
     raiz.title("Benikids: instalando jogos e programas")
     raiz.configure(bg="#f3f0ff")
-    raiz.geometry("620x560")
+    raiz.geometry("640x680")
     tk.Label(raiz, text="Instalando os jogos e programas", font=("Segoe UI", 18, "bold"),
              bg="#f3f0ff", fg="#2d2a3e").pack(pady=(18, 2))
     tk.Label(raiz, text="Pode levar alguns minutos. Dá para usar o computador enquanto isso.",
@@ -296,14 +369,17 @@ def janela(itens):
         linha.pack(fill=tk.X, pady=2)
         estado = tk.Label(linha, text=ICONES["espera"], font=("Segoe UI Emoji", 13), bg="#ffffff", width=3)
         estado.pack(side=tk.LEFT)
-        tk.Label(linha, text=f"{item.get('emoji', '')} {item['label']}", font=("Segoe UI", 12),
-                 bg="#ffffff", anchor="w").pack(side=tk.LEFT)
+        # o emoji numa coluna própria, de largura fixa: alguns (🏎️) são mais largos
+        tk.Label(linha, text=item.get("emoji", ""), font=("Segoe UI Emoji", 13), bg="#ffffff",
+                 width=3).pack(side=tk.LEFT)
+        tk.Label(linha, text=item["label"], font=("Segoe UI", 12), bg="#ffffff", anchor="w").pack(side=tk.LEFT)
         detalhe = tk.Label(linha, text="", font=("Segoe UI", 10), bg="#ffffff", fg="#6b6880", anchor="e")
         detalhe.pack(side=tk.RIGHT)
         linhas[item["id"]] = (estado, detalhe)
     rodape = tk.Label(raiz, text="", font=("Segoe UI", 12, "bold"), bg="#f3f0ff", fg="#2d2a3e")
     rodape.pack(pady=8)
-    botao = tk.Button(raiz, text="Fechar", font=("Segoe UI", 12), state=tk.DISABLED, command=raiz.destroy)
+    botao = tk.Button(raiz, text="Aguarde...", font=("Segoe UI", 12, "bold"), state=tk.DISABLED,
+                      command=raiz.destroy, padx=24, pady=6)
     botao.pack(pady=(0, 16))
 
     avisos = queue.Queue()
@@ -315,12 +391,21 @@ def janela(itens):
             while True:
                 item_id, estado, texto = avisos.get_nowait()
                 if item_id is None and estado == "admin":
-                    rodape.config(text="Alguns precisam de um adulto: o Windows vai pedir a senha de administrador.")
+                    rodape.config(text="Agora o Windows pede a senha de um administrador do computador,\n"
+                                       "uma vez só, para instalar os que faltam.")
+                    raiz.lift()
+                    continue
+                if item_id is None and estado == "sem_senha":
+                    rodape.config(text="A senha não foi digitada: os apps marcados ficam para depois.")
                     continue
                 if item_id is None:
-                    rodape.config(text="Pronto!" if not erros else
-                                  f"Pronto. {len(erros)} não instalaram; tente de novo pela área dos pais.")
-                    botao.config(state=tk.NORMAL)
+                    rodape.config(text="Pronto! Tudo instalado." if not erros else
+                                  f"Pronto. {len(erros)} não instalaram: dá para tentar de novo na área dos pais.")
+                    botao.config(text="Concluir", state=tk.NORMAL, bg="#6c4bff", fg="#ffffff",
+                                 activebackground="#5a3be0", activeforeground="#ffffff")
+                    raiz.protocol("WM_DELETE_WINDOW", raiz.destroy)
+                    raiz.lift()
+                    botao.focus_set()
                     return
                 if estado == "erro":
                     erros.append(item_id)

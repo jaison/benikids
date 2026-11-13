@@ -124,11 +124,13 @@ fn main() {
                             }
                             // aberto por um processo de fundo, o Windows não dá o foco sozinho
                             #[cfg(windows)]
-                            {
-                                window.activate_window();
-                                menu::trazer_para_frente();
-                            }
+                            window.activate_window();
                         });
+                        // fora do update: o SetForegroundWindow entrega na hora mensagens de
+                        // ativação à janela, e dentro do update ela ainda está emprestada
+                        // ("RefCell already borrowed" no log)
+                        #[cfg(windows)]
+                        menu::trazer_para_frente();
                     }
                 })
                 .detach();

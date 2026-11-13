@@ -922,6 +922,22 @@ def availability_summary(cfg, when=None):
     return summary
 
 
+APP_FECHOU_SOZINHO_SEGUNDOS = 2.0
+
+
+def app_fechou_sozinho(supervisor, espera=None):
+    """No Windows, o app que morre logo ao abrir (ex.: SuperTux com acento no nome do
+    usuário) leva o supervisor junto: espera um pouco para o menu poder avisar, em vez
+    de ficar parado sem resposta. No Linux nada muda."""
+    if os.name != "nt" or supervisor is None or not hasattr(supervisor, "wait"):
+        return False
+    try:
+        supervisor.wait(timeout=APP_FECHOU_SOZINHO_SEGUNDOS if espera is None else espera)
+    except subprocess.TimeoutExpired:
+        return False
+    return True
+
+
 def launch_owned_tile(
     command,
     mode,
@@ -2169,7 +2185,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             clean = direct_app_command(clean)
             try:
                 # The supervisor still launches argv directly and never invokes a shell.
-                launch_owned_tile(
+                supervisor = launch_owned_tile(
                     clean,
                     "local",
                     tile_id=tile_id,
@@ -2187,6 +2203,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     {"status": "error", "message": "Application process could not be started"},
                     503,
                 )
+                return
+            if app_fechou_sozinho(supervisor):
+                reset_active_tile()
+                log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
+                self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
                 return
 
             self.send_response(204)

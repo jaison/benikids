@@ -1,7 +1,9 @@
 import os
 import sys
 import tempfile
+import os
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -40,10 +42,12 @@ class CatalogoWindowsTests(unittest.TestCase):
             exe = Path(raiz, "SuperTux 0.7", "bin", "supertux2.exe")
             exe.parent.mkdir(parents=True)
             exe.write_bytes(b"")
-            self.assertEqual(
-                catalogo_windows.comando(["catalogo:supertux"], bases=[raiz]),
-                [str(exe), "--fullscreen"],
-            )
+            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Lívia"}):
+                cmd = catalogo_windows.comando(["catalogo:supertux"], bases=[raiz])
+            # o SuperTux não abre com acento no caminho do usuário: pasta de dados só ASCII
+            dados = os.path.join(raiz, "Benikids", "dados", "Livia", "supertux")
+            self.assertEqual(cmd, [str(exe), "--fullscreen", "--userdir", dados])
+            self.assertTrue(os.path.isdir(dados))
             self.assertIsNone(catalogo_windows.comando(["catalogo:gcompris"], bases=[raiz]))
             self.assertIsNone(catalogo_windows.comando(["catalogo:nao-existe"], bases=[raiz]))
             self.assertEqual(catalogo_windows.comando(["tuxpaint"], bases=[raiz]), ["tuxpaint"])

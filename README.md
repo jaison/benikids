@@ -34,7 +34,7 @@ mais estes recursos:
 ### Windows 10 e 11
 
 1. Entre no **usuário do Windows da criança**. Ele não precisa ser administrador.
-2. Baixe o [**Beni-Windows.zip**](https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip), descompacte e dê dois cliques em **`Instalar Beni.cmd`**.
+2. Baixe o [**Beni-Windows.zip**](https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip), descompacte e dê dois cliques em **`Instalar Benikids.cmd`**.
 3. Aceite instalar os jogos e programas. Alguns pedem **uma vez** a senha de um administrador do computador.
 4. Na primeira abertura, cadastre o nome de cada criança e o **PIN dos pais**.
 

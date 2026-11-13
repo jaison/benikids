@@ -1588,6 +1588,25 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertTrue(server_module.verify_pin(server_module.load_stored_cfg()["pinHash"], "1234"))
 
+    def test_windows_reports_an_app_that_closes_right_away(self):
+        import subprocess as sp
+
+        class Vivo:
+            def wait(self, timeout=None):
+                raise sp.TimeoutExpired("app", timeout)
+
+        class Morto:
+            def wait(self, timeout=None):
+                return 1
+
+        with mock.patch.object(server_module.os, "name", "nt"):
+            self.assertTrue(server_module.app_fechou_sozinho(Morto(), espera=0))
+            self.assertFalse(server_module.app_fechou_sozinho(Vivo(), espera=0))
+            self.assertFalse(server_module.app_fechou_sozinho(None, espera=0))
+        # no Linux nada muda: nem espera
+        with mock.patch.object(server_module.os, "name", "posix"):
+            self.assertFalse(server_module.app_fechou_sozinho(Morto(), espera=0))
+
     def test_start_on_login_toggles_the_linux_autostart_entry(self):
         desktop = Path(server_module.AUTOSTART_DESKTOP)
         desktop.parent.mkdir(parents=True)

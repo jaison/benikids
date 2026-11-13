@@ -62,7 +62,7 @@ class InstalarAppsTest(unittest.TestCase):
         with mock.patch.object(instalar_apps.catalogo_windows, "localizar", return_value=None), \
              mock.patch.object(instalar_apps, "instalar", side_effect=instalar), \
              mock.patch.object(instalar_apps, "baixar", side_effect=lambda item, pasta: f"{item['id']}.exe"), \
-             mock.patch.object(instalar_apps, "instalar_como_admin", side_effect=lambda pares, pasta: lote.extend(i["id"] for i, _ in pares)):
+             mock.patch.object(instalar_apps, "instalar_como_admin", side_effect=lambda pares, pasta, ao_terminar=None: lote.extend(i["id"] for i, _ in pares) or {}):
             fila = queue.Queue()
             instalar_apps.trabalhar(itens, fila)
         self.assertEqual(ordem, ["usuario", "teimoso"])  # o "machine" nem passa pela fila sem senha
@@ -97,6 +97,32 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertEqual(baixou_durante, [True])
         admin.assert_called_once()
         self.assertEqual([i["id"] for i, _ in admin.call_args[0][0]], ["maquina"])
+
+    def test_script_do_lote_instala_dependencias_antes_e_anota_os_codigos(self):
+        pasta = self.tmp.name
+        app = os.path.join(pasta, "etr", "ETR.msi")
+        dep = os.path.join(pasta, "etr", "Dependencies", "VCRedist", "vc_redist.x64.exe")
+        os.makedirs(os.path.dirname(dep))
+        for caminho in (app, dep):
+            open(caminho, "w").close()
+        open(os.path.join(pasta, "etr", "Dependencies", "leia.txt"), "w").close()
+        item = {"id": "etr", "winget": "X.ETR", "instalador": "msi"}
+        texto, resultados = instalar_apps.script_admin([(item, app)], pasta)
+        linhas = texto.splitlines()
+        i_dep = next(n for n, l in enumerate(linhas) if "vc_redist.x64.exe" in l)
+        i_app = next(n for n, l in enumerate(linhas) if "ETR.msi" in l)
+        self.assertLess(i_dep, i_app)
+        self.assertIn("ALLUSERS=1", linhas[i_app])
+        self.assertIn("/l*v", linhas[i_app])
+        self.assertIn("etr.log", linhas[i_app])
+        self.assertIn("-PassThru", linhas[i_app])
+        self.assertIn("'etr|'", linhas[i_app])
+        self.assertIn("'etr-dependencia1|'", linhas[i_dep])
+        self.assertTrue(linhas[-1].endswith("'fim|0'"))
+        with open(resultados, "w", encoding="utf-8-sig") as f:
+            f.write("etr-dependencia1|0\netr|1603\nfim|0\n")
+        self.assertEqual(instalar_apps.ler_resultados(resultados),
+                         {"etr-dependencia1": "0", "etr": "1603", "fim": "0"})
 
     def test_avisa_quando_o_windows_abre_o_uac_numa_instalacao_por_usuario(self):
         itens = [{"id": "eleva", "winget": "D.Eleva", "escopo": "user"}]

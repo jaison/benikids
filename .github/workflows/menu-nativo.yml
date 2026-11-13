@@ -157,7 +157,8 @@ jobs:
           cp menu/beni-menu.exe "$P/app/"
           python3 scripts/windows/config-padrao.py "$P/config-padrao.json"
           cp scripts/windows/instalar_windows.py "$P/"
-          printf '@echo off\r\necho Instalando o Beni...\r\n"%%~dp0python\\python.exe" "%%~dp0instalar_windows.py"\r\nif errorlevel 1 pause\r\n' > "$P/Instalar Beni.cmd"
+          # pythonw: sem a janela preta do console (os avisos do instalador são janelas)
+          printf '@echo off\r\nstart "" "%%~dp0python\\pythonw.exe" "%%~dp0instalar_windows.py"\r\n' > "$P/Instalar Benikids.cmd"
           # Python 3.13 para Windows com Tk (o "embeddable" oficial não traz o tkinter)
           ASSET=$(gh release view -R astral-sh/python-build-standalone --json assets --jq '.assets[].name' \
             | grep -E '^cpython-3\.13\.[0-9]+\+[0-9]+-x86_64-pc-windows-msvc-install_only\.tar\.gz$' | head -1)
@@ -168,7 +169,7 @@ jobs:
           test -d "$P/python/tcl"
           rm -rf "$P/python/Lib/test" "$P/python/Lib/idlelib" "$P/python/Lib/turtledemo"
           du -sh "$P" "$P/python" "$P/app"
-          cat "$P/Instalar Beni.cmd"
+          cat "$P/Instalar Benikids.cmd"
 
       - uses: actions/upload-artifact@v7
         with:

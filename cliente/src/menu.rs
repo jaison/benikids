@@ -44,7 +44,7 @@ enum AcaoPin {
 #[derive(Clone, PartialEq)]
 enum Janela {
     /// Mensagem amigável (limite de uso). Some sozinha em 15 s.
-    Mensagem { titulo: String, corpo: String, geracao: u64 },
+    Mensagem { icone: &'static str, titulo: String, corpo: String, geracao: u64 },
     /// Fora do horário (perfil) ou app bloqueado no horário.
     Bloqueio { perfil: bool, foco: usize },
     /// "Faltam 5 minutos!" (6 s).
@@ -465,8 +465,12 @@ impl Menu {
     }
 
     fn mostrar_mensagem(&mut self, titulo: String, corpo: String) {
+        self.mostrar_aviso("⏰", titulo, corpo);
+    }
+
+    fn mostrar_aviso(&mut self, icone: &'static str, titulo: String, corpo: String) {
         self.geracao += 1;
-        self.janela = Some(Janela::Mensagem { titulo, corpo, geracao: self.geracao });
+        self.janela = Some(Janela::Mensagem { icone, titulo, corpo, geracao: self.geracao });
     }
 
     fn agendar_fechar_mensagem(&mut self, cx: &mut Context<Self>) {
@@ -701,13 +705,13 @@ impl Menu {
                     Ok(r) => {
                         log::warn!("abrir {}: o servidor respondeu {}", tile.id, r.status);
                         m.inicio = None;
-                        let faltando = r.json().is_some_and(|v| dados::texto(&v, "status") == "missing");
-                        let (titulo, texto) = if faltando {
-                            ("Ainda não instalado", "Peça para a mamãe ou o papai instalar este app.")
-                        } else {
-                            ("Não deu para abrir", "Tente de novo daqui a pouco.")
+                        let status = r.json().map(|v| dados::texto(&v, "status")).unwrap_or_default();
+                        let (icone, titulo, texto) = match status.as_str() {
+                            "missing" => ("📦", "Ainda não instalado", "Peça para a mamãe ou o papai instalar este app."),
+                            "crashed" => ("😕", "Não deu para abrir", "Este app fechou sozinho. Peça ajuda para a mamãe ou o papai."),
+                            _ => ("😕", "Não deu para abrir", "Tente de novo daqui a pouco."),
                         };
-                        m.mostrar_mensagem(format!("{} {}", tile.emoji, titulo), texto.into());
+                        m.mostrar_aviso(icone, format!("{} {}", tile.emoji, titulo), texto.into());
                         m.agendar_fechar_mensagem(cx);
                     }
                     Err(e) => {
@@ -1858,9 +1862,9 @@ impl Menu {
         let titulo = |texto: String| div().text_size(p.f(28.)).font_weight(FontWeight(800.)).text_center().child(texto);
         let corpo = |texto: String| div().text_size(p.f(18.)).text_center().child(texto);
         let caixa = match j {
-            Janela::Mensagem { titulo: t, corpo: c, .. } => self
+            Janela::Mensagem { icone, titulo: t, corpo: c, .. } => self
                 .caixa_janela(p)
-                .child(div().text_size(p.f(48.)).child("⏰"))
+                .child(div().text_size(p.f(48.)).child(icone))
                 .child(titulo(t))
                 .child(corpo(c))
                 .child(self.botao_janela(p, "ok", "OK 👍".into(), true).on_click(cx.listener(|m, _: &ClickEvent, _, cx| {

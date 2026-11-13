@@ -270,14 +270,6 @@
               <input id="cfgParentLabel" placeholder="Botão dos pais">
               <input id="cfgExitLabel" placeholder="Botão de sair">
             </div>
-            <label class="chk" for="cfgStartOnLogin">
-              <input id="cfgStartOnLogin" type="checkbox">
-              <span>Abrir o Benikids sozinho ao entrar no computador</span>
-            </label>
-            <div id="catalogInstallRow" hidden>
-              <button type="button" class="smallbtn" id="catalogInstallBtn">Instalar jogos e programas que faltam</button>
-              <p class="muted" id="catalogInstallMsg">Abre uma janela com o andamento. Alguns apps pedem a senha de um administrador.</p>
-            </div>
           </section>
 
           <section id="adminSectionApps" class="admin-section" data-admin-panel="apps" aria-labelledby="adminNavApps" hidden>
@@ -495,6 +487,14 @@
               <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importConfig(this)">
             </div>
             <div id="importMsg" class="muted"></div>
+            <label class="chk" for="cfgStartOnLogin" style="margin-top:12px;">
+              <input id="cfgStartOnLogin" type="checkbox">
+              <span>Abrir o Benikids sozinho ao entrar no computador</span>
+            </label>
+            <div id="catalogInstallRow" style="margin-top:8px;" hidden>
+              <button type="button" class="smallbtn" id="catalogInstallBtn">Instalar jogos e programas que faltam</button>
+              <p class="muted" id="catalogInstallMsg">Abre uma janela com o andamento. Alguns apps pedem a senha de um administrador, uma vez só.</p>
+            </div>
             <section id="controlePanel" class="backup-panel controle-panel" aria-labelledby="controleTitle">
               <h3 id="controleTitle">🎮 Controles</h3>
               <p class="muted">Configure cada controle uma vez: o assistente pede um botão de cada vez. Vale para o menu, o Super Nintendo, o PlayStation e jogos como SuperTux e SuperTuxKart.</p>
