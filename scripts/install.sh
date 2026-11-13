@@ -1652,6 +1652,9 @@ install -m 0644 "$SRC_DIR/update_manager.py" "$APP_ROOT/update_manager.py"
 install -m 0644 "$SRC_DIR/usage_limits.py" "$APP_ROOT/usage_limits.py"
 install -m 0644 "$SRC_DIR/site_logins.py" "$APP_ROOT/site_logins.py"
 install -m 0644 "$SRC_DIR/controles.py" "$APP_ROOT/controles.py"
+# Benikids: abrir ao entrar no computador e a tela de primeira configuração
+install -m 0644 "$SRC_DIR/inicio_automatico.py" "$APP_ROOT/inicio_automatico.py"
+install -m 0644 "$SRC_DIR/configurar.html" "$APP_ROOT/configurar.html"
 install -d -m 0755 "$APP_ROOT/sites"
 install -m 0644 "$SRC_DIR/sites/phet.html" "$APP_ROOT/sites/phet.html"
 render_template "$SRC_DIR/index.html" "$INDEX_FILE" 0644
