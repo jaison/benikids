@@ -36,6 +36,7 @@ BROWSER_PIDFILE = os.path.join(CACHE, "browser.pid")
 TILE_PIDFILE = os.path.join(CACHE, "tile-process.pid")
 OVERLAY_PIDFILE = os.path.join(CACHE, "overlay.pid")
 LOG = os.path.join(CACHE, "beni-windows.log")
+MENU_LOG = os.path.join(CACHE, "menu-nativo.log")
 SEM_GPU = 75
 SEM_CONSOLE = 0x08000000
 
@@ -62,16 +63,36 @@ def porta_aberta(timeout=0.3):
         return False
 
 
-def iniciar(argv):
-    return subprocess.Popen(
-        argv,
-        cwd=APP_ROOT,
-        env=dict(os.environ, COZY_KIDS_PORT=str(PORTA)),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=SEM_CONSOLE,
-    )
+def iniciar(argv, log_em=None):
+    saida = subprocess.DEVNULL
+    if log_em:
+        try:
+            # como no Linux: acumula e corta quando passa de 200 KB
+            if os.path.getsize(log_em) > 200_000:
+                with open(log_em, "rb") as f:
+                    f.seek(-50_000, os.SEEK_END)
+                    fim = f.read()
+                with open(log_em, "wb") as f:
+                    f.write(fim)
+        except OSError:
+            pass
+        try:
+            saida = open(log_em, "a", encoding="utf-8")
+        except OSError:
+            saida = subprocess.DEVNULL
+    try:
+        return subprocess.Popen(
+            argv,
+            cwd=APP_ROOT,
+            env=dict(os.environ, COZY_KIDS_PORT=str(PORTA)),
+            stdin=subprocess.DEVNULL,
+            stdout=saida,
+            stderr=saida,
+            creationflags=SEM_CONSOLE,
+        )
+    finally:
+        if saida is not subprocess.DEVNULL:
+            saida.close()
 
 
 def subir_servidor(tentativa=0):
@@ -112,7 +133,7 @@ def abrir_menu(usar_web):
             "--web-familia", familia,
             "--web-perfil", os.path.join(CACHE, f"menu-{familia}-profile"),
         ]
-        return iniciar(argv), "nativo"
+        return iniciar(argv, log_em=MENU_LOG), "nativo"
     if not nav:
         log("sem navegador para o menu web")
         return None, "nenhum"
