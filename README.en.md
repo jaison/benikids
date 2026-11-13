@@ -67,12 +67,11 @@ Want to fine-tune it (ROMs, Luanti, itch.io collections)? See [fine-tuning on Li
 
 ## Gallery
 
-| | |
+Some of the settings parents can change in the **parents' area**, protected by the PIN:
+
+| Overview | Appearance, with a preview |
 |---|---|
-| ![Beni's themes](beni/prints/04-temas-beni.jpg) | ![Bea's themes](beni/prints/05-temas-bea.jpg) |
-| ![Games list](beni/prints/03-lista-jogos.png) | ![Final countdown](beni/prints/06-contagem-final.png) |
-| ![Parents' area](beni/prints/07-area-dos-pais.png) | ![itch.io game in full screen](beni/prints/09-jogo-itch-tela-cheia.png) |
-| ![Dress-up games](beni/prints/10-jogos-vestir.jpg) | ![Apps](beni/prints/11-apps.jpg) |
+| ![Parents' area: overview](beni/prints/07-area-dos-pais.png) | ![Parents' area: appearance with a menu preview](beni/prints/08-previa-aparencia.png) |
 
 ## More details
 

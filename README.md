@@ -68,12 +68,11 @@ Quer ajustar mais (ROMs, Luanti, coleções do itch.io)? Veja os [ajustes finos 
 
 ## Galeria
 
-| | |
+Algumas das configurações que os pais fazem na **área dos pais**, protegida pelo PIN:
+
+| Visão geral | Aparência, com prévia |
 |---|---|
-| ![Temas do Beni](beni/prints/04-temas-beni.jpg) | ![Temas da Bea](beni/prints/05-temas-bea.jpg) |
-| ![Lista de jogos](beni/prints/03-lista-jogos.png) | ![Contagem final](beni/prints/06-contagem-final.png) |
-| ![Área dos pais](beni/prints/07-area-dos-pais.png) | ![Jogo do itch.io em tela cheia](beni/prints/09-jogo-itch-tela-cheia.png) |
-| ![Jogos de vestir](beni/prints/10-jogos-vestir.jpg) | ![Apps](beni/prints/11-apps.jpg) |
+| ![Área dos pais: visão geral](beni/prints/07-area-dos-pais.png) | ![Área dos pais: aparência com prévia do menu](beni/prints/08-previa-aparencia.png) |
 
 ## Mais detalhes
 
