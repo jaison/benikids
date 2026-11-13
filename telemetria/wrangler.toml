@@ -10,7 +10,7 @@ routes = [{ pattern = "telemetria.benikids.app", custom_domain = true }]
 [[d1_databases]]
 binding = "DB"
 database_name = "benikids-telemetria"
-database_id = "PREENCHER_COM_O_ID_DO_D1"
+database_id = "eeacd775-758a-4c1a-a72e-e5f31e568d17"
 
 # limpeza diária: uso com mais de 12 meses, problemas com mais de 6 meses
 [triggers]
