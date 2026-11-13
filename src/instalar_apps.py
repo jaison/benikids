@@ -4,11 +4,13 @@ Mostra uma janela simples com o andamento de cada app. Chamado pelo instalador d
 Benikids e pela área dos pais. Uso: pythonw instalar_apps.py [id ...]
 """
 
+import json
 import os
 import queue
 import subprocess
 import sys
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -24,21 +26,83 @@ def winget():
     return caminho if os.path.isfile(caminho) else "winget"
 
 
-def instalar(item):
-    """Roda o winget para um app. Devolve (ok, texto)."""
+def _memoria():
+    """Apps que já pediram a senha de um administrador numa instalação "por usuário"."""
+    return os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Benikids", "pedem-senha.json")
+
+
+def pedem_senha(caminho=None):
+    try:
+        with open(caminho or _memoria(), encoding="utf-8") as f:
+            ids = json.load(f)
+        return {i for i in ids if isinstance(i, str)}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def lembrar_que_pede_senha(item_id, caminho=None):
+    caminho = caminho or _memoria()
+    ids = pedem_senha(caminho) | {item_id}
+    try:
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump(sorted(ids), f)
+    except OSError:
+        pass
+
+
+def precisa_de_senha(item, ja_pediram=frozenset()):
+    return item.get("escopo") == "machine" or item["id"] in ja_pediram
+
+
+def pedido_de_senha_aberto():
+    """Há uma janela do UAC (consent.exe) aberta agora?"""
+    try:
+        saida = subprocess.run(["tasklist", "/FI", "IMAGENAME eq consent.exe", "/NH"],
+                               capture_output=True, text=True, creationflags=SEM_CONSOLE, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "consent.exe" in (saida or "").lower()
+
+
+def instalar(item, ao_pedir_senha=None):
+    """Roda o winget para um app "por usuário". Devolve (ok, texto).
+
+    Os instaladores rodam com __COMPAT_LAYER=RunAsInvoker: um instalador que só pede
+    administrador "por via das dúvidas" instala sem perguntar, e um que precisa mesmo
+    falha em vez de travar a fila no UAC (aí ele vai para o lote com senha, no fim).
+    Se mesmo assim o Windows abrir o UAC (ex.: o winget elevando um MSI), avisa por
+    ao_pedir_senha, para a janela explicar e para da próxima vez ir direto ao lote.
+    """
     argv = [
         winget(), "install", "--id", item["winget"], "--exact", "--silent",
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
     ]
     if item.get("escopo"):
         argv += ["--scope", item["escopo"]]
+    env = dict(os.environ, __COMPAT_LAYER="RunAsInvoker")
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           creationflags=SEM_CONSOLE, timeout=1800)
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                encoding="utf-8", errors="replace", env=env, creationflags=SEM_CONSOLE)
     except FileNotFoundError:
         return False, "winget não encontrado"
+    pediu = threading.Event()
+
+    def vigiar():
+        while proc.poll() is None:
+            if not pediu.is_set() and pedido_de_senha_aberto():
+                pediu.set()
+                if ao_pedir_senha:
+                    ao_pedir_senha()
+            time.sleep(2)
+
+    threading.Thread(target=vigiar, daemon=True).start()
+    try:
+        saida, _ = proc.communicate(timeout=1800)
     except subprocess.TimeoutExpired:
+        proc.kill()
         return False, "demorou demais"
+    r = subprocess.CompletedProcess(argv, proc.returncode, saida, "")
     if catalogo_windows.localizar(item):
         return True, "instalado"
     fim = (r.stdout or r.stderr or "").strip().splitlines()
@@ -51,6 +115,7 @@ SILENCIOSO = {
     "wix": None,
     "nullsoft": ["/S"],
     "inno": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS"],
+    "burn": ["/quiet", "/norestart"],
 }
 
 
@@ -73,6 +138,29 @@ def baixar(item, pasta):
     return max(arquivos, key=os.path.getmtime) if arquivos else None
 
 
+def tipo_do_instalador(item):
+    """O tipo (msi, inno, nullsoft...) do catálogo ou, se faltar, o que o winget informa."""
+    if item.get("instalador"):
+        return item["instalador"]
+    try:
+        saida = subprocess.run(
+            [winget(), "show", "--id", item["winget"], "--exact", "--scope", "machine",
+             "--accept-source-agreements", "--disable-interactivity"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=SEM_CONSOLE, timeout=120).stdout or ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return ler_tipo(saida)
+
+
+def ler_tipo(saida_do_show):
+    for linha in saida_do_show.splitlines():
+        chave, _, valor = linha.strip().partition(":")
+        if chave.strip().lower() in ("installer type", "tipo de instalador"):
+            return valor.strip().lower()
+    return ""
+
+
 def _ps(texto):
     return "'" + texto.replace("'", "''") + "'"
 
@@ -82,7 +170,7 @@ def instalar_como_admin(pares, pasta):
     (a conta da criança não é administradora: o Windows pede a senha de um adulto)."""
     linhas = ["$ErrorActionPreference = 'Continue'"]
     for item, arquivo in pares:
-        tipo = item.get("instalador", "")
+        tipo = tipo_do_instalador(item)
         if tipo in ("msi", "wix") or arquivo.lower().endswith(".msi"):
             linhas.append(f"Start-Process msiexec.exe -Wait -ArgumentList @('/i', '\"' + {_ps(arquivo)} + '\"', '/qn', '/norestart')")
         else:
@@ -104,7 +192,10 @@ def instalar_como_admin(pares, pasta):
 
 
 def trabalhar(itens, avisos):
+    """Primeiro tudo o que instala sem senha, sem nunca parar a fila esperando o UAC;
+    no fim, um só pedido de senha para todos os que precisam de administrador."""
     para_todos = []
+    ja_pediram = pedem_senha()
     for item in itens:
         if catalogo_windows.localizar(item):
             avisos.put((item["id"], "ja", "já estava instalado"))
@@ -112,12 +203,24 @@ def trabalhar(itens, avisos):
         if not item.get("winget"):
             avisos.put((item["id"], "erro", "sem instalador automático"))
             continue
-        if item.get("escopo") == "machine":
+        if precisa_de_senha(item, ja_pediram):
+            avisos.put((item["id"], "espera", "no fim, com a senha"))
             para_todos.append(item)
             continue
         avisos.put((item["id"], "instalando", "instalando..."))
-        ok, texto = instalar(item)
-        avisos.put((item["id"], "ok" if ok else "erro", texto))
+
+        def pediu_senha(item=item):
+            lembrar_que_pede_senha(item["id"])
+            avisos.put((item["id"], "instalando", "o Windows pediu a senha de um adulto"))
+
+        ok, texto = instalar(item, pediu_senha)
+        if ok:
+            avisos.put((item["id"], "ok", texto))
+        else:
+            # sem administrador não deu: tenta de novo no lote com senha, no fim
+            lembrar_que_pede_senha(item["id"])
+            avisos.put((item["id"], "espera", "no fim, com a senha"))
+            para_todos.append(item)
     if para_todos:
         pasta = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Benikids", "instaladores")
         pares = []
