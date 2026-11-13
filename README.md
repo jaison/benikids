@@ -1,10 +1,11 @@
 # Benikids
 
+🇧🇷 **Português** · 🇺🇸 [English](README.en.md)
+
 **Um computador para crianças que equilibra aprender e brincar, no Linux e no Windows.** É um menu
 em tela cheia pensado para crianças de 5 a 10 anos, leve o bastante para dar vida nova a notebooks
-antigos. A criança só encontra o que
-os pais aprovaram. O tempo de tela é controlado por categoria, e o tempo de jogo depende de ela
-ter feito a parte de aprendizado.
+antigos. A criança só encontra o que os pais aprovaram. O tempo de tela é controlado por categoria,
+e o tempo de jogo depende de ela ter feito a parte de aprendizado.
 
 Ao ligar o notebook, a criança vê **"O que você quer fazer? 📚 Aprender / 🎨 Passatempo / 🎮 Jogar"**.
 Cada cartão mostra quanto tempo ainda resta hoje.
@@ -342,9 +343,10 @@ O código ainda usa os nomes internos do original (`cozy-kids-launcher`, porta 3
 correções de lá.
 
 ### Testes
-`python3 -m unittest discover -s tests` roda **381 testes**, os do projeto original e os novos:
+`python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:
 limites por categoria e dia da semana, categorias que dividem tempo, reforço de aprendizagem,
-login automático, atualizador, mudanças de catálogo e a integração com o menu nativo. O menu nativo
+login automático, atualizador, mudanças de catálogo, configuração inicial, catálogo do Windows e a
+integração com o menu nativo. O menu nativo
 tem os seus em Rust (`cd cliente && cargo test --release`). Três testes do original foram ajustados ao comportamento novo: textos já
 traduzidos e o campo `limitBlocked`.
 
