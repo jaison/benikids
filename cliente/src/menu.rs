@@ -1461,6 +1461,8 @@ impl Menu {
             p.t.titulo_cor,
             p.t.titulo_sombras,
         );
+        // com dica em algum cartão, todos reservam o espaço dela (títulos alinhados)
+        let alguma_regra = opcoes.iter().any(|o| !dados::texto_regra(&self.uso, o.id).is_empty());
         let mut linha = div().flex().gap(p.z(gap));
         for (i, o) in opcoes.iter().enumerate() {
             let tempo = dados::tempo(&self.uso, o.id);
@@ -1488,12 +1490,14 @@ impl Menu {
                 bloco = bloco.child(p.fonte(div()).text_size(p.f(25.)).child(p.caixa(&texto)));
                 c = c.child(bloco);
             }
-            if !regra.is_empty() {
+            if alguma_regra {
                 c = c.child(
                     div()
+                        .h(p.f(42.))
                         .font_family(SharedString::from(tema::FONTE_PADRAO))
                         .font_weight(FontWeight(700.))
                         .text_size(p.f(15.))
+                        .line_height(p.f(20.))
                         .text_center()
                         .child(regra),
                 );
@@ -2263,11 +2267,50 @@ fn fechar_processo(filho: Option<&mut Child>, pid: u32) {
 }
 
 /// Traz a janela do menu para a frente (depois que o navegador fecha).
-#[cfg(not(unix))]
-fn trazer_para_frente() {}
+#[cfg(windows)]
+pub(crate) fn trazer_para_frente() {
+    // O Windows não deixa um processo de fundo roubar o foco: anexar a entrada à
+    // janela que está na frente libera o SetForegroundWindow.
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
+        SetForegroundWindow, ShowWindow, SW_SHOW,
+    };
+    unsafe extern "system" fn achar(h: HWND, alvo: LPARAM) -> i32 {
+        unsafe {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, &mut pid);
+            if pid == std::process::id() && IsWindowVisible(h) != 0 {
+                *(alvo as *mut HWND) = h;
+                return 0;
+            }
+        }
+        1
+    }
+    unsafe {
+        let mut h: HWND = std::ptr::null_mut();
+        EnumWindows(Some(achar), &mut h as *mut HWND as LPARAM);
+        if h.is_null() || GetForegroundWindow() == h {
+            return;
+        }
+        let frente = GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
+        let eu = GetCurrentThreadId();
+        let ligou = frente != 0 && frente != eu && AttachThreadInput(eu, frente, 1) != 0;
+        ShowWindow(h, SW_SHOW);
+        BringWindowToTop(h);
+        SetForegroundWindow(h);
+        if ligou {
+            AttachThreadInput(eu, frente, 0);
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn trazer_para_frente() {}
 
 #[cfg(unix)]
-fn trazer_para_frente() {
+pub(crate) fn trazer_para_frente() {
     let pid = std::process::id().to_string();
     std::thread::spawn(move || {
         let _ = std::process::Command::new("xdotool")

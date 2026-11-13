@@ -122,6 +122,12 @@ fn main() {
                             if !window.is_fullscreen() {
                                 window.toggle_fullscreen();
                             }
+                            // aberto por um processo de fundo, o Windows não dá o foco sozinho
+                            #[cfg(windows)]
+                            {
+                                window.activate_window();
+                                menu::trazer_para_frente();
+                            }
                         });
                     }
                 })

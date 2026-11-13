@@ -293,7 +293,13 @@ pub const FONTES: &[&str] = &[
 ];
 
 /// Fonte do texto "normal" quando o tema não define uma.
+#[cfg(not(windows))]
 pub const FONTE_PADRAO: &str = "Noto Sans";
+#[cfg(windows)]
+pub const FONTE_PADRAO: &str = "Segoe UI";
 
 /// Emojis coloridos (sem isto o gpui pode cair numa fonte de símbolos monocromática).
+#[cfg(not(windows))]
 pub const FONTE_EMOJI: &str = "Noto Color Emoji";
+#[cfg(windows)]
+pub const FONTE_EMOJI: &str = "Segoe UI Emoji";

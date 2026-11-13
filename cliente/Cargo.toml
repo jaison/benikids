@@ -16,6 +16,9 @@ log = "0.4"
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+
 # "release" fica igual ao do protótipo para reaproveitar o que já foi compilado no
 # notebook (compilar tudo do zero leva ~30 min num Celeron). O binário distribuído
 # sai do perfil "dist" (no GitHub Actions), mais enxuto.
