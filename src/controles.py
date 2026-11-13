@@ -17,7 +17,10 @@ capacidades do dispositivo.
 """
 
 import copy
-import fcntl
+try:
+    import fcntl  # Linux (evdev); no Windows os controles ainda não são lidos
+except ImportError:
+    fcntl = None
 import json
 import os
 import re

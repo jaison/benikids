@@ -13,7 +13,15 @@ PROCESS_RECORD_VERSION = 1
 _ROLE_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
 
+_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
+if os.name == "nt":
+    import plataforma_windows as _win
+
+
 def _process_stat(pid):
+    if os.name == "nt":
+        return _win.process_stat(pid)
     try:
         with open(f"/proc/{int(pid)}/stat", "r", encoding="utf-8") as handle:
             stat_line = handle.read()
@@ -33,6 +41,8 @@ def process_start_time(pid):
 
 
 def process_command(pid):
+    if os.name == "nt":
+        return _win.process_command(pid)
     try:
         with open(f"/proc/{int(pid)}/cmdline", "rb") as handle:
             return [
@@ -175,10 +185,12 @@ def terminate_owned_process(
         return False
     pid = record["pid"]
     try:
+        # no Windows os.kill vira TerminateProcess (não há SIGTERM "educado")
         os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        remove_process_record(path, expected_pid=pid)
-        return True
+    except (ProcessLookupError, PermissionError, OSError):
+        if not owned_process(path, expected_role, expected_marker):
+            remove_process_record(path, expected_pid=pid)
+            return True
     deadline = time.monotonic() + max(0.0, timeout)
     while time.monotonic() < deadline:
         if not owned_process(path, expected_role, expected_marker):
@@ -187,8 +199,8 @@ def terminate_owned_process(
         time.sleep(0.05)
     if owned_process(path, expected_role, expected_marker):
         try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
+            os.kill(pid, _SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
             pass
     remove_process_record(path, expected_pid=pid)
     return True

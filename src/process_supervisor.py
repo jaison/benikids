@@ -115,6 +115,42 @@ def terminate_owned_tree(grace_seconds=TERMINATION_GRACE_SECONDS):
     _reap_children()
 
 
+def supervise_windows(
+    command,
+    record_path,
+    marker,
+    activity_file="",
+    activity_profile="",
+    activity_tile="",
+):
+    """No Windows a árvore do app fica num Job Object. Quando o servidor encerra
+    este supervisor (TerminateProcess), o handle do job fecha e o Windows encerra
+    todos os processos do app junto (KILL_ON_JOB_CLOSE)."""
+    import plataforma_windows as win
+
+    trabalho = win.Trabalho()
+    # o próprio supervisor entra no job: os filhos já nascem dentro dele
+    trabalho.incluir(os.getpid())
+    child = None
+    started_at = None
+    try:
+        child = subprocess.Popen(command, env=dict(os.environ), close_fds=True)
+        started_at = int(time.time())
+        write_process_record(record_path, os.getpid(), "tile-process", marker=marker)
+        while True:
+            # só o supervisor sobrou no job: o app (e o que ele abriu) acabou
+            if child.poll() is not None and trabalho.ativos() <= 1:
+                return 0
+            time.sleep(0.2)
+    finally:
+        remove_process_record(record_path, expected_pid=os.getpid())
+        if started_at is not None and activity_file and activity_profile and activity_tile:
+            try:
+                record_activity(activity_file, activity_profile, activity_tile, started_at)
+            except (OSError, ValueError):
+                pass
+
+
 def supervise(
     command,
     record_path,
@@ -189,7 +225,7 @@ def main(argv=None):
     if not command:
         return 2
     try:
-        return supervise(
+        return (supervise_windows if os.name == "nt" else supervise)(
             command,
             args.record,
             args.marker,

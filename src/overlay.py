@@ -34,6 +34,9 @@ TILE_PROCESS_MARKER = os.path.join(
     "process_supervisor.py",
 )
 OVERLAY_MARKER = os.path.abspath(__file__)
+WINDOWS = os.name == "nt"
+if WINDOWS:
+    import plataforma_windows as win
 
 THEME = {
     "bg": "#ffffff",
@@ -161,6 +164,14 @@ def api(path, data=None):
 
 
 def focus_launcher():
+    if WINDOWS:
+        record = owned_process(BROWSER_PIDFILE, "browser")
+        if record:
+            try:
+                win.ativar_processo(record["pid"], com_filhos=True)
+            except OSError:
+                pass
+        return
     try:
         result = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=3)
         if result.returncode == 0:
@@ -230,7 +241,7 @@ def tile_is_blocked(status, tile_id):
 PILL_BG = "#1f2937"
 PILL_ALPHA_IDLE = 0.6
 PILL_ALPHA_HOVER = 1.0
-PILL_FONT = "Ubuntu"
+PILL_FONT = "Segoe UI" if os.name == "nt" else "Ubuntu"
 BUTTON_SIZE = 46
 CORNER_MARGIN = 14
 CORNERS = ("tl", "tr", "br", "bl")  # ordem do toque em ✥ (sentido horário)
@@ -276,6 +287,8 @@ def nearest_corner(center_x, center_y, screen_w, screen_h):
 
 def process_tree(root_pid):
     """PIDs do processo e de todos os descendentes (lido de /proc)."""
+    if WINDOWS:
+        return win.arvore(root_pid)
     children = {}
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
@@ -590,6 +603,12 @@ class AppOverlay:
         """Volta uma página no navegador do tile (Alt+←)."""
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         if not record:
+            return
+        if WINDOWS:
+            try:
+                win.alt_esquerda(record["pid"])
+            except OSError:
+                pass
             return
         windows = []
         try:

@@ -7,9 +7,9 @@ name: Menu nativo
 on:
   push:
     branches: [main, develop]
-    paths: ["cliente/**", ".github/workflows/menu-nativo.yml"]
+    paths: ["cliente/**", "src/**", "themes/**", "scripts/windows/**", "beni/config/config.json", "VERSION", ".github/workflows/menu-nativo.yml"]
   pull_request:
-    paths: ["cliente/**", ".github/workflows/menu-nativo.yml"]
+    paths: ["cliente/**", "src/**", "themes/**", "scripts/windows/**", "beni/config/config.json", "VERSION", ".github/workflows/menu-nativo.yml"]
   release:
     types: [published]
   workflow_dispatch:
@@ -112,9 +112,66 @@ jobs:
           mkdir -p ../saida
           # o nome com "demo" abre o modo demonstração com dois cliques
           cp target/dist/beni-menu.exe ../saida/beni-menu-demo.exe
+          mkdir -p ../saida-pacote
+          cp target/dist/beni-menu.exe ../saida-pacote/beni-menu.exe
 
       - uses: actions/upload-artifact@v7
         with:
           name: beni-menu-windows-demo
           path: saida/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: beni-menu-windows
+          path: saida-pacote/
+          if-no-files-found: error
+
+  # Pacote para Windows: launcher (o mesmo servidor Python do Linux) + Python
+  # embutido (python-build-standalone, com Tk) + menu nativo + configuração inicial.
+  pacote-windows:
+    name: Pacote Windows
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: beni-menu-windows
+          path: menu/
+
+      - name: Montar o pacote
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          P=pacote/Beni
+          mkdir -p "$P/app/themes/fonts" "$P/app/themes/themes"
+          cp -r src/. "$P/app/"
+          rm -rf "$P/app/launcher.sh" "$P/app/update.sh" "$P/app/__pycache__" "$P/app/scratch"
+          cp themes/*.jpg themes/*.svg "$P/app/themes/"
+          cp themes/fonts/* "$P/app/themes/fonts/"
+          cp themes/*.jpg "$P/app/themes/themes/"
+          tr -d ' \n' < VERSION > "$P/app/version"
+          cp menu/beni-menu.exe "$P/app/"
+          python3 scripts/windows/config-padrao.py "$P/config-padrao.json"
+          cp scripts/windows/instalar_windows.py "$P/"
+          printf '@echo off\r\necho Instalando o Beni...\r\n"%%~dp0python\\python.exe" "%%~dp0instalar_windows.py"\r\nif errorlevel 1 pause\r\n' > "$P/Instalar Beni.cmd"
+          # Python 3.13 para Windows com Tk (o "embeddable" oficial não traz o tkinter)
+          ASSET=$(gh release view -R astral-sh/python-build-standalone --json assets --jq '.assets[].name' \
+            | grep -E '^cpython-3\.13\.[0-9]+\+[0-9]+-x86_64-pc-windows-msvc-install_only\.tar\.gz$' | head -1)
+          echo "Python: $ASSET"
+          gh release download -R astral-sh/python-build-standalone -p "$ASSET" -D /tmp
+          tar xzf "/tmp/$ASSET" -C "$P"
+          test -f "$P/python/pythonw.exe"
+          test -d "$P/python/tcl"
+          rm -rf "$P/python/Lib/test" "$P/python/Lib/idlelib" "$P/python/Lib/turtledemo"
+          du -sh "$P" "$P/python" "$P/app"
+          cat "$P/Instalar Beni.cmd"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Beni-Windows
+          path: pacote/
           if-no-files-found: error

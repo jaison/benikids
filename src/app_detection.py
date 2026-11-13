@@ -25,7 +25,39 @@ BROWSER_CANDIDATES = (
     "cachy-browser",
 )
 
+# Windows: os navegadores não ficam no PATH; procura nas pastas de instalação.
+WINDOWS_BROWSERS = {
+    "msedge": ("Microsoft", "Edge", "Application", "msedge.exe"),
+    "chrome": ("Google", "Chrome", "Application", "chrome.exe"),
+    "firefox": ("Mozilla Firefox", "firefox.exe"),
+    "brave": ("BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+}
+if os.name == "nt":
+    BROWSER_CANDIDATES = tuple(WINDOWS_BROWSERS)
+
+
+def windows_which(name):
+    """Caminho completo de um navegador conhecido (ou de um .exe já com caminho)."""
+    if not name:
+        return None
+    if os.path.isabs(name):
+        return name if os.path.isfile(name) else None
+    base = os.path.splitext(os.path.basename(name))[0].lower()
+    parts = WINDOWS_BROWSERS.get(base)
+    if parts:
+        for root in (
+            os.environ.get("ProgramFiles", r"C:\Program Files"),
+            os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.environ.get("LOCALAPPDATA", ""),
+        ):
+            if root and os.path.isfile(os.path.join(root, *parts)):
+                return os.path.join(root, *parts)
+    return shutil.which(name)
+
+
 CHROMIUM_BROWSER_NAMES = {
+    "msedge",
+    "chrome",
     "chromium",
     "chromium-browser",
     "google-chrome",
@@ -117,7 +149,10 @@ def scan_apps(home, application_dirs=None, limit=300):
 
 def browser_family(browser):
     """Return the launch-profile family used by a browser executable."""
-    if os.path.basename(browser) in CHROMIUM_BROWSER_NAMES:
+    name = os.path.basename(browser)
+    if name.lower().endswith(".exe"):
+        name = os.path.splitext(name)[0].lower()
+    if name in CHROMIUM_BROWSER_NAMES:
         return "chromium"
     return "firefox"
 
@@ -127,20 +162,28 @@ def find_browser(config=None, candidates=BROWSER_CANDIDATES, which=None):
     config = config or {}
     preferred = config.get("browser", "")
     ordered_candidates = ([preferred] if preferred else []) + list(candidates)
-    executable = shutil.which if which is None else which
+    if which is None:
+        executable = windows_which if os.name == "nt" else shutil.which
+    else:
+        executable = which
     seen = set()
     for candidate in ordered_candidates:
         if not candidate or candidate in seen:
             continue
         seen.add(candidate)
-        if executable(candidate):
-            return candidate
+        found = executable(candidate)
+        if found:
+            # no Windows o comando precisa do caminho completo
+            return found if os.name == "nt" and isinstance(found, str) else candidate
     return None
 
 
 def browser_statuses(candidates=BROWSER_CANDIDATES, which=None):
     """Return the stable public browser-detection payload."""
-    executable = shutil.which if which is None else which
+    if which is None:
+        executable = windows_which if os.name == "nt" else shutil.which
+    else:
+        executable = which
     return [
         {"name": browser, "installed": bool(executable(browser))}
         for browser in candidates

@@ -708,8 +708,21 @@ def find_browser(config=None):
     return detect_browser(
         config,
         candidates=BROWSER_CANDIDATES,
-        which=shutil.which,
+        which=None if os.name == "nt" else shutil.which,
     )
+
+
+def comandos_desligar():
+    if os.name == "nt":
+        return [["shutdown", "/s", "/t", "0"]]
+    return [cmd for cmd in (["systemctl", "poweroff"], ["loginctl", "poweroff"]) if shutil.which(cmd[0])]
+
+
+def abridor_do_sistema():
+    """Programa que abre arquivo/URL com o app padrão (xdg-open; explorer no Windows)."""
+    if os.name == "nt":
+        return "explorer.exe"
+    return "xdg-open" if shutil.which("xdg-open") else None
 
 
 def external_browser_command(browser, url, profile_id="", marionette_port=None):
@@ -1145,16 +1158,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             )
             return self.json_response(status)
         if self.path == "/api/features":
-            shutdown_ok = bool(
-                shutil.which("systemctl") or shutil.which("loginctl")
-            )
+            shutdown_ok = bool(comandos_desligar())
             return self.json_response({
                 "shutdownAvailable": shutdown_ok,
                 "speechFeedbackAvailable": speech_feedback().available(),
             })
         if self.path == "/api/browsers":
             return self.json_response(
-                browser_statuses(BROWSER_CANDIDATES, which=shutil.which)
+                browser_statuses(BROWSER_CANDIDATES, which=None if os.name == "nt" else shutil.which)
             )
         if self.path == "/api/cliente/estado":
             # Menu nativo (beni-menu): quantas vezes uma página aberta por ele pediu
@@ -1413,8 +1424,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         "--",
                         *command,
                     ]
-            elif shutil.which("xdg-open"):
-                command = ["xdg-open", item["path"]]
+            elif abridor_do_sistema():
+                command = [abridor_do_sistema(), item["path"]]
             else:
                 log_runtime_event(
                     "launch.failed",
@@ -1775,14 +1786,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 write_lifecycle_request(LIFECYCLE_REQUEST_FILE, "shutdown")
             except (OSError, ValueError):
                 pass
-            for cmd in (["systemctl", "poweroff"], ["loginctl", "poweroff"]):
-                if shutil.which(cmd[0]):
-                    try:
+            for cmd in comandos_desligar():
+                try:
+                    if os.name == "nt":  # sem janela de console
+                        subprocess.Popen(cmd, env=dict(os.environ), creationflags=0x08000000)
+                    else:
                         subprocess.Popen(cmd, env=dict(os.environ))
-                        shutdown_ok = True
-                        break
-                    except Exception:
-                        pass
+                    shutdown_ok = True
+                    break
+                except Exception:
+                    pass
             if not shutdown_ok:
                 try:
                     clear_lifecycle_request(LIFECYCLE_REQUEST_FILE)
@@ -1953,7 +1966,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 command = (
                     media_player_command(player, locations)
                     if player
-                    else ["xdg-open", locations[0]]
+                    else [abridor_do_sistema() or "xdg-open", locations[0]]
                 )
                 try:
                     launch_owned_tile(
@@ -2006,8 +2019,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         browser, url, profile_id=profile_id,
                         marionette_port=site_logins.MARIONETTE_PORT if auto_login else None,
                     )
-                elif shutil.which("xdg-open"):
-                    command = ["xdg-open", url]
+                elif abridor_do_sistema():
+                    command = [abridor_do_sistema(), url]
                 else:
                     reset_active_tile()
                     log_runtime_event(
@@ -2109,8 +2122,9 @@ def main():
             log_runtime_event("server.started", version=get_version())
             usage_tracker().start()
             try:
-                controles_service().aplicar()
-                controles_service().garantir_thread()
+                if os.name != "nt":  # controles USB: só Linux (evdev) por enquanto
+                    controles_service().aplicar()
+                    controles_service().garantir_thread()
             except Exception as exc:  # noqa: BLE001
                 log_runtime_event("controles.failed", level="warning",
                                   exceptionType=type(exc).__name__)
