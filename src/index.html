@@ -491,6 +491,12 @@
               <input id="cfgStartOnLogin" type="checkbox">
               <span>Abrir o Benikids sozinho ao entrar no computador</span>
             </label>
+            <label class="chk" for="cfgTelemetry" style="margin-top:8px;">
+              <input id="cfgTelemetry" type="checkbox">
+              <span>Ajudar o Benikids enviando, uma vez por dia, informações anônimas sobre este computador (sistema, processador, memória, placa de vídeo, tela). Nada sobre as crianças.</span>
+            </label>
+            <p class="muted" style="margin:4px 0 0;"><a href="#" id="telemetryPreviewLink">Ver exatamente o que é enviado</a></p>
+            <pre id="telemetryPreview" class="muted" style="white-space:pre-wrap;font-size:.85rem;" hidden></pre>
             <div id="catalogInstallRow" style="margin-top:8px;" hidden>
               <button type="button" class="smallbtn" id="catalogInstallBtn">Instalar jogos e programas que faltam</button>
               <p class="muted" id="catalogInstallMsg">Abre uma janela com o andamento. Alguns apps pedem a senha de um administrador, uma vez só.</p>

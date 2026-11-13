@@ -34,6 +34,7 @@ input:focus{outline:none;border-color:var(--cor)}
 .dica{color:var(--suave);margin:12px 0 0}
 .opcao{display:flex;gap:12px;align-items:center;font-size:1.15rem;cursor:pointer;margin:0}
 .opcao input{width:26px;height:26px;accent-color:var(--cor);flex:none}
+.opcao+.opcao{margin-top:14px}
 .erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:0 0 12px}
 .pronto{text-align:center;padding:60px 20px}
 .pronto div{font-size:5rem}
@@ -65,7 +66,9 @@ input:focus{outline:none;border-color:var(--cor)}
   <section>
     <label class="opcao"><input type="checkbox" id="inicio" checked>
       <span>Abrir o Benikids sozinho ao entrar no computador</span></label>
-    <p class="dica">Dá para mudar depois na área dos pais.</p>
+    <label class="opcao"><input type="checkbox" id="telemetria" checked>
+      <span>Ajudar o Benikids com informações anônimas sobre este computador</span></label>
+    <p class="dica">Uma vez por dia: sistema, processador, memória, placa de vídeo e tela, para sabermos em que computadores testar. Nada sobre as crianças. Dá para mudar depois na área dos pais.</p>
   </section>
 
   <p class="erro" id="erro" role="alert"></p>
@@ -143,7 +146,8 @@ input:focus{outline:none;border-color:var(--cor)}
     const pin = document.getElementById('pin').value;
     if (!/^\d{4,6}$/.test(pin)) { document.getElementById('pin').focus(); throw new Error('O PIN precisa ter de 4 a 6 números.'); }
     if (pin !== document.getElementById('pin2').value) { document.getElementById('pin2').focus(); throw new Error('Os dois PINs estão diferentes.'); }
-    return { children: criancas, pin: pin, startOnLogin: document.getElementById('inicio').checked };
+    return { children: criancas, pin: pin, startOnLogin: document.getElementById('inicio').checked,
+             telemetry: document.getElementById('telemetria').checked };
   }
 
   async function comecar() {

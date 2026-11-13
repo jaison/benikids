@@ -1,0 +1,10 @@
+# Telemetria anônima do Benikids: recebe um envio por dia de cada instalação.
+# Publicar: cd telemetria && npx wrangler@3 deploy
+name = "benikids-telemetria"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "benikids-telemetria"
+database_id = "PREENCHER_COM_O_ID_DO_D1"

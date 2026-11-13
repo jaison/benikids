@@ -2,6 +2,26 @@
 
 This project is intended for private family computers.
 
+## Benikids: anonymous device telemetry
+
+Benikids adds one network request that the original project did not have: **once a
+day**, it sends a small anonymous description of the computer, so the project knows
+which hardware it runs on and where to test. Parents can turn it off in the first-run
+setup and in Parents → System, where "Ver exatamente o que é enviado" shows the exact
+JSON (`GET /api/telemetria/previa`).
+
+What is sent (`src/telemetria.py`, `dados()`):
+
+- a random installation ID, created locally (not derived from the user, the machine or any account);
+- Benikids version and platform (windows/linux);
+- operating system name and version;
+- CPU model, total RAM in GB, graphics card name(s), screen resolution, OS language;
+- whether the kids' menu is the native one or the browser one.
+
+Nothing about the children, their profiles, apps used, screen time, names, files or
+logins is sent. The receiver (`telemetria/`, a Cloudflare Worker with a D1 database)
+stores one row per installation ID and does not store IP addresses or request headers.
+
 ## Local-first
 
 The launcher is designed to run locally:

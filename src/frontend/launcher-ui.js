@@ -446,3 +446,15 @@ document.addEventListener('click',async event=>{
   }
   setTimeout(()=>{button.disabled=false;},5000);
 });
+
+document.addEventListener('click', async ev => {
+  if (!ev.target || ev.target.id !== 'telemetryPreviewLink') return;
+  ev.preventDefault();
+  const pre = document.getElementById('telemetryPreview');
+  if (!pre.hidden) { pre.hidden = true; return; }
+  try {
+    const r = await fetch('/api/telemetria/previa', { credentials: 'same-origin' });
+    pre.textContent = r.ok ? JSON.stringify(await r.json(), null, 2) : 'Não deu para montar a prévia agora.';
+  } catch (e) { pre.textContent = 'Não deu para montar a prévia agora.'; }
+  pre.hidden = false;
+});

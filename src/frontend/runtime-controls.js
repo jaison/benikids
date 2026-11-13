@@ -203,6 +203,7 @@ async function saveConfig(){
   cfg.soundFeedbackEnabled=document.getElementById('cfgSoundFeedbackEnabled').checked;
   cfg.speechFeedbackEnabled=document.getElementById('cfgSpeechFeedbackEnabled').checked;
   cfg.startOnLogin=document.getElementById('cfgStartOnLogin').checked;
+  cfg.telemetryEnabled=document.getElementById('cfgTelemetry').checked;
   cfg.celebrationEnabled=document.getElementById('cfgCelebrationEnabled').checked;
   cfg.accessibilityLargeText=document.getElementById('cfgAccessibilityLargeText').checked;
   cfg.accessibilityHighContrast=document.getElementById('cfgAccessibilityHighContrast').checked;

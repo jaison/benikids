@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import catalogo_windows
 import controles
 import inicio_automatico
+import telemetria
 import site_logins
 from app_detection import (
     BROWSER_CANDIDATES,
@@ -166,6 +167,7 @@ BACKUP_ROOT = os.path.join(HOME, ".local", "share", "cozy-kids-launcher-backups"
 LOG_FILE = os.path.join(HOME, ".local", "state", "cozy-kids-launcher", "runtime.jsonl")
 ACTIVITY_FILE = os.path.join(HOME, ".local", "state", "cozy-kids-launcher", "activity.json")
 MEDIA_STATE_FILE = os.path.join(HOME, ".local", "state", "cozy-kids-launcher", "media.json")
+TELEMETRIA_FILE = os.path.join(HOME, ".config", "cozy-kids-launcher", "telemetria.json")
 MEDIA_RESUME_ROOT = os.path.join(
     HOME,
     ".local",
@@ -988,7 +990,7 @@ SETUP_ICONES = {
 SETUP_MAX_CRIANCAS = 8
 
 
-def first_setup_config(stored, children, pin, start_on_login=True):
+def first_setup_config(stored, children, pin, start_on_login=True, telemetry=True):
     """Perfis novos a partir do perfil-modelo (tiles, limites, horários) + PIN."""
     if stored.get("setupCompleted") is not False or stored.get("pinHash"):
         raise PermissionError("Setup already completed")
@@ -1022,7 +1024,30 @@ def first_setup_config(stored, children, pin, start_on_login=True):
     resultado["pinHash"] = hash_pin(pin if isinstance(pin, str) else "")
     resultado["setupCompleted"] = True
     resultado["startOnLogin"] = start_on_login is not False
+    resultado["telemetryEnabled"] = telemetry is not False
     return resultado
+
+
+# o menu nativo fala com o servidor sem User-Agent; os navegadores sempre mandam um
+_ULTIMO_PEDIDO_NATIVO = [0.0]
+
+
+def anotar_cliente(user_agent):
+    if not user_agent:
+        _ULTIMO_PEDIDO_NATIVO[0] = time.time()
+
+
+def tipo_de_menu():
+    return "nativo" if time.time() - _ULTIMO_PEDIDO_NATIVO[0] < 24 * 3600 else "web"
+
+
+_TELEMETRIA = []
+
+
+def telemetria_service():
+    if not _TELEMETRIA:
+        _TELEMETRIA.append(telemetria.Telemetria(TELEMETRIA_FILE, load_stored_cfg, get_version, tipo_de_menu))
+    return _TELEMETRIA[0]
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1141,6 +1166,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         request_url = urlparse(self.path)
+        if request_url.path.startswith("/api/"):
+            anotar_cliente(self.headers.get("User-Agent", ""))
+        if request_url.path == "/api/telemetria/previa":
+            if not self.require_admin():
+                return
+            return self.json_response(telemetria_service().previa())
         if request_url.path in ("/", "/index.html"):
             try:
                 cfg = load_cfg()
@@ -1679,6 +1710,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 stored = first_setup_config(
                     load_stored_cfg(), body.get("children"), body.get("pin", ""),
                     body.get("startOnLogin", True),
+                    body.get("telemetry", True),
                 )
                 stored = save_stored_cfg(stored)
                 clear_timer()
@@ -2241,6 +2273,10 @@ def main():
             )
             log_runtime_event("server.started", version=get_version())
             usage_tracker().start()
+            try:
+                telemetria_service().iniciar()
+            except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor
+                pass
             try:
                 if os.name != "nt":  # controles USB: só Linux (evdev) por enquanto
                     controles_service().aplicar()
