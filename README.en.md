@@ -67,11 +67,15 @@ Want to fine-tune it (ROMs, Luanti, itch.io collections)? See [fine-tuning on Li
 
 ## Gallery
 
-Some of the settings parents can change in the **parents' area**, protected by the PIN:
+What parents set up, in the PIN-protected **parents' area**:
 
-| Overview | Appearance, with a preview |
+| First-run setup | Screen time |
 |---|---|
-| ![Parents' area: overview](beni/prints/07-area-dos-pais.png) | ![Parents' area: appearance with a menu preview](beni/prints/08-previa-aparencia.png) |
+| ![First-run setup: children, parents' PIN and start on login](beni/prints/12-pais-configuracao-inicial.png) | ![Screen time: limits per category and weekday, and the learning rule](beni/prints/13-pais-tempo-de-tela.png) |
+| **Gamepads** | **Children and automatic logins** |
+| ![USB gamepads: setup wizard and games with the gamepad badge](beni/prints/15-pais-controles.png) | ![Children: automatic site logins](beni/prints/14-pais-criancas-logins.png) |
+| **Appearance, with a preview** | |
+| ![Appearance: theme, icon size and a menu preview](beni/prints/08-previa-aparencia.png) | |
 
 ## More details
 

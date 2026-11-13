@@ -68,11 +68,15 @@ Quer ajustar mais (ROMs, Luanti, coleções do itch.io)? Veja os [ajustes finos 
 
 ## Galeria
 
-Algumas das configurações que os pais fazem na **área dos pais**, protegida pelo PIN:
+O que os pais configuram, na **área dos pais** protegida pelo PIN:
 
-| Visão geral | Aparência, com prévia |
+| Configuração inicial | Tempo de tela |
 |---|---|
-| ![Área dos pais: visão geral](beni/prints/07-area-dos-pais.png) | ![Área dos pais: aparência com prévia do menu](beni/prints/08-previa-aparencia.png) |
+| ![Configuração inicial: crianças, PIN dos pais e abrir sozinho](beni/prints/12-pais-configuracao-inicial.png) | ![Tempo de tela: limite por categoria, por dia da semana e regra de aprendizado](beni/prints/13-pais-tempo-de-tela.png) |
+| **Controles** | **Crianças e logins automáticos** |
+| ![Controles USB: assistente e jogos com o selo de controle](beni/prints/15-pais-controles.png) | ![Crianças: login automático nos sites](beni/prints/14-pais-criancas-logins.png) |
+| **Aparência, com prévia** | |
+| ![Aparência: tema, tamanho dos ícones e prévia do menu](beni/prints/08-previa-aparencia.png) | |
 
 ## Mais detalhes
 

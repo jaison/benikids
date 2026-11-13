@@ -100,6 +100,14 @@ label.chk {
   font-weight:600;
 }
 
+label.chk input[type=checkbox], label.chk input[type=radio] {
+  width:22px;
+  height:22px;
+  flex:none;
+  margin:0;
+  padding:0;
+}
+
 .panel {
   padding:var(--space-6);
   border-radius:var(--radius-surface);

@@ -11,6 +11,7 @@
   margin-top:var(--space-4,16px); padding:var(--space-4,16px); border-radius:16px;
   border:2px solid currentColor; display:grid; gap:var(--space-2,8px); text-align:center;
 }
+.controle-wizard[hidden] { display:none; }
 .controle-wizard-prompt { font-size:1.6rem; font-weight:800; }
 .controle-wizard-actions, .controle-actions { display:flex; flex-wrap:wrap; gap:var(--space-2,8px); justify-content:center; margin-top:var(--space-2,8px); }
 .controle-actions { justify-content:flex-start; }
