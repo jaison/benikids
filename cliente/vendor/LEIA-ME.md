@@ -22,7 +22,13 @@ via `[patch.crates-io]` no `cliente/Cargo.toml`. Para gerar o patch de novo:
    (`NotoColorEmoji`) podem ser carregadas mesmo sem o glifo "m". Sem isso não dá para pô-las na lista de
    fallbacks do usuário, e emojis como 📚 e 🎮 saem monocromáticos da "Noto Sans Symbols2".
 
-## Para propor no upstream (longbridge/gpui-fast)
+## Proposto no upstream: [longbridge/gpui-fast#141](https://github.com/longbridge/gpui-fast/pull/141)
+
+Os itens 1, 2 e 4 foram reescritos para o `main` deles (código em `fast/native_gl.rs` e
+`fast/emoji_fonts.rs`). O item 3 ficou de fora, porque as regras deles não aceitam API pública nova.
+Quando o PR entrar numa versão publicada, dá para tirar este `vendor/`.
+
+### Texto original da proposta
 
 Título: *wgpu: support native GL adapters without compute (GLES 3.0) and color emoji fallbacks*
 
