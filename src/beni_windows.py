@@ -171,6 +171,9 @@ def encerrar_tudo(servidor, vigia, menu):
 
 def main():
     os.makedirs(CACHE, exist_ok=True)
+    if "--autostart" in sys.argv[1:]:
+        # ao entrar no Windows: deixa a área de trabalho e a rede subirem antes
+        time.sleep(6)
     if not win.instancia_unica("Local\\BeniLauncher"):
         # já está aberto: só traz o menu para a frente
         from process_state import owned_process

@@ -431,6 +431,7 @@ class ServerApiTests(unittest.TestCase):
         server_module.MEDIA_SESSION_SCRIPT = str(app_root / "media_session.py")
         Path(server_module.MEDIA_SESSION_SCRIPT).touch()
         server_module.TIMER_FILE = str(cache_dir / "timer.json")
+        server_module.AUTOSTART_DESKTOP = str(root / "autostart" / "benikids.desktop")
         server_module.PIDFILE = str(cache_dir / "server.pid")
         server_module.BROWSER_PIDFILE = str(cache_dir / "browser.pid")
         server_module.TILE_PROCESS_PIDFILE = str(cache_dir / "tile-process.pid")
@@ -1586,6 +1587,27 @@ class ServerApiTests(unittest.TestCase):
         })
         self.assertEqual(status, 403)
         self.assertTrue(server_module.verify_pin(server_module.load_stored_cfg()["pinHash"], "1234"))
+
+    def test_start_on_login_toggles_the_linux_autostart_entry(self):
+        desktop = Path(server_module.AUTOSTART_DESKTOP)
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("[Desktop Entry]\nType=Application\nExec=launcher --autostart\n", encoding="utf-8")
+        config = base_config()
+        server_module.save_cfg(config)
+        config = server_module.load_cfg()
+        config["startOnLogin"] = False
+        status, _, _ = self.request("/api/save-config", "POST", config)
+        self.assertEqual(status, 200)
+        texto = desktop.read_text(encoding="utf-8")
+        self.assertIn("Exec=launcher --autostart", texto)
+        self.assertIn("Hidden=true", texto)
+        self.assertIn("X-GNOME-Autostart-enabled=false", texto)
+        config["startOnLogin"] = True
+        self.request("/api/save-config", "POST", config)
+        texto = desktop.read_text(encoding="utf-8")
+        self.assertIn("Hidden=false", texto)
+        self.assertEqual(texto.count("Hidden="), 1)
+        self.assertTrue(server_module.load_cfg()["startOnLogin"])
 
     def test_first_setup_validates_names_icons_and_pin(self):
         config = base_config()

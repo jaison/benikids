@@ -1,10 +1,10 @@
-"""Instalador do Beni no Windows (roda com o Python que vem no pacote).
+"""Instalador do Benikids no Windows (roda com o Python que vem no pacote).
 
 Instala para o usuário atual, sem pedir administrador:
 - o launcher em %USERPROFILE%\\.local\\share\\cozy-kids-launcher (as mesmas pastas do
   Linux, que o servidor já usa);
 - a configuração inicial, só se ainda não existir;
-- atalhos "Beni" na área de trabalho e no menu Iniciar.
+- atalhos "Benikids" na área de trabalho e no menu Iniciar.
 
 Para instalar no usuário da criança, rode estando logado nele.
 """
@@ -19,10 +19,10 @@ PACOTE = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
 APP_ROOT = os.path.join(HOME, ".local", "share", "cozy-kids-launcher")
 CONFIG = os.path.join(HOME, ".config", "cozy-kids-launcher", "config.json")
-NOME = "Beni"
+NOME = "Benikids"
 
 
-def aviso(texto, titulo="Beni", estilo=0x40):
+def aviso(texto, titulo="Benikids", estilo=0x40):
     try:
         return ctypes.windll.user32.MessageBoxW(None, texto, titulo, estilo)
     except (AttributeError, OSError):
@@ -55,7 +55,7 @@ def atalho(caminho, alvo, argumentos, pasta, icone):
         "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:BENI_LNK);"
         "$s.TargetPath=$env:BENI_ALVO;$s.Arguments=$env:BENI_ARGS;"
         "$s.WorkingDirectory=$env:BENI_PASTA;$s.IconLocation=$env:BENI_ICONE;"
-        "$s.Description='Beni - o cantinho das crianças';$s.Save()"
+        "$s.Description='Benikids - o cantinho das crianças';$s.Save()"
     )
     env = dict(os.environ, BENI_LNK=caminho, BENI_ALVO=alvo, BENI_ARGS=argumentos,
                BENI_PASTA=pasta, BENI_ICONE=icone)
@@ -71,7 +71,7 @@ def pasta_especial(csidl):
 
 def main():
     if processo_rodando():
-        aviso("O Beni está aberto. Feche (Pais → Sair) e rode o instalador de novo.", estilo=0x30)
+        aviso("O Benikids está aberto. Feche (Pais → Sair) e rode o instalador de novo.", estilo=0x30)
         return 1
     os.makedirs(APP_ROOT, exist_ok=True)
     copiar_arvore(os.path.join(PACOTE, "app"), APP_ROOT)
@@ -91,16 +91,30 @@ def main():
         os.path.join(pasta_especial(0x10), f"{NOME}.lnk"),  # área de trabalho
         os.path.join(pasta_especial(0x02), f"{NOME}.lnk"),  # menu Iniciar > Programas
     ]
+    for antigo in destinos:  # atalhos "Beni.lnk" das primeiras versões
+        try:
+            os.remove(os.path.join(os.path.dirname(antigo), "Beni.lnk"))
+        except OSError:
+            pass
     for lnk in destinos:
         try:
             atalho(lnk, pythonw, f'"{iniciador}"', APP_ROOT, icone)
         except (OSError, subprocess.SubprocessError) as e:
             print(f"atalho {lnk}: {e}")
 
-    texto = "O Beni foi instalado.\n\nUse o ícone \"Beni\" na área de trabalho."
-    if criou_config:
-        texto += ("\n\nNa primeira vez, entre em Pais e crie um PIN: sem PIN, qualquer um "
-                  "consegue sair do Beni.")
+    # abrir sozinho ao entrar no Windows (padrão ligado; os pais mudam na área dos pais)
+    try:
+        import json
+
+        sys.path.insert(0, APP_ROOT)
+        import inicio_automatico
+
+        with open(CONFIG, encoding="utf-8") as f:
+            inicio_automatico.aplicar(json.load(f), APP_ROOT)
+    except (OSError, ValueError, ImportError) as e:
+        print(f"início automático: {e}")
+
+    texto = "O Benikids foi instalado.\n\nUse o ícone \"Benikids\" na área de trabalho. Ele também abre sozinho quando alguém entra neste usuário do Windows."
     texto += "\n\nAbrir agora?"
     if aviso(texto, estilo=0x44) == 6:  # Sim
         subprocess.Popen([pythonw, iniciador], cwd=APP_ROOT, close_fds=True)

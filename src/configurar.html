@@ -32,6 +32,8 @@ input:focus{outline:none;border-color:var(--cor)}
 .botao:disabled{opacity:.6;cursor:default}
 .pins{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .dica{color:var(--suave);margin:12px 0 0}
+.opcao{display:flex;gap:12px;align-items:center;font-size:1.15rem;cursor:pointer;margin:0}
+.opcao input{width:26px;height:26px;accent-color:var(--cor);flex:none}
 .erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:0 0 12px}
 .pronto{text-align:center;padding:60px 20px}
 .pronto div{font-size:5rem}
@@ -58,6 +60,12 @@ input:focus{outline:none;border-color:var(--cor)}
         <input id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="\d*"></div>
     </div>
     <p class="dica">O PIN protege a área dos pais, a saída e o desligar. Sem ele, a criança consegue sair do Benikids.</p>
+  </section>
+
+  <section>
+    <label class="opcao"><input type="checkbox" id="inicio" checked>
+      <span>Abrir o Benikids sozinho ao entrar no computador</span></label>
+    <p class="dica">Dá para mudar depois na área dos pais.</p>
   </section>
 
   <p class="erro" id="erro" role="alert"></p>
@@ -135,7 +143,7 @@ input:focus{outline:none;border-color:var(--cor)}
     const pin = document.getElementById('pin').value;
     if (!/^\d{4,6}$/.test(pin)) { document.getElementById('pin').focus(); throw new Error('O PIN precisa ter de 4 a 6 números.'); }
     if (pin !== document.getElementById('pin2').value) { document.getElementById('pin2').focus(); throw new Error('Os dois PINs estão diferentes.'); }
-    return { children: criancas, pin: pin };
+    return { children: criancas, pin: pin, startOnLogin: document.getElementById('inicio').checked };
   }
 
   async function comecar() {

@@ -11,6 +11,7 @@ import time
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import controles
+import inicio_automatico
 import site_logins
 from app_detection import (
     BROWSER_CANDIDATES,
@@ -203,6 +204,7 @@ LEGACY_WEB_ACTION_MIGRATIONS = {
 TIMER_FILE = os.path.join(HOME, ".cache", "cozy-kids-launcher", "timer.json")
 USAGE_FILE = os.path.join(HOME, ".local", "state", "cozy-kids-launcher", "usage-today.json")
 MAX_JSON_BODY_BYTES = 512 * 1024
+AUTOSTART_DESKTOP = inicio_automatico.DESKTOP_LINUX
 _tile_launch_lock = threading.Lock()
 _activity_sessions_lock = threading.Lock()
 _activity_sessions = None
@@ -969,7 +971,7 @@ SETUP_ICONES = {
 SETUP_MAX_CRIANCAS = 8
 
 
-def first_setup_config(stored, children, pin):
+def first_setup_config(stored, children, pin, start_on_login=True):
     """Perfis novos a partir do perfil-modelo (tiles, limites, horários) + PIN."""
     if stored.get("setupCompleted") is not False or stored.get("pinHash"):
         raise PermissionError("Setup already completed")
@@ -1002,6 +1004,7 @@ def first_setup_config(stored, children, pin):
     resultado["activeProfileId"] = perfis[0]["id"]
     resultado["pinHash"] = hash_pin(pin if isinstance(pin, str) else "")
     resultado["setupCompleted"] = True
+    resultado["startOnLogin"] = start_on_login is not False
     return resultado
 
 
@@ -1626,6 +1629,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.json_response({"status": "error", "message": str(exc)}, 400)
                 return
             write_browser_override(data)
+            inicio_automatico.aplicar(data, APP_ROOT, AUTOSTART_DESKTOP)
             log_runtime_event(
                 "config.saved",
                 configVersion=data.get("configVersion", CURRENT_CONFIG_VERSION),
@@ -1639,9 +1643,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             try:
                 stored = first_setup_config(
                     load_stored_cfg(), body.get("children"), body.get("pin", ""),
+                    body.get("startOnLogin", True),
                 )
                 stored = save_stored_cfg(stored)
                 clear_timer()
+                inicio_automatico.aplicar(stored, APP_ROOT, AUTOSTART_DESKTOP)
             except PermissionError:
                 self.json_response({"status": "error", "message": "Setup already completed"}, 403)
                 return

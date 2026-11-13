@@ -365,6 +365,7 @@ function renderAdmin(){
   document.getElementById('cfgThemeTimeOfDayEnabled').checked=cfg.themeTimeOfDayEnabled===true;
   document.getElementById('cfgSoundFeedbackEnabled').checked=cfg.soundFeedbackEnabled===true;
   document.getElementById('cfgSpeechFeedbackEnabled').checked=cfg.speechFeedbackEnabled===true;
+  document.getElementById('cfgStartOnLogin').checked=cfg.startOnLogin!==false;
   document.getElementById('cfgCelebrationEnabled').checked=cfg.celebrationEnabled===true;
   document.getElementById('cfgAccessibilityLargeText').checked=cfg.accessibilityLargeText===true;
   document.getElementById('cfgAccessibilityHighContrast').checked=cfg.accessibilityHighContrast===true;
