@@ -42,11 +42,12 @@ class CatalogoWindowsTests(unittest.TestCase):
             exe = Path(raiz, "SuperTux 0.7", "bin", "supertux2.exe")
             exe.parent.mkdir(parents=True)
             exe.write_bytes(b"")
-            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Lívia"}):
+            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Lívia"}), \
+                 mock.patch.object(catalogo_windows, "tamanho_da_tela", return_value="2560x1080"):
                 cmd = catalogo_windows.comando(["catalogo:supertux"], bases=[raiz])
             # o SuperTux não abre com acento no caminho do usuário: pasta de dados só ASCII
             dados = os.path.join(raiz, "Benikids", "dados", "Livia", "supertux")
-            self.assertEqual(cmd, [str(exe), "--fullscreen", "--userdir", dados])
+            self.assertEqual(cmd, [str(exe), "--fullscreen", "--geometry", "2560x1080", "--userdir", dados])
             self.assertTrue(os.path.isdir(dados))
             self.assertIsNone(catalogo_windows.comando(["catalogo:gcompris"], bases=[raiz]))
             self.assertIsNone(catalogo_windows.comando(["catalogo:nao-existe"], bases=[raiz]))

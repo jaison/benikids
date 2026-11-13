@@ -91,9 +91,27 @@ def pasta_de_dados_ascii(item, usuario=None, raiz=None):
     return pasta
 
 
+def tamanho_da_tela():
+    """"LARGURAxALTURA" da tela principal (em pixels reais), ou None fora do Windows."""
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        try:
+            user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
+        largura, altura = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    except (AttributeError, OSError, ImportError):
+        return None
+    return f"{largura}x{altura}" if largura > 0 and altura > 0 else None
+
+
 def preencher(arg, item):
     if "{dados_ascii}" in arg:
-        return arg.replace("{dados_ascii}", pasta_de_dados_ascii(item))
+        arg = arg.replace("{dados_ascii}", pasta_de_dados_ascii(item))
+    if "{tela}" in arg:
+        arg = arg.replace("{tela}", tamanho_da_tela() or "1280x720")
     return arg
 
 

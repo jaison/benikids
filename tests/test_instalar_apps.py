@@ -113,6 +113,9 @@ class InstalarAppsTest(unittest.TestCase):
         i_app = next(n for n, l in enumerate(linhas) if "ETR.msi" in l)
         self.assertLess(i_dep, i_app)
         self.assertIn("ALLUSERS=1", linhas[i_app])
+        # uma string só em -ArgumentList, com cada caminho entre aspas uma única vez
+        self.assertIn(f"-ArgumentList '/i \"{app}\" /qn /norestart ALLUSERS=1 /l*v \"", linhas[i_app])
+        self.assertNotIn("@(", linhas[i_app])
         self.assertIn("/l*v", linhas[i_app])
         self.assertIn("etr.log", linhas[i_app])
         self.assertIn("-PassThru", linhas[i_app])

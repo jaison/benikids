@@ -85,6 +85,8 @@ pub struct Menu {
     // janelas por cima
     janela: Option<Janela>,
     inicio: Option<Inicio>,
+    /// quando um aviso foi fechado pelo teclado: o mesmo Enter não abre o app de novo
+    janela_fechada_em: Option<Instant>,
     geracao: u64,
     aviso_timer_mostrado: bool,
     ultimo_expiry: f64,
@@ -127,6 +129,7 @@ impl Menu {
             foco_visivel: true,
             janela: None,
             inicio: None,
+            janela_fechada_em: None,
             geracao: 0,
             aviso_timer_mostrado: false,
             ultimo_expiry: 0.,
@@ -927,6 +930,10 @@ impl Menu {
         if self.inicio.is_some() {
             return;
         }
+        let confirmar = matches!(k, "enter" | "space" | "kp_enter");
+        if confirmar && ev.is_held {
+            return; // Enter segurado não fecha o aviso e abre o app na sequência
+        }
         if let Some(j) = self.janela.clone() {
             self.tecla_janela(j, k, digito, cx);
             cx.notify();
@@ -937,6 +944,8 @@ impl Menu {
         }
         match k {
             "left" | "right" | "up" | "down" => self.mover(k, cx),
+            "enter" | "space" | "kp_enter"
+                if self.janela_fechada_em.is_some_and(|t| t.elapsed() < Duration::from_millis(600)) => {}
             "enter" | "space" | "kp_enter" => {
                 if !self.foco_visivel {
                     self.foco_visivel = true;
@@ -964,6 +973,7 @@ impl Menu {
                 if matches!(k, "enter" | "escape" | "space") {
                     self.janela = None;
                     self.foco_visivel = true;
+                    self.janela_fechada_em = Some(Instant::now());
                 }
             }
             Janela::Bloqueio { perfil, foco } => {

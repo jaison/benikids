@@ -177,14 +177,16 @@ def dependencias(arquivo):
 
 def _linha_instalar(rotulo, arquivo, tipo, logs, resultados):
     """Uma linha do PowerShell que instala sem perguntas e anota "rótulo|código"."""
+    # -ArgumentList recebe UMA string: com um array, o PowerShell 5.1 põe aspas de novo
+    # nos itens com espaço, e um caminho já entre aspas chega estragado ao msiexec
+    # (1622 = não abriu o log; 1619 = não abriu o pacote)
     if tipo in ("msi", "wix") or arquivo.lower().endswith(".msi"):
         log = os.path.join(logs, f"{rotulo}.log")
-        args = (f"@('/i', '\"' + {_ps(arquivo)} + '\"', '/qn', '/norestart', 'ALLUSERS=1', "
-                f"'/l*v', '\"' + {_ps(log)} + '\"')")
-        comando = f"Start-Process msiexec.exe -Wait -PassThru -ArgumentList {args}"
+        args = f'/i "{arquivo}" /qn /norestart ALLUSERS=1 /l*v "{log}"'
+        comando = f"Start-Process msiexec.exe -Wait -PassThru -ArgumentList {_ps(args)}"
     else:
-        args = ", ".join(_ps(a) for a in SILENCIOSO.get(tipo) or ["/S"])
-        comando = f"Start-Process -FilePath {_ps(arquivo)} -Wait -PassThru -ArgumentList @({args})"
+        args = " ".join(SILENCIOSO.get(tipo) or ["/S"])
+        comando = f"Start-Process -FilePath {_ps(arquivo)} -Wait -PassThru -ArgumentList {_ps(args)}"
     return (f"try {{ $p = {comando}; $c = $p.ExitCode }} catch {{ $c = 'erro: ' + $_.Exception.Message }}; "
             f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ({_ps(rotulo + '|')} + $c)")
 
@@ -234,7 +236,7 @@ def instalar_como_admin(pares, pasta, ao_terminar_app=None):
         f.write(texto)
     pedido = (
         "Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList "
-        f"@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '\"' + {_ps(script)} + '\"')"
+        + _ps(f'-NoProfile -ExecutionPolicy Bypass -File "{script}"')
     )
     try:
         proc = subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", pedido],
@@ -357,6 +359,10 @@ def janela(itens):
     raiz.title("Benikids: instalando jogos e programas")
     raiz.configure(bg="#f3f0ff")
     raiz.geometry("640x680")
+    # a área dos pais está em tela cheia (navegador em modo quiosque): sem isto a janela
+    # abre atrás dela e o adulto não vê o andamento
+    raiz.attributes("-topmost", True)
+    raiz.after(200, lambda: (raiz.lift(), raiz.focus_force()))
     tk.Label(raiz, text="Instalando os jogos e programas", font=("Segoe UI", 18, "bold"),
              bg="#f3f0ff", fg="#2d2a3e").pack(pady=(18, 2))
     tk.Label(raiz, text="Pode levar alguns minutos. Dá para usar o computador enquanto isso.",
