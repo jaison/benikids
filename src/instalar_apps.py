@@ -191,6 +191,18 @@ def _linha_instalar(rotulo, arquivo, tipo, logs, resultados):
             f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ({_ps(rotulo + '|')} + $c)")
 
 
+def _linha_firewall(item):
+    """Regra de entrada "bloquear" para o exe do app: sem ela, o Windows mostra à criança
+    o alerta do firewall ("Permitir acesso"), que pede senha de administrador."""
+    bases = ["$env:ProgramFiles", "${env:ProgramFiles(x86)}"]
+    padroes = ", ".join(f"(Join-Path {b} {_ps(p)})" for p in item.get("exe", []) if "**" not in p for b in bases)
+    nome = _ps(f"Benikids - {item.get('label', item['id'])}")
+    return (f"foreach ($exe in @(Get-ChildItem -Path @({padroes}) -ErrorAction SilentlyContinue)) {{ "
+            f"Remove-NetFirewallRule -DisplayName {nome} -ErrorAction SilentlyContinue; "
+            f"New-NetFirewallRule -DisplayName {nome} -Direction Inbound -Action Block -Profile Any "
+            f"-Program $exe.FullName | Out-Null; break }}")
+
+
 def script_admin(pares, pasta):
     """O PowerShell do lote: dependências primeiro, depois cada app, anotando os códigos."""
     logs = os.path.join(pasta, "logs")
@@ -201,6 +213,8 @@ def script_admin(pares, pasta):
         for n, dep in enumerate(dependencias(arquivo)):
             linhas.append(_linha_instalar(f"{item['id']}-dependencia{n + 1}", dep, "", logs, resultados))
         linhas.append(_linha_instalar(item["id"], arquivo, tipo_do_instalador(item), logs, resultados))
+        if item.get("firewall") == "bloquear":
+            linhas.append(_linha_firewall(item))
     linhas.append(f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value 'fim|0'")
     return "\r\n".join(linhas) + "\r\n", resultados
 
@@ -365,8 +379,15 @@ def trabalhar(itens, avisos, pasta=None):
 
         def terminou(item_id, codigo):
             ok = bool(catalogo_windows.localizar(por_id[item_id]))
-            avisos.put((item_id, "ok" if ok else "erro", "instalado" if ok else f"não instalou (código {codigo})"))
-            if not ok:
+            if ok:
+                avisos.put((item_id, "ok", "instalado"))
+                return
+            if codigo in CODIGOS_OK:
+                # o instalador disse que deu certo, mas o programa não está onde o catálogo procura
+                avisos.put((item_id, "erro", "instalou, mas não achei o programa"))
+                relatar_falha(por_id[item_id], f"{codigo} (instalou; exe não encontrado)", pasta)
+            else:
+                avisos.put((item_id, "erro", f"não instalou (código {codigo})"))
                 relatar_falha(por_id[item_id], codigo, pasta)
 
         codigos = instalar_como_admin(pares, pasta, terminou)

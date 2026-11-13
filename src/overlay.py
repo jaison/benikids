@@ -248,12 +248,26 @@ CORNERS = ("tl", "tr", "br", "bl")  # ordem do toque em ✥ (sentido horário)
 CORNER_FILE = os.path.join(CACHE_DIR, "overlay-corner.json")
 
 
+def canto_padrao(tile_id):
+    """Canto inicial do app no catálogo do Windows (ex.: Tux Paint no direito, para não
+    cobrir as ferramentas); senão, o superior esquerdo."""
+    try:
+        import catalogo_windows
+
+        item = catalogo_windows.por_id(tile_id or "")
+        if item and item.get("overlay") in CORNERS:
+            return item["overlay"]
+    except Exception:  # noqa: BLE001
+        pass
+    return "tl"
+
+
 def load_corner(tile_id):
     try:
         with open(CORNER_FILE, encoding="utf-8") as handle:
-            corner = json.load(handle).get(tile_id or "_", "tl")
+            corner = json.load(handle).get(tile_id or "_") or canto_padrao(tile_id)
     except (OSError, ValueError, AttributeError):
-        corner = "tl"
+        corner = canto_padrao(tile_id)
     return corner if corner in CORNERS else "tl"
 
 

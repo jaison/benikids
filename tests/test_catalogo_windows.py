@@ -54,5 +54,37 @@ class CatalogoWindowsTests(unittest.TestCase):
             self.assertEqual(catalogo_windows.comando(["tuxpaint"], bases=[raiz]), ["tuxpaint"])
 
 
+class CatalogoWindowsExtrasTests(unittest.TestCase):
+    def test_finds_the_exe_through_installed_programs_when_globs_miss(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "Extreme TuxRacer", "ExtremeTuxRacer.exe")
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"")
+            item = {"id": "etr", "registro": "Tux Racer", "exe": ["Outro*/ExtremeTuxRacer.exe"]}
+            entradas = [("Firefox", "", ""), ("Extreme Tux Racer 0.8.4", str(exe.parent) + os.sep, "")]
+            self.assertEqual(catalogo_windows.localizar(item, bases=[], registro=entradas), str(exe))
+            self.assertIsNone(catalogo_windows.localizar(item, bases=[], registro=[("Firefox", raiz, "")]))
+
+    def test_real_paths_reported_by_the_windows_test_match_the_catalog(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            for relativo in ("GCompris-Qt/bin/GCompris.exe", "Extreme TuxRacer/ExtremeTuxRacer.exe"):
+                Path(raiz, relativo).parent.mkdir(parents=True)
+                Path(raiz, relativo).write_bytes(b"")
+            for item_id in ("gcompris", "extremetuxracer"):
+                item = catalogo_windows.por_id(item_id)
+                self.assertTrue(catalogo_windows.localizar(item, bases=[raiz], registro=[]), item_id)
+
+    def test_initial_config_is_written_once(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            item = {"id": "supertux", "config_inicial": {"arquivo": "config", "texto": "(disable_network #t)"}}
+            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Lívia"}):
+                catalogo_windows.gravar_config_inicial(item)
+                caminho = Path(raiz, "Benikids", "dados", "Livia", "supertux", "config")
+                self.assertEqual(caminho.read_text(), "(disable_network #t)")
+                caminho.write_text("do jogo")
+                catalogo_windows.gravar_config_inicial(item)
+                self.assertEqual(caminho.read_text(), "do jogo")  # não sobrescreve
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -127,6 +127,18 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertEqual(instalar_apps.ler_resultados(resultados),
                          {"etr-dependencia1": "0", "etr": "1603", "fim": "0"})
 
+    def test_lote_bloqueia_no_firewall_os_apps_marcados(self):
+        pasta = self.tmp.name
+        app = os.path.join(pasta, "gcompris", "GCompris.msi")
+        os.makedirs(os.path.dirname(app))
+        open(app, "w").close()
+        item = instalar_apps.catalogo_windows.por_id("gcompris")
+        texto, _ = instalar_apps.script_admin([(item, app)], pasta)
+        linha = next(l for l in texto.splitlines() if "New-NetFirewallRule" in l)
+        self.assertIn("-Action Block", linha)
+        self.assertIn("GCompris*/bin/GCompris.exe", linha)
+        self.assertLess(texto.index("GCompris.msi"), texto.index("New-NetFirewallRule"))
+
     def test_avisa_quando_o_windows_abre_o_uac_numa_instalacao_por_usuario(self):
         itens = [{"id": "eleva", "winget": "D.Eleva", "escopo": "user"}]
 

@@ -39,15 +39,85 @@ def raizes():
     return vistas
 
 
-def localizar(item, bases=None):
-    """Caminho do .exe do app (padrões glob relativos às pastas de programas), ou None."""
+def localizar(item, bases=None, registro=None):
+    """Caminho do .exe do app, ou None.
+
+    Primeiro pelos padrões glob do catálogo (relativos às pastas de programas); se
+    nenhum casar, pelo "Programas instalados" do Windows (chaves Uninstall), que
+    sabe a pasta mesmo quando o instalador muda o nome dela entre versões.
+    """
     for padrao in item.get("exe", []):
         for base in bases if bases is not None else raizes():
             achados = sorted(glob.glob(os.path.join(base, padrao), recursive=True), reverse=True)
             for caminho in achados:
                 if os.path.isfile(caminho):
                     return caminho
+    if item.get("registro"):
+        entradas = registro if registro is not None else programas_instalados()
+        return pelo_registro(item, entradas)
     return None
+
+
+def nomes_do_exe(item):
+    return {os.path.basename(p).lower() for p in item.get("exe", []) if "*" not in os.path.basename(p)}
+
+
+def pelo_registro(item, entradas):
+    """entradas: [(DisplayName, InstallLocation, DisplayIcon)]. Acha o exe do app nelas."""
+    nome = item["registro"].lower()
+    exes = nomes_do_exe(item)
+    for exibido, pasta, icone in entradas:
+        if nome not in (exibido or "").lower():
+            continue
+        icone = (icone or "").split(",")[0].strip().strip('"')
+        if icone.lower().endswith(".exe") and os.path.basename(icone).lower() in exes and os.path.isfile(icone):
+            return icone
+        if pasta and os.path.isdir(pasta):
+            for raiz, _pastas, arquivos in os.walk(pasta):
+                if raiz[len(pasta):].count(os.sep) > 3:
+                    continue
+                for arquivo in arquivos:
+                    if arquivo.lower() in exes:
+                        return os.path.join(raiz, arquivo)
+    return None
+
+
+def programas_instalados():
+    """[(DisplayName, InstallLocation, DisplayIcon)] de HKLM/HKCU ...\\Uninstall (só Windows)."""
+    try:
+        import winreg
+    except ImportError:
+        return []
+    caminhos = (
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    )
+    entradas = []
+    for raiz, caminho in caminhos:
+        try:
+            chave = winreg.OpenKey(raiz, caminho)
+        except OSError:
+            continue
+        with chave:
+            i = 0
+            while True:
+                try:
+                    nome = winreg.EnumKey(chave, i)
+                except OSError:
+                    break
+                i += 1
+                try:
+                    with winreg.OpenKey(chave, nome) as sub:
+                        def valor(campo):
+                            try:
+                                return str(winreg.QueryValueEx(sub, campo)[0])
+                            except OSError:
+                                return ""
+                        entradas.append((valor("DisplayName"), valor("InstallLocation"), valor("DisplayIcon")))
+                except OSError:
+                    continue
+    return entradas
 
 
 def por_id(item_id, catalogo=None):
@@ -67,7 +137,25 @@ def comando(cmd, catalogo=None, bases=None):
     exe = localizar(item, bases)
     if not exe:
         return None
-    return [exe, *(preencher(arg, item) for arg in item.get("args", []))]
+    argv = [exe, *(preencher(arg, item) for arg in item.get("args", []))]
+    gravar_config_inicial(item)
+    return argv
+
+
+def gravar_config_inicial(item):
+    """Config pronta na pasta de dados do app, se ainda não existe (ex.: SuperTux sem a
+    pergunta "conectar à Internet?": o ✕ fecha o jogo à força e ele nunca grava a resposta)."""
+    inicial = item.get("config_inicial")
+    if not isinstance(inicial, dict) or not inicial.get("arquivo"):
+        return
+    caminho = os.path.join(pasta_de_dados_ascii(item), inicial["arquivo"])
+    if os.path.exists(caminho):
+        return
+    try:
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write(inicial.get("texto", ""))
+    except OSError:
+        pass
 
 
 def pasta_de_dados_ascii(item, usuario=None, raiz=None):
