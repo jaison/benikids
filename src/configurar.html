@@ -162,6 +162,11 @@ input:focus{outline:none;border-color:var(--cor)}
     }
   }
 
+  // a mensagem de erro some assim que a pessoa corrige algo
+  document.addEventListener('input', function () { erro.textContent = ''; });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.icone')) erro.textContent = '';
+  });
   document.getElementById('mais').addEventListener('click', adicionar);
   document.getElementById('comecar').addEventListener('click', comecar);
   document.addEventListener('keydown', function (e) {
