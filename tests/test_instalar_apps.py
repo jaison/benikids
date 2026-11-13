@@ -72,6 +72,32 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertIn(("usuario", "ok"), estados)
         self.assertIn(("teimoso", "espera"), estados)
 
+    def test_o_lote_com_senha_baixa_enquanto_os_outros_instalam(self):
+        import threading
+        itens = [
+            {"id": "usuario", "winget": "B.Usuario", "escopo": "user"},
+            {"id": "maquina", "winget": "A.Maquina", "escopo": "machine"},
+        ]
+        comecou_a_baixar = threading.Event()
+        baixou_durante = []
+
+        def baixar(item, pasta):
+            comecou_a_baixar.set()
+            return f"{item['id']}.msi"
+
+        def instalar(item, ao_pedir_senha=None):
+            baixou_durante.append(comecou_a_baixar.wait(2))
+            return True, "instalado"
+
+        with mock.patch.object(instalar_apps.catalogo_windows, "localizar", return_value=None), \
+             mock.patch.object(instalar_apps, "instalar", side_effect=instalar), \
+             mock.patch.object(instalar_apps, "baixar", side_effect=baixar), \
+             mock.patch.object(instalar_apps, "instalar_como_admin") as admin:
+            instalar_apps.trabalhar(itens, queue.Queue(), pasta=self.tmp.name)
+        self.assertEqual(baixou_durante, [True])
+        admin.assert_called_once()
+        self.assertEqual([i["id"] for i, _ in admin.call_args[0][0]], ["maquina"])
+
     def test_avisa_quando_o_windows_abre_o_uac_numa_instalacao_por_usuario(self):
         itens = [{"id": "eleva", "winget": "D.Eleva", "escopo": "user"}]
 

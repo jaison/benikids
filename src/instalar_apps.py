@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -191,22 +192,57 @@ def instalar_como_admin(pares, pasta):
         return False
 
 
-def trabalhar(itens, avisos):
-    """Primeiro tudo o que instala sem senha, sem nunca parar a fila esperando o UAC;
-    no fim, um só pedido de senha para todos os que precisam de administrador."""
-    para_todos = []
+def pasta_dos_instaladores():
+    return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Benikids", "instaladores")
+
+
+DOWNLOADS_SIMULTANEOS = 2
+
+
+def trabalhar(itens, avisos, pasta=None):
+    """Instala tudo sem nunca parar a fila esperando o UAC:
+
+    - os instaladores do lote com senha começam a baixar logo no início, em segundo
+      plano (DOWNLOADS_SIMULTANEOS por vez), enquanto os apps sem senha instalam;
+    - um app "por usuário" que falha sem administrador entra nesses downloads;
+    - no fim, um só pedido de senha instala o lote todo, já baixado.
+    """
+    pasta = pasta or pasta_dos_instaladores()
     ja_pediram = pedem_senha()
+    baixando = {}  # id → (item, futuro com o caminho do instalador), na ordem em que entraram
+    trava = threading.Lock()
+    baixador = ThreadPoolExecutor(max_workers=DOWNLOADS_SIMULTANEOS)
+
+    def agendar(item):
+        avisos.put((item["id"], "espera", "baixando para instalar no fim, com a senha..."))
+
+        def baixado(futuro, item=item):
+            try:
+                arquivo = futuro.result()
+            except Exception:  # noqa: BLE001 — um download com problema não derruba os outros
+                arquivo = None
+            if arquivo:
+                avisos.put((item["id"], "espera", "baixado; instala no fim, com a senha"))
+            else:
+                avisos.put((item["id"], "erro", "não deu para baixar"))
+
+        futuro = baixador.submit(baixar, item, pasta)
+        futuro.add_done_callback(baixado)
+        with trava:
+            baixando[item["id"]] = (item, futuro)
+
+    sem_senha = []
     for item in itens:
         if catalogo_windows.localizar(item):
             avisos.put((item["id"], "ja", "já estava instalado"))
-            continue
-        if not item.get("winget"):
+        elif not item.get("winget"):
             avisos.put((item["id"], "erro", "sem instalador automático"))
-            continue
-        if precisa_de_senha(item, ja_pediram):
-            avisos.put((item["id"], "espera", "no fim, com a senha"))
-            para_todos.append(item)
-            continue
+        elif precisa_de_senha(item, ja_pediram):
+            agendar(item)
+        else:
+            sem_senha.append(item)
+
+    for item in sem_senha:
         avisos.put((item["id"], "instalando", "instalando..."))
 
         def pediu_senha(item=item):
@@ -217,27 +253,27 @@ def trabalhar(itens, avisos):
         if ok:
             avisos.put((item["id"], "ok", texto))
         else:
-            # sem administrador não deu: tenta de novo no lote com senha, no fim
+            # sem administrador não deu: vai para o lote com senha, no fim
             lembrar_que_pede_senha(item["id"])
-            avisos.put((item["id"], "espera", "no fim, com a senha"))
-            para_todos.append(item)
-    if para_todos:
-        pasta = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Benikids", "instaladores")
-        pares = []
-        for item in para_todos:
-            avisos.put((item["id"], "instalando", "baixando..."))
-            arquivo = baixar(item, pasta)
-            if arquivo:
-                pares.append((item, arquivo))
-                avisos.put((item["id"], "instalando", "esperando a senha do adulto..."))
-            else:
-                avisos.put((item["id"], "erro", "não deu para baixar"))
-        if pares:
-            avisos.put((None, "admin", ""))
-            instalar_como_admin(pares, pasta)
-            for item, _arquivo in pares:
-                ok = bool(catalogo_windows.localizar(item))
-                avisos.put((item["id"], "ok" if ok else "erro", "instalado" if ok else "não instalou"))
+            agendar(item)
+
+    baixador.shutdown(wait=True)
+    pares = []
+    for item, futuro in baixando.values():
+        try:
+            arquivo = futuro.result()
+        except Exception:  # noqa: BLE001
+            arquivo = None
+        if arquivo:
+            pares.append((item, arquivo))
+    if pares:
+        for item, _arquivo in pares:
+            avisos.put((item["id"], "instalando", "esperando a senha do adulto..."))
+        avisos.put((None, "admin", ""))
+        instalar_como_admin(pares, pasta)
+        for item, _arquivo in pares:
+            ok = bool(catalogo_windows.localizar(item))
+            avisos.put((item["id"], "ok" if ok else "erro", "instalado" if ok else "não instalou"))
     avisos.put((None, "fim", ""))
 
 
