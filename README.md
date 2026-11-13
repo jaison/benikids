@@ -1,12 +1,21 @@
-# Beni Launcher
+# Benikids
 
-**Um computador para crianças que equilibra aprender e brincar.** É um menu em tela cheia para
-notebooks antigos com Linux, pensado para crianças de 5 a 10 anos. A criança só encontra o que
+**Um computador para crianças que equilibra aprender e brincar, no Linux e no Windows.** É um menu
+em tela cheia pensado para crianças de 5 a 10 anos, leve o bastante para dar vida nova a notebooks
+antigos. A criança só encontra o que
 os pais aprovaram. O tempo de tela é controlado por categoria, e o tempo de jogo depende de ela
 ter feito a parte de aprendizado.
 
 Ao ligar o notebook, a criança vê **"O que você quer fazer? 📚 Aprender / 🎨 Passatempo / 🎮 Jogar"**.
 Cada cartão mostra quanto tempo ainda resta hoje.
+
+| 🐧 **Linux** (Mint XFCE) | 🪟 **Windows 10 e 11** |
+|---|---|
+| O computador inteiro vira o computador das crianças: liga direto no menu, com filtro de internet, logins automáticos, emuladores e atualização automática. | Instala no usuário da criança, sem precisar ser administrador. Na primeira vez, os pais cadastram as crianças e o PIN. Os jogos e programas livres vêm do `winget`. |
+
+Nos dois, o menu é um **app nativo** (Rust + [gpui-fast](https://github.com/longbridge/gpui-fast))
+desenhado pela placa de vídeo. No notebook de 2011 deste projeto, ele abre em ~1 s e fica parado
+em ~1% de CPU, onde o mesmo menu no Firefox usava ~600 MB e até 29% de um núcleo.
 
 ![Tela inicial](beni/prints/01-escolha-beni.png)
 
@@ -46,7 +55,8 @@ Cada cartão mostra quanto tempo ainda resta hoje.
 > limites, reforço de aprendizado, login automático, filtro de internet, apps e sites próprios,
 > emuladores e correções para hardware antigo. O README original está em
 > [README.original.md](README.original.md).
-> Feito para dois notebooks antigos de duas crianças brasileiras (Beni, 8 anos, e Bea, 5 anos).
+> Feito para dois notebooks antigos de duas crianças brasileiras (Beni, 8 anos, e Bea, 5 anos), e
+> depois levado também para o Windows.
 
 ---
 
@@ -202,7 +212,9 @@ A lista detalhada, arquivo por arquivo, está em [beni/MUDANCAS.md](beni/MUDANCA
 
 ---
 
-## Ambiente em que foi feito e testado
+## Ambientes em que foi feito e testado
+
+**Linux:**
 
 | | |
 |---|---|
@@ -224,15 +236,46 @@ A lista detalhada, arquivo por arquivo, está em [beni/MUDANCAS.md](beni/MUDANCA
 
 Em Mint Cinnamon/MATE quase tudo funciona, mas os ajustes de barra e bloqueio são específicos do XFCE.
 
+**Windows:** notebook com Windows 10, Intel Core i5, Intel HD 4000 + GeForce GTX 660M, 16 GB, tela
+ultrawide 2560×1080, usuário da criança sem administrador. O menu fica em 0% de CPU parado e ~190 MB.
+
 ---
 
-## Instalação num notebook novo
+## Instalação no Windows
+
+**Requisitos:** Windows 10 ou 11 de 64 bits, placa de vídeo com DirectX 11 e internet para baixar
+os jogos. O Python vai junto no pacote; não é preciso instalar mais nada.
+
+1. Entre no **usuário do Windows da criança** (ele pode ser um usuário comum, sem administrador).
+2. Baixe o pacote mais recente:
+   [Beni-Windows.zip](https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip)
+   e descompacte.
+3. Dê dois cliques em **`Instalar Beni.cmd`**. O instalador:
+   - copia o Benikids para a pasta do usuário e cria o atalho **Benikids** na área de trabalho e no menu Iniciar;
+   - deixa o Benikids abrindo sozinho ao entrar no Windows (dá para desligar em Pais);
+   - oferece instalar os **jogos e programas do catálogo**: GCompris, Tux Paint, SuperTux,
+     SuperTuxKart, Luanti, Scratch, Planetário (Stellarium), Tux Racer, Pingus, Digitação (Klavaro),
+     Senhor Batata, Memória e Frações. Quatro deles são instalados "para todos" e pedem **uma vez** a
+     senha de um administrador do computador.
+4. Na primeira vez que o Benikids abre, aparece a **configuração inicial**: o nome de cada criança
+   (com o ícone de menino ou menina) e o **PIN dos pais**.
+
+Todo o catálogo vem ligado. Os pais desligam em Pais o que não quiserem, e o botão
+**"Instalar jogos e programas que faltam"** instala de novo o que ficou pendente.
+
+**Ainda só no Linux:** filtro de internet por DNS e políticas do navegador, login automático nos
+sites, coleções do itch.io, emuladores e atualização automática pelas Releases. No Windows, os sites
+abrem no Edge (ou Chrome/Firefox/Brave) em modo quiosque, com o ❌ por cima.
+
+---
+
+## Instalação no Linux
 
 1. Instale o **Linux Mint XFCE**, crie o usuário e ative o **login automático**.
 2. Baixe este repositório e rode o instalador **como o usuário da criança**, sem `sudo` (ele pede a senha quando precisa):
    ```bash
    git clone https://github.com/jaison/benikids.git
-   cd beni-launcher
+   cd benikids
    ./instalar.sh
    ```
    São uns 2–3 GB de downloads: apps do Flathub, Chromium e emuladores. O instalador também
@@ -272,6 +315,9 @@ login → ~/.config/autostart → cozy-iniciar
 | Onde | O quê |
 |---|---|
 | `src/` | código do launcher (original + mudanças) → `~/.local/share/cozy-kids-launcher` |
+| `src/beni_windows.py`, `src/plataforma_windows.py` | no Windows: inicia o servidor e o menu, e faz o papel do bash/`xdotool` (árvore de processos, Job Object para fechar o app inteiro, foco das janelas) |
+| `src/catalogo/windows.json`, `src/instalar_apps.py` | catálogo de apps do Windows e a instalação pelo `winget` |
+| `scripts/windows/` | instalador e configuração inicial do pacote do Windows (montado pelo GitHub Actions em `menu-nativo.yml`) |
 | `cliente/` | **menu nativo** (`beni-menu`, Rust + gpui-fast): a tela das crianças sem navegador. Veja [cliente/LEIA-ME.md](cliente/LEIA-ME.md) |
 | `src/usage_limits.py`, `src/frontend/usage-limits.*` | tempo de tela por categoria, dia da semana e reforço de aprendizagem |
 | `src/site_logins.py`, `src/frontend/site-logins.*` | login automático nos sites (senhas em `~/.config/cozy-kids-launcher/site-logins.json`) |
