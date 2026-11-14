@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import catalogo_windows  # noqa: E402
+import marca_tk as marca  # noqa: E402
 
 SEM_CONSOLE = 0x08000000
 ICONES = {"espera": "⏳", "instalando": "⬇️", "ok": "✅", "ja": "✅", "erro": "⚠️"}
@@ -514,25 +515,30 @@ def janela(itens):
 
     raiz = tk.Tk()
     raiz.title("Benikids: instalando jogos e programas")
-    raiz.configure(bg="#f3f0ff")
+    # cores da marca (site/style.css): fundo céu suave, títulos marinho, botão azul
+    raiz.configure(bg=marca.CEU_SUAVE)
+    marca.por_icone(raiz)
+    marca.fonte_titulo(raiz)
+    corpo = marca.FONTE_CORPO
     raiz.geometry("640x680")
     # a área dos pais está em tela cheia (navegador em modo quiosque): sem isto a janela
     # abre atrás dela e o adulto não vê o andamento
     raiz.attributes("-topmost", True)
     raiz.after(200, lambda: (raiz.lift(), raiz.focus_force()))
-    tk.Label(raiz, text="Instalando os jogos e programas", font=("Segoe UI", 18, "bold"),
-             bg="#f3f0ff", fg="#2d2a3e").pack(pady=(18, 2))
+    tk.Label(raiz, text="Instalando os jogos e programas", font=marca.titulo(20),
+             bg=marca.CEU_SUAVE, fg=marca.MARINHO).pack(pady=(18, 2))
     tk.Label(raiz, text="Pode levar alguns minutos. Dá para usar o computador enquanto isso.",
-             font=("Segoe UI", 11), bg="#f3f0ff", fg="#6b6880").pack(pady=(0, 10))
+             font=(corpo, 11), bg=marca.CEU_SUAVE, fg=marca.APAGADO).pack(pady=(0, 10))
     # botão e aviso presos embaixo, antes da lista: com muitos apps a lista é maior que a
     # janela, e o "Concluir" não pode sumir (no pacote 8 foi preciso fechar pelo X)
-    botao = tk.Button(raiz, text="Aguarde...", font=("Segoe UI", 12, "bold"), state=tk.DISABLED,
-                      command=raiz.destroy, padx=24, pady=6)
+    botao = tk.Button(raiz, text="Aguarde...", font=(corpo, 12, "bold"), state=tk.DISABLED,
+                      command=raiz.destroy, padx=24, pady=6, relief=tk.FLAT, bd=0,
+                      bg=marca.BORDA, disabledforeground=marca.APAGADO)
     botao.pack(side=tk.BOTTOM, pady=(0, 16))
-    rodape = tk.Label(raiz, text="", font=("Segoe UI", 12, "bold"), bg="#f3f0ff", fg="#2d2a3e")
+    rodape = tk.Label(raiz, text="", font=(corpo, 12, "bold"), bg=marca.CEU_SUAVE, fg=marca.MARINHO)
     rodape.pack(side=tk.BOTTOM, pady=8)
     # a lista rola (barra e roda do mouse)
-    caixa = tk.Frame(raiz, bg="#ffffff")
+    caixa = tk.Frame(raiz, bg=marca.SUPERFICIE, highlightthickness=1, highlightbackground=marca.BORDA)
     caixa.pack(fill=tk.BOTH, expand=True, padx=18)
     tela = tk.Canvas(caixa, bg="#ffffff", highlightthickness=0)
     barra = tk.Scrollbar(caixa, orient=tk.VERTICAL, command=tela.yview)
@@ -553,8 +559,9 @@ def janela(itens):
         # o emoji numa coluna própria, de largura fixa: alguns (🏎️) são mais largos
         tk.Label(linha, text=item.get("emoji", ""), font=("Segoe UI Emoji", 13), bg="#ffffff",
                  width=3).pack(side=tk.LEFT)
-        tk.Label(linha, text=item["label"], font=("Segoe UI", 12), bg="#ffffff", anchor="w").pack(side=tk.LEFT)
-        detalhe = tk.Label(linha, text="", font=("Segoe UI", 10), bg="#ffffff", fg="#6b6880", anchor="e")
+        tk.Label(linha, text=item["label"], font=(corpo, 12), bg="#ffffff", fg=marca.TEXTO,
+                 anchor="w").pack(side=tk.LEFT)
+        detalhe = tk.Label(linha, text="", font=(corpo, 10), bg="#ffffff", fg=marca.APAGADO, anchor="e")
         detalhe.pack(side=tk.RIGHT)
         linhas[item["id"]] = (estado, detalhe)
 
@@ -577,8 +584,9 @@ def janela(itens):
                 if item_id is None:
                     rodape.config(text="Pronto! Tudo instalado." if not erros else
                                   f"Pronto. {len(erros)} não instalaram: dá para tentar de novo na área dos pais.")
-                    botao.config(text="Concluir", state=tk.NORMAL, bg="#6c4bff", fg="#ffffff",
-                                 activebackground="#5a3be0", activeforeground="#ffffff")
+                    botao.config(text="Concluir", state=tk.NORMAL, bg=marca.AZUL, fg="#ffffff",
+                                 activebackground=marca.AZUL_ESCURO, activeforeground="#ffffff",
+                                 cursor="hand2")
                     raiz.protocol("WM_DELETE_WINDOW", raiz.destroy)
                     raiz.lift()
                     botao.focus_set()
