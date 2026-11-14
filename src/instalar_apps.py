@@ -120,15 +120,64 @@ SILENCIOSO = {
 }
 
 
+def pacote(item):
+    """O que identifica o instalador: dois apps com o mesmo baixam e instalam uma vez só."""
+    return item.get("winget") or item.get("pagina") or item["id"]
+
+
+def mais_novo_da_pagina(html, padrao):
+    """Na listagem de uma pasta (ex.: cdn.kde.org/ci-builds), o instalador de número de
+    build maior. padrao: regex com um grupo para o número."""
+    import re
+
+    melhores = sorted(((int(m.group(1)), m.group(0)) for m in re.finditer(padrao, html)), reverse=True)
+    return melhores[0][1] if melhores else None
+
+
+def baixar_da_pagina(item, destino, abrir=None):
+    """Para apps cujo pacote no winget aponta para uma build que já sumiu (KDE): acha a
+    build mais nova na própria pasta do KDE e baixa. Devolve o arquivo ou None."""
+    import urllib.parse
+    import urllib.request
+
+    pagina = item.get("pagina", "")
+    if not pagina.startswith("https://") or not item.get("padrao"):
+        return None
+    abrir = abrir or (lambda u: urllib.request.urlopen(u, timeout=600))
+    try:
+        with abrir(pagina) as resposta:
+            html = resposta.read(4 * 1024 * 1024).decode("utf-8", "replace")
+        nome = mais_novo_da_pagina(html, item["padrao"])
+        if not nome or "/" in nome or "\\" in nome:
+            return None
+        with abrir(urllib.parse.urljoin(pagina, nome)) as resposta:
+            dados = resposta.read(1024 * 1024 * 1024)
+    except (OSError, ValueError):
+        return None
+    if not dados.startswith(b"MZ"):
+        return None
+    arquivo = os.path.join(destino, nome)
+    try:
+        with open(arquivo, "wb") as f:
+            f.write(dados)
+    except OSError:
+        return None
+    return arquivo
+
+
 def baixar(item, pasta):
     """winget download (não precisa de administrador). Devolve o arquivo do instalador."""
     destino = os.path.join(pasta, item["id"])
     os.makedirs(destino, exist_ok=True)
+    if not item.get("winget"):
+        return baixar_da_pagina(item, destino)
     argv = [
         winget(), "download", "--id", item["winget"], "--exact", "--download-directory", destino,
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
         "--scope", "machine",
     ]
+    if item.get("instalador"):  # o mesmo tipo que o script de administrador vai rodar
+        argv += ["--installer-type", item["instalador"]]
     try:
         subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
                        creationflags=SEM_CONSOLE, timeout=1800)
@@ -136,7 +185,10 @@ def baixar(item, pasta):
         return None
     arquivos = [os.path.join(destino, n) for n in os.listdir(destino)
                 if n.lower().endswith((".msi", ".exe"))]
-    return max(arquivos, key=os.path.getmtime) if arquivos else None
+    if arquivos:
+        return max(arquivos, key=os.path.getmtime)
+    # o winget aponta para uma build do KDE que já saiu do ar: a pasta do KDE tem a nova
+    return baixar_da_pagina(item, destino) if item.get("pagina") else None
 
 
 PASTA_DIRETOS = "Benikids Apps"  # em %LOCALAPPDATA%\\Programs: não precisa de administrador
@@ -359,7 +411,7 @@ def trabalhar(itens, avisos, pasta=None):
         with trava:
             # mesmo pacote para dois apps (ex.: Neverball e Neverputt): baixa e instala uma vez
             for outro, futuro_existente in baixando.values():
-                if outro.get("winget") == item.get("winget"):
+                if pacote(outro) == pacote(item):
                     junto.setdefault(outro["id"], []).append(item)
                     return
 
@@ -388,7 +440,7 @@ def trabalhar(itens, avisos, pasta=None):
             if ok and not catalogo_windows.localizar(item):
                 ok, texto = False, "baixou, mas não achei o programa"
             avisos.put((item["id"], "ok" if ok else "erro", texto))
-        elif not item.get("winget"):
+        elif not item.get("winget") and not item.get("pagina"):
             avisos.put((item["id"], "erro", "sem instalador automático"))
         elif precisa_de_senha(item, ja_pediram):
             agendar(item)

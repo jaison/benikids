@@ -196,5 +196,40 @@ class BaixarDiretoTests(unittest.TestCase):
             self.assertFalse(ok)
 
 
+class BaixarDaPaginaTests(unittest.TestCase):
+    PADRAO = r"kturtle-master-(\d+)-windows-cl-msvc2022-x86_64\.exe"
+
+    def test_newest_build_wins(self):
+        html = ('<a href="kturtle-master-987-windows-cl-msvc2022-x86_64.exe">'
+                '<a href="kturtle-master-1293-windows-cl-msvc2022-x86_64.exe">'
+                '<a href="kturtle-master-1293-windows-cl-msvc2022-x86_64.exe.sha256">')
+        self.assertEqual(instalar_apps.mais_novo_da_pagina(html, self.PADRAO),
+                         "kturtle-master-1293-windows-cl-msvc2022-x86_64.exe")
+        self.assertIsNone(instalar_apps.mais_novo_da_pagina("<html></html>", self.PADRAO))
+
+    def test_downloads_the_newest_installer(self):
+        import io
+        pedidos = []
+
+        def abrir(url):
+            pedidos.append(url)
+            if url.endswith("/"):
+                return io.BytesIO(b'<a href="kturtle-master-12-windows-cl-msvc2022-x86_64.exe">')
+            return io.BytesIO(b"MZ instalador")
+
+        item = {"id": "kturtle", "pagina": "https://cdn.kde.org/x/", "padrao": self.PADRAO}
+        with tempfile.TemporaryDirectory() as pasta:
+            arquivo = instalar_apps.baixar_da_pagina(item, pasta, abrir)
+            self.assertEqual(os.path.basename(arquivo), "kturtle-master-12-windows-cl-msvc2022-x86_64.exe")
+        self.assertEqual(pedidos[1], "https://cdn.kde.org/x/kturtle-master-12-windows-cl-msvc2022-x86_64.exe")
+
+    def test_apps_without_winget_are_not_grouped_together(self):
+        a = {"id": "kturtle", "pagina": "https://cdn.kde.org/a/"}
+        b = {"id": "minuet", "pagina": "https://cdn.kde.org/b/"}
+        self.assertNotEqual(instalar_apps.pacote(a), instalar_apps.pacote(b))
+        self.assertEqual(instalar_apps.pacote({"id": "neverball", "winget": "N.N"}),
+                         instalar_apps.pacote({"id": "neverputt", "winget": "N.N"}))
+
+
 if __name__ == "__main__":
     unittest.main()
