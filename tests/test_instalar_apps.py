@@ -127,6 +127,27 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertEqual(instalar_apps.ler_resultados(resultados),
                          {"etr-dependencia1": "0", "etr": "1603", "fim": "0"})
 
+    def test_baixa_sem_scope_quando_o_manifesto_nao_declara_escopo(self):
+        # Enigma: o manifesto não tem "Scope"; com --scope machine o winget não acha
+        # instalador (0x8a150010) e nada é baixado
+        chamadas = []
+
+        def run(argv, **_kw):
+            chamadas.append(argv)
+            if "--scope" not in argv:
+                destino = argv[argv.index("--download-directory") + 1]
+                open(os.path.join(destino, "Enigma-1.30.exe"), "wb").close()
+            return mock.Mock(returncode=0)
+
+        item = {"id": "enigma", "winget": "EnigmaGame.Enigma", "instalador": "nullsoft"}
+        with mock.patch.object(instalar_apps.subprocess, "run", side_effect=run):
+            arquivo = instalar_apps.baixar(item, self.tmp.name)
+        self.assertTrue(arquivo.endswith("Enigma-1.30.exe"))
+        self.assertEqual(len(chamadas), 2)
+        self.assertIn("--scope", chamadas[0])
+        self.assertNotIn("--scope", chamadas[1])
+        self.assertIn("nullsoft", chamadas[1])
+
     def test_lote_bloqueia_no_firewall_os_apps_marcados(self):
         pasta = self.tmp.name
         app = os.path.join(pasta, "gcompris", "GCompris.msi")

@@ -73,7 +73,7 @@ class TelemetriaTest(unittest.TestCase):
 
 class UsoTest(TelemetriaTest):
     def perfil(self, **extra):
-        p = {"id": "default", "name": "Lívia", "telemetryId": "c" * 32, "birthMonth": "2018-05",
+        p = {"id": "default", "name": "Ângela", "telemetryId": "c" * 32, "birthMonth": "2018-05",
              "gender": "menina", "tiles": [{"id": "gcompris", "label": "GCompris", "category": "educativo"}]}
         p.update(extra)
         return p
@@ -94,7 +94,7 @@ class UsoTest(TelemetriaTest):
                                  "apps": [{"app": "gcompris", "nome": "GCompris", "categoria": "educativo",
                                            "minutos": 25}]}])
         texto = json.dumps(dias, ensure_ascii=False)
-        self.assertNotIn("Lívia", texto)
+        self.assertNotIn("Ângela", texto)
         self.assertNotIn("2018", texto)  # a data de nascimento não sai
 
     def test_uso_so_com_a_caixinha_e_so_a_partir_do_dia_em_que_ligou(self):
