@@ -162,6 +162,21 @@ class ConfigsAntesDeAbrirTests(unittest.TestCase):
             with open(novo, encoding="utf-8") as f:
                 self.assertEqual(json.load(f), {"optIn": False})
 
+    def test_enigma_goes_fullscreen_once(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            arquivo = os.path.join(raiz, "Enigma", ".enigmarc.xml")
+            marca = os.path.join(raiz, "dados", "tela-cheia-ligada")
+            self.assertTrue(catalogo_windows.preparar_enigma(arquivo, marca))
+            self.assertIn('key="FullScreen" value="1"', Path(arquivo).read_text(encoding="utf-8"))
+            Path(arquivo).write_text('<preferences><properties>\n<property key="FullScreen" value="0"/>\n'
+                                     '<property key="VideoMode" value="0"/></properties></preferences>', encoding="utf-8")
+            self.assertFalse(catalogo_windows.preparar_enigma(arquivo, marca))  # os pais desligaram
+            os.remove(marca)
+            self.assertTrue(catalogo_windows.preparar_enigma(arquivo, marca))  # arquivo do jogo, com 0
+            texto = Path(arquivo).read_text(encoding="utf-8")
+            self.assertIn('key="FullScreen" value="1"', texto)
+            self.assertIn('key="VideoMode" value="0"', texto)
+
 
 class PrepararXmotoTests(unittest.TestCase):
     def banco(self, pasta):

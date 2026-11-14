@@ -208,7 +208,7 @@ class CantoPadraoTests(unittest.TestCase):
         self.assertEqual(overlay.canto_padrao("kapman"), "tr")      # maximizado
         self.assertEqual(overlay.canto_padrao("puzzles-quinze"), "tl")  # janela fixa
         self.assertEqual(overlay.canto_padrao("nao-existe"), "tl")
-        self.assertFalse(overlay.maximizar_no_inicio("neverball"))  # SDL sem maximizar
+        self.assertFalse(overlay.maximizar_no_inicio("puzzles-quinze"))
 
 
 if __name__ == "__main__":
