@@ -115,6 +115,17 @@ def terminate_owned_tree(grace_seconds=TERMINATION_GRACE_SECONDS):
     _reap_children()
 
 
+def pasta_do_programa(command):
+    """Pasta do .exe, como no "Iniciar em" de um atalho do Windows: muitos jogos
+    (Extreme TuxRacer, Pingus...) procuram os próprios dados a partir dela."""
+    if not command:
+        return None
+    programa = str(command[0])
+    if not os.path.isabs(programa) or not os.path.isfile(programa):
+        return None
+    return os.path.dirname(programa)
+
+
 def supervise_windows(
     command,
     record_path,
@@ -134,7 +145,8 @@ def supervise_windows(
     child = None
     started_at = None
     try:
-        child = subprocess.Popen(command, env=dict(os.environ), close_fds=True)
+        child = subprocess.Popen(command, env=dict(os.environ), close_fds=True,
+                                 cwd=pasta_do_programa(command))
         started_at = int(time.time())
         write_process_record(record_path, os.getpid(), "tile-process", marker=marker)
         while True:

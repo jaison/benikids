@@ -182,5 +182,18 @@ class ProcessSupervisorTests(unittest.TestCase):
             self.assertEqual(records[0]["tileId"], "paint")
 
 
+class PastaDoProgramaTests(unittest.TestCase):
+    def test_usa_a_pasta_do_executavel(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            exe = os.path.join(pasta, "ExtremeTuxRacer.exe")
+            Path(exe).write_bytes(b"")
+            self.assertEqual(process_supervisor.pasta_do_programa([exe, "--x"]), pasta)
+
+    def test_comando_relativo_ou_ausente_mantem_a_pasta_atual(self):
+        self.assertIsNone(process_supervisor.pasta_do_programa([]))
+        self.assertIsNone(process_supervisor.pasta_do_programa(["notepad.exe"]))
+        self.assertIsNone(process_supervisor.pasta_do_programa(["/nao/existe/jogo.exe"]))
+
+
 if __name__ == "__main__":
     unittest.main()
