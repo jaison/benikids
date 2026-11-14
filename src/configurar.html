@@ -5,99 +5,178 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Benikids: primeira configuração</title>
 <style>
-:root{--fundo:#f3f0ff;--cartao:#fff;--texto:#2d2a3e;--suave:#6b6880;--borda:#d9d4f0;--cor:#6d4aff;--cor-escura:#5434e0;--menino:#2f80ed;--menina:#e8478b;--erro:#c62828}
+@font-face{font-family:'Fredoka';src:url('/themes/fonts/Fredoka.ttf') format('truetype');font-weight:300 700;font-display:swap}
+:root{--fundo:#f3f0ff;--cartao:#fff;--texto:#2d2a3e;--suave:#625f78;--borda:#d9d4f0;--cor:#6d4aff;--cor-escura:#5434e0;--cor-clara:#efeaff;--menino:#2f80ed;--menina:#e8478b;--erro:#c62828;--ok:#1f8a4c}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%;background:var(--fundo);color:var(--texto);font-family:"Segoe UI",system-ui,"Noto Sans",sans-serif}
-main{max-width:760px;margin:0 auto;padding:40px 20px 60px}
-h1{font-size:2.2rem;margin:0 0 6px}
-.sub{color:var(--suave);font-size:1.15rem;margin:0 0 28px}
-section{background:var(--cartao);border-radius:22px;padding:24px;margin-bottom:22px;box-shadow:0 6px 24px #6d4aff1a}
-section.destaque{border:2px solid var(--cor)}
-h2{font-size:1.35rem;margin:0 0 16px}
-.crianca{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:end;padding:14px 0;border-top:1px solid var(--borda)}
-.nasc{display:flex;gap:6px}.nasc select{font:inherit;padding:10px 8px;border:2px solid var(--borda);border-radius:12px;background:#fff}
-.crianca:first-of-type{border-top:0;padding-top:0}
-label{display:block;font-weight:600;margin-bottom:6px}
-input{width:100%;font:inherit;font-size:1.2rem;padding:12px 14px;border:2px solid var(--borda);border-radius:14px;background:#fff;color:var(--texto)}
-input:focus{outline:none;border-color:var(--cor)}
+main{max-width:760px;margin:0 auto;padding:28px 20px 40px}
+h1,h2{font-family:'Fredoka',"Segoe UI",system-ui,sans-serif;font-weight:600}
+h1{font-size:2.1rem;margin:0 0 4px}
+h2{font-size:1.5rem;margin:0 0 6px}
+h2[tabindex]:focus{outline:none}
+.sub{color:var(--suave);font-size:1.1rem;margin:0 0 18px}
+[hidden]{display:none!important}
+
+/* passos */
+.passos{display:flex;gap:8px;list-style:none;margin:0 0 18px;padding:0}
+.passos li{flex:1;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:#fff;color:var(--suave);font-weight:600;font-size:.95rem;border:2px solid transparent}
+.passos li b{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--cor-clara);color:var(--cor);font-size:.9rem;flex:none}
+.passos li[aria-current="step"]{border-color:var(--cor);color:var(--texto)}
+.passos li[aria-current="step"] b,.passos li.feito b{background:var(--cor);color:#fff}
+
+section.passo{background:var(--cartao);border-radius:22px;padding:24px;box-shadow:0 6px 24px #6d4aff1a}
+.explica{color:var(--suave);margin:0 0 18px;font-size:1.02rem}
+
+/* crianças */
+.crianca{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 16px;padding:16px;border:2px solid var(--borda);border-radius:18px;margin-bottom:12px}
+.crianca .campo-nome{grid-column:1/2}
+.crianca .remover{position:absolute;top:10px;right:10px}
+.campo label,.grupo-rotulo{display:block;font-weight:600;margin-bottom:6px}
+.nasc{display:flex;gap:6px}
+select{font:inherit;font-size:1.05rem;padding:10px 8px;border:2px solid var(--borda);border-radius:12px;background:#fff;color:var(--texto)}
+input[type=text],input[type=password],input.nome{width:100%;font:inherit;font-size:1.2rem;padding:11px 14px;border:2px solid var(--borda);border-radius:14px;background:#fff;color:var(--texto)}
+input:focus,select:focus{outline:none;border-color:var(--cor);box-shadow:0 0 0 3px #6d4aff33}
+.invalido{border-color:var(--erro)!important}
 .icones{display:flex;gap:8px}
-.icone{font:inherit;font-size:1rem;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;width:96px;padding:8px 6px;border:3px solid var(--borda);border-radius:16px;background:#fff;color:var(--texto);cursor:pointer}
-.icone span{font-size:2.2rem;line-height:1.1}
+.icone{font:inherit;font-size:1rem;font-weight:600;display:flex;align-items:center;gap:8px;padding:8px 14px;border:3px solid var(--borda);border-radius:16px;background:#fff;color:var(--texto);cursor:pointer;min-height:52px}
+.icone span{font-size:1.8rem;line-height:1}
 .icone[aria-pressed="true"].menino{border-color:var(--menino);background:#eaf3ff}
 .icone[aria-pressed="true"].menina{border-color:var(--menina);background:#ffeef5}
-.icone:focus-visible,.botao:focus-visible,.remover:focus-visible{outline:3px solid var(--cor);outline-offset:2px}
-.remover{font:inherit;font-size:1.4rem;width:48px;height:48px;border:0;border-radius:14px;background:#f4f2fa;color:var(--suave);cursor:pointer;align-self:center}
-.remover[hidden]{visibility:hidden;display:block}
-.botao{font:inherit;font-weight:700;font-size:1.1rem;border-radius:16px;padding:14px 22px;cursor:pointer;border:2px dashed var(--cor);background:#fff;color:var(--cor)}
-.botao.principal{border:0;background:var(--cor);color:#fff;font-size:1.3rem;padding:16px 34px;width:100%}
+.linha2{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:14px 24px;align-items:flex-end}
+.icone:focus-visible,.botao:focus-visible,.remover:focus-visible,.olho:focus-visible{outline:3px solid var(--cor);outline-offset:2px}
+.remover{font:inherit;font-size:1.1rem;width:40px;height:40px;border:0;border-radius:12px;background:#f4f2fa;color:var(--suave);cursor:pointer}
+
+/* PIN */
+.pins{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.com-olho{position:relative}
+.com-olho input{padding-right:56px;letter-spacing:.3em}
+.olho{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:44px;height:40px;border:0;border-radius:10px;background:transparent;font-size:1.3rem;cursor:pointer}
+.confere{min-height:1.4em;margin:8px 0 0;font-weight:600}
+.confere.ok{color:var(--ok)}
+.confere.nao{color:var(--erro)}
+.dica{color:var(--suave);margin:12px 0 0}
+
+/* preferências */
+.opcao{display:flex;gap:12px;align-items:flex-start;font-size:1.08rem;cursor:pointer;margin:0;font-weight:600}
+.opcao input{width:24px;height:24px;margin:1px 0 0;accent-color:var(--cor);flex:none}
+.opcao+.dica,.dica+.opcao{margin-top:8px}
+.bloco{padding:14px 0;border-top:1px solid var(--borda)}
+.bloco:first-of-type{border-top:0;padding-top:0}
+.bloco .dica{margin:6px 0 0 36px;font-size:.98rem}
+.bloco.destaque{border:2px solid var(--cor);border-radius:16px;padding:14px;background:#faf8ff}
+.bloco.destaque .dica{margin-left:36px}
+details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
+
+/* rodapé */
+.erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:14px 0 0}
+.acoes{display:flex;gap:12px;margin-top:14px}
+.botao{font:inherit;font-weight:700;font-size:1.1rem;border-radius:16px;padding:13px 22px;cursor:pointer;border:2px solid var(--borda);background:#fff;color:var(--texto)}
+.botao.tracejado{border:2px dashed var(--cor);color:var(--cor);margin-top:4px}
+.botao.principal{border:0;background:var(--cor);color:#fff;font-size:1.2rem;padding:14px 30px;margin-left:auto;min-width:200px}
 .botao.principal:hover{background:var(--cor-escura)}
 .botao:disabled{opacity:.6;cursor:default}
-.pins{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.dica{color:var(--suave);margin:12px 0 0}
-.opcao{display:flex;gap:12px;align-items:center;font-size:1.15rem;cursor:pointer;margin:0}
-.opcao input{width:26px;height:26px;accent-color:var(--cor);flex:none}
-.opcao+.opcao{margin-top:14px}
-.erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:0 0 12px}
-.pronto{text-align:center;padding:60px 20px}
-.pronto div{font-size:5rem}
-@media (max-width:760px){.crianca{grid-template-columns:1fr auto}.icones,.nascimento{grid-column:1/-1;order:3}.pins{grid-template-columns:1fr}}
+
+.pronto{text-align:center;padding:50px 20px}
+.pronto .festa{font-size:4.5rem}
+.pronto ul{list-style:none;padding:0;margin:22px auto 0;max-width:520px;text-align:left}
+.pronto li{background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;box-shadow:0 4px 16px #6d4aff14}
+.pronto li span{font-size:1.5rem;line-height:1.2}
+
+@media (max-width:640px){
+  .passos li span{display:none}
+  .pins{grid-template-columns:1fr}
+  .genero,.icones{width:100%}
+  .icone{flex:1;justify-content:center;padding:8px 6px}
+  .passos li[aria-current="step"] span{display:inline}
+  .acoes{flex-direction:column-reverse}
+  .botao.principal{margin-left:0;width:100%}
+}
+@media (max-height:640px){main{padding-top:14px}h1{font-size:1.7rem}.sub{margin-bottom:10px}.passos{margin-bottom:10px}section.passo{padding:18px}}
+@media (prefers-reduced-motion:no-preference){section.passo{animation:entra .25s ease-out}@keyframes entra{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:none}}}
 </style>
 </head>
 <body>
 <main id="formulario">
   <h1>Bem-vindo ao Benikids! 🌈</h1>
-  <p class="sub">Antes de começar, conte quem vai brincar e crie o PIN dos pais.</p>
+  <p class="sub">Três passos rápidos e o computador fica pronto para as crianças.</p>
 
-  <section>
-    <h2>Quem vai usar?</h2>
+  <ol class="passos" aria-label="Etapas">
+    <li data-passo="1"><b>1</b><span>Crianças</span></li>
+    <li data-passo="2"><b>2</b><span>PIN dos pais</span></li>
+    <li data-passo="3"><b>3</b><span>Preferências</span></li>
+  </ol>
+
+  <section class="passo" data-passo="1" aria-labelledby="t1">
+    <h2 id="t1" tabindex="-1">Quem vai brincar?</h2>
+    <p class="explica">Cada criança ganha o próprio perfil, com cores e tempo de tela só dela.</p>
     <div id="criancas"></div>
-    <button type="button" class="botao" id="mais">＋ Adicionar outra criança</button>
+    <button type="button" class="botao tracejado" id="mais">+ Adicionar outra criança</button>
   </section>
 
-  <section>
-    <h2>PIN dos pais</h2>
+  <section class="passo" data-passo="2" aria-labelledby="t2" hidden>
+    <h2 id="t2" tabindex="-1">Crie o PIN dos pais</h2>
+    <p class="explica">O PIN protege a área dos pais, a saída e o desligar. Sem ele, a criança consegue sair do Benikids.</p>
     <div class="pins">
-      <div><label for="pin">PIN (4 a 6 números)</label>
-        <input id="pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="\d*"></div>
-      <div><label for="pin2">Repita o PIN</label>
-        <input id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="\d*"></div>
+      <div class="campo"><label for="pin">PIN (4 a 6 números)</label>
+        <div class="com-olho"><input id="pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6">
+          <button type="button" class="olho" data-alvo="pin" aria-label="Mostrar o PIN" aria-pressed="false">👁️</button></div></div>
+      <div class="campo"><label for="pin2">Repita o PIN</label>
+        <div class="com-olho"><input id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6">
+          <button type="button" class="olho" data-alvo="pin2" aria-label="Mostrar o PIN repetido" aria-pressed="false">👁️</button></div></div>
     </div>
-    <p class="dica">O PIN protege a área dos pais, a saída e o desligar. Sem ele, a criança consegue sair do Benikids.</p>
+    <p class="confere" id="confere" aria-live="polite"></p>
+    <p class="dica">Escolha um número que as crianças não saibam (evite datas de aniversário).</p>
   </section>
 
-  <section>
-    <label class="opcao"><input type="checkbox" id="inicio" checked>
-      <span>Abrir o Benikids sozinho ao entrar no computador</span></label>
-    <label class="opcao"><input type="checkbox" id="telemetria" checked>
-      <span>Ajudar o Benikids com informações anônimas sobre este computador</span></label>
-    <p class="dica">Uma vez por dia: sistema, processador, memória, placa de vídeo e tela, para sabermos em que computadores testar. Dá para mudar depois na área dos pais.</p>
-  </section>
-
-  <section class="destaque">
-    <label class="opcao"><input type="checkbox" id="telemetriaUso">
-      <span>Compartilhar, de forma anônima, quais apps cada criança usa e por quanto tempo</span></label>
-    <p class="dica">Para melhorarmos o catálogo: tiramos o que ninguém usa e trazemos mais do que as crianças gostam.
-      Vai por criança um número aleatório, a <strong>faixa de idade</strong> (não a data), menino ou menina e os minutos
-      por app em cada dia. <strong>Nunca</strong> o nome. Os dados são apagados depois de 12 meses, e dá para desligar e
-      pedir para apagar na área dos pais.</p>
+  <section class="passo" data-passo="3" aria-labelledby="t3" hidden>
+    <h2 id="t3" tabindex="-1">Últimos ajustes</h2>
+    <p class="explica">Tudo isso pode ser mudado depois na área dos pais.</p>
+    <div class="bloco">
+      <label class="opcao"><input type="checkbox" id="inicio" checked>
+        <span>Abrir o Benikids sozinho ao ligar o computador</span></label>
+    </div>
+    <div class="bloco">
+      <label class="opcao"><input type="checkbox" id="telemetria" checked>
+        <span>Ajudar o Benikids com informações anônimas sobre este computador</span></label>
+      <p class="dica">Uma vez por dia: sistema, processador, memória, placa de vídeo e tela, para sabermos em que computadores testar.</p>
+    </div>
+    <div class="bloco destaque">
+      <label class="opcao"><input type="checkbox" id="telemetriaUso">
+        <span>Compartilhar, de forma anônima, quais apps cada criança usa e por quanto tempo</span></label>
+      <p class="dica">Para melhorarmos o catálogo: tiramos o que ninguém usa e trazemos mais do que as crianças gostam.</p>
+      <details class="dica"><summary>O que é enviado?</summary>
+        Por criança vai um número aleatório, a <strong>faixa de idade</strong> (não a data), menino ou menina e os minutos
+        por app em cada dia. <strong>Nunca</strong> o nome. Os dados são apagados depois de 12 meses, e dá para desligar e
+        pedir para apagar na área dos pais.</details>
+    </div>
   </section>
 
   <p class="erro" id="erro" role="alert"></p>
-  <button type="button" class="botao principal" id="comecar">Começar</button>
+  <div class="acoes">
+    <button type="button" class="botao" id="voltarPasso" hidden>← Voltar</button>
+    <button type="button" class="botao principal" id="avancar">Continuar →</button>
+    <button type="button" class="botao principal" id="comecar" hidden>Começar 🚀</button>
+  </div>
 </main>
 
 <main id="pronto" class="pronto" hidden>
-  <div>🎉</div>
-  <h1>Tudo pronto!</h1>
-  <p class="sub">Os perfis e o PIN podem ser mudados depois na área dos pais.</p>
+  <div class="festa">🎉</div>
+  <h1 id="prontoTitulo">Tudo pronto!</h1>
+  <ul>
+    <li><span>🎮</span><div>Os jogos e apps já estão no menu, separados em Aprender, Passatempo e Jogar.</div></li>
+    <li><span>🔒</span><div>Para escolher apps, tempo de tela e controles, abra a área dos pais e digite o PIN.</div></li>
+  </ul>
+  <p><button type="button" class="botao principal" id="irMenu">Ir para o Benikids</button></p>
 </main>
 
 <script>
 (function () {
   'use strict';
   const MAX = 8;
+  const TOTAL = 3;
   const lista = document.getElementById('criancas');
   const erro = document.getElementById('erro');
+  let passo = 1;
   let doCliente = false;
   try { doCliente = sessionStorage.getItem('beniCliente') === '1'; } catch (e) {}
 
@@ -110,6 +189,7 @@ input:focus{outline:none;border-color:var(--cor)}
     }
   }
 
+  // ---------- crianças ----------
   function escolher(linha, tipo) {
     linha.querySelectorAll('.icone').forEach(function (b) {
       b.setAttribute('aria-pressed', String(b.dataset.tipo === tipo));
@@ -123,62 +203,156 @@ input:focus{outline:none;border-color:var(--cor)}
     document.getElementById('mais').hidden = linhas.length >= MAX;
   }
 
-  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+  const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
     .map(function (m, i) { return '<option value="' + String(i + 1).padStart(2, '0') + '">' + m + '</option>'; }).join('');
   const ANOS = (function () {
     const atual = new Date().getFullYear(); let s = '';
-    for (let a = atual - 1; a >= atual - 16; a--) s += '<option>' + a + '</option>';
+    for (let a = atual; a >= atual - 16; a--) s += '<option>' + a + '</option>';
     return s;
   })();
 
+  let contador = 0;
   function adicionar() {
-    const n = lista.children.length + 1;
+    const n = ++contador;
     const linha = document.createElement('div');
     linha.className = 'crianca';
     linha.innerHTML =
-      '<div><label>Nome da criança</label><input class="nome" maxlength="40" autocomplete="off"></div>' +
-      '<div class="nascimento"><label>Nascimento</label><div class="nasc">' +
+      '<div class="campo campo-nome"><label>Nome</label><input class="nome" type="text" maxlength="40" autocomplete="off" spellcheck="false"></div>' +
+      '<div class="linha2">' +
+      '<div class="nascimento" role="group"><span class="grupo-rotulo">Nasceu em</span><div class="nasc">' +
       '<select class="mes" aria-label="Mês de nascimento"><option value="">Mês</option>' + MESES + '</select>' +
       '<select class="ano" aria-label="Ano de nascimento"><option value="">Ano</option>' + ANOS + '</select></div></div>' +
-      '<div class="icones" role="group" aria-label="Ícone">' +
+      '<div role="group" class="genero"><span class="grupo-rotulo">Menino ou menina?</span><div class="icones">' +
       '<button type="button" class="icone menino" data-tipo="menino" aria-pressed="false"><span>👦</span>Menino</button>' +
       '<button type="button" class="icone menina" data-tipo="menina" aria-pressed="false"><span>👧</span>Menina</button>' +
-      '</div>' +
-      '<button type="button" class="remover" title="Remover" aria-label="Remover">✕</button>';
-    const id = 'nome-' + n + '-' + Date.now();
+      '</div></div></div>' +
+      '<button type="button" class="remover" title="Remover esta criança" aria-label="Remover esta criança">✕</button>';
+    const id = 'nome-' + n;
     linha.querySelector('label').htmlFor = id;
     linha.querySelector('.nome').id = id;
+    linha.querySelector('.nascimento').setAttribute('aria-label', 'Data de nascimento');
+    linha.querySelector('.icones').parentNode.setAttribute('aria-label', 'Menino ou menina');
     linha.querySelectorAll('.icone').forEach(function (b) {
-      b.addEventListener('click', function () { escolher(linha, b.dataset.tipo); });
+      b.addEventListener('click', function () { escolher(linha, b.dataset.tipo); limparErro(); });
     });
-    linha.querySelector('.remover').addEventListener('click', function () { linha.remove(); atualizar(); });
+    linha.querySelector('.remover').addEventListener('click', function () {
+      const anterior = linha.previousElementSibling;
+      linha.remove(); atualizar();
+      const alvo = (anterior || lista.querySelector('.crianca'));
+      if (alvo) alvo.querySelector('.nome').focus();
+    });
     lista.appendChild(linha);
     atualizar();
     linha.querySelector('.nome').focus();
   }
 
-  function dados() {
+  function falhar(campo, mensagem) {
+    if (campo) { campo.classList.add('invalido'); campo.focus(); }
+    const e = new Error(mensagem); throw e;
+  }
+
+  function lerCriancas() {
     const criancas = [];
+    const nomes = new Set();
     for (const linha of lista.querySelectorAll('.crianca')) {
-      const nome = linha.querySelector('.nome').value.trim();
-      if (!nome) { linha.querySelector('.nome').focus(); throw new Error('Digite o nome de cada criança.'); }
-      if (!linha.dataset.tipo) { linha.querySelector('.icone').focus(); throw new Error('Escolha Menino ou Menina para ' + nome + '.'); }
-      const mes = linha.querySelector('.mes').value, ano = linha.querySelector('.ano').value;
-      if (!mes || !ano) { linha.querySelector(mes ? '.ano' : '.mes').focus(); throw new Error('Escolha o mês e o ano de nascimento de ' + nome + '.'); }
-      criancas.push({ name: nome, icon: linha.dataset.tipo, birthMonth: ano + '-' + mes });
+      const campo = linha.querySelector('.nome');
+      const nome = campo.value.trim().replace(/\s+/g, ' ');
+      if (!nome) falhar(campo, 'Digite o nome de cada criança.');
+      if (nomes.has(nome.toLowerCase())) falhar(campo, 'Já tem uma criança chamada ' + nome + '.');
+      nomes.add(nome.toLowerCase());
+      const mes = linha.querySelector('.mes'), ano = linha.querySelector('.ano');
+      if (!mes.value || !ano.value) falhar(mes.value ? ano : mes, 'Escolha o mês e o ano em que ' + nome + ' nasceu.');
+      if (ano.value + '-' + mes.value > hojeMes()) falhar(mes, 'A data de nascimento de ' + nome + ' está no futuro.');
+      if (!linha.dataset.tipo) falhar(linha.querySelector('.icone'), 'Escolha Menino ou Menina para ' + nome + '.');
+      criancas.push({ name: nome, icon: linha.dataset.tipo, birthMonth: ano.value + '-' + mes.value });
     }
-    const pin = document.getElementById('pin').value;
-    if (!/^\d{4,6}$/.test(pin)) { document.getElementById('pin').focus(); throw new Error('O PIN precisa ter de 4 a 6 números.'); }
-    if (pin !== document.getElementById('pin2').value) { document.getElementById('pin2').focus(); throw new Error('Os dois PINs estão diferentes.'); }
-    return { children: criancas, pin: pin, startOnLogin: document.getElementById('inicio').checked,
-             telemetry: document.getElementById('telemetria').checked,
-             usageTelemetry: document.getElementById('telemetriaUso').checked };
+    return criancas;
+  }
+
+  function hojeMes() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  // ---------- PIN ----------
+  const pin = document.getElementById('pin'), pin2 = document.getElementById('pin2');
+  const confere = document.getElementById('confere');
+  function soNumeros(e) {
+    const limpo = e.target.value.replace(/\D/g, '').slice(0, 6);
+    if (limpo !== e.target.value) e.target.value = limpo;
+    mostrarConfere();
+  }
+  function mostrarConfere() {
+    if (!pin2.value) { confere.textContent = ''; confere.className = 'confere'; return; }
+    const igual = pin.value === pin2.value && /^\d{4,6}$/.test(pin.value);
+    confere.textContent = igual ? '✓ Os dois PINs são iguais' : (pin2.value.length >= pin.value.length ? '✗ Os PINs estão diferentes' : '');
+    confere.className = 'confere ' + (igual ? 'ok' : 'nao');
+  }
+  pin.addEventListener('input', soNumeros);
+  pin2.addEventListener('input', soNumeros);
+  document.querySelectorAll('.olho').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const campo = document.getElementById(b.dataset.alvo);
+      const mostrar = campo.type === 'password';
+      campo.type = mostrar ? 'text' : 'password';
+      b.setAttribute('aria-pressed', String(mostrar));
+      b.textContent = mostrar ? '🙈' : '👁️';
+    });
+  });
+
+  function lerPin() {
+    if (!/^\d{4,6}$/.test(pin.value)) falhar(pin, 'O PIN precisa ter de 4 a 6 números.');
+    if (/^(\d)\1+$/.test(pin.value)) falhar(pin, 'Use números diferentes (não ' + pin.value + '): fica mais difícil de adivinhar.');
+    if (pin.value !== pin2.value) falhar(pin2, 'Os dois PINs estão diferentes.');
+    return pin.value;
+  }
+
+  // ---------- passos ----------
+  function validar(n) {
+    if (n === 1) lerCriancas();
+    if (n === 2) lerPin();
+  }
+
+  function irPara(n) {
+    passo = n;
+    document.querySelectorAll('section.passo').forEach(function (s) { s.hidden = Number(s.dataset.passo) !== n; });
+    document.querySelectorAll('.passos li').forEach(function (li) {
+      const p = Number(li.dataset.passo);
+      if (p === n) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+      li.classList.toggle('feito', p < n);
+    });
+    document.getElementById('voltarPasso').hidden = n === 1;
+    document.getElementById('avancar').hidden = n === TOTAL;
+    document.getElementById('comecar').hidden = n !== TOTAL;
+    limparErro();
+    const primeiro = n === 1 ? lista.querySelector('.nome') : n === 2 ? pin : document.getElementById('t3');
+    if (primeiro) primeiro.focus();
+    window.scrollTo(0, 0);
+  }
+
+  function avancar() {
+    limparErro();
+    try { validar(passo); } catch (e) { erro.textContent = e.message; return; }
+    if (passo < TOTAL) irPara(passo + 1); else comecar();
+  }
+
+  function limparErro() {
+    erro.textContent = '';
+    document.querySelectorAll('.invalido').forEach(function (c) { c.classList.remove('invalido'); });
   }
 
   async function comecar() {
-    erro.textContent = '';
+    limparErro();
     let corpo;
-    try { corpo = dados(); } catch (e) { erro.textContent = e.message; return; }
+    try {
+      // revalida tudo: se algo do passo 1 ou 2 estiver errado, volta para ele
+      for (let n = 1; n < TOTAL; n++) {
+        try { validar(n); } catch (e) { irPara(n); validar(n); }
+      }
+      corpo = { children: lerCriancas(), pin: lerPin(), startOnLogin: document.getElementById('inicio').checked,
+                telemetry: document.getElementById('telemetria').checked,
+                usageTelemetry: document.getElementById('telemetriaUso').checked };
+    } catch (e) { erro.textContent = e.message; return; }
     const botao = document.getElementById('comecar');
     botao.disabled = true;
     botao.textContent = 'Salvando...';
@@ -189,27 +363,36 @@ input:focus{outline:none;border-color:var(--cor)}
       if (r.status === 403) { voltar(); return; }
       const j = await r.json().catch(function () { return {}; });
       if (!r.ok) throw new Error(j.message || 'Não deu para salvar. Tente de novo.');
+      const nomes = corpo.children.map(function (c) { return c.name; });
+      document.getElementById('prontoTitulo').textContent = nomes.length === 1
+        ? 'Tudo pronto, ' + nomes[0] + '!'
+        : 'Tudo pronto, ' + nomes.slice(0, -1).join(', ') + ' e ' + nomes[nomes.length - 1] + '!';
       document.getElementById('formulario').hidden = true;
       document.getElementById('pronto').hidden = false;
-      setTimeout(voltar, 2200);
+      document.getElementById('irMenu').focus();
+      setTimeout(voltar, 8000);
     } catch (e) {
       erro.textContent = e.message;
       botao.disabled = false;
-      botao.textContent = 'Começar';
+      botao.textContent = 'Começar 🚀';
     }
   }
 
-  // a mensagem de erro some assim que a pessoa corrige algo
-  document.addEventListener('input', function () { erro.textContent = ''; });
-  document.addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('.icone')) erro.textContent = '';
-  });
   document.getElementById('mais').addEventListener('click', adicionar);
+  document.getElementById('avancar').addEventListener('click', avancar);
   document.getElementById('comecar').addEventListener('click', comecar);
+  document.getElementById('voltarPasso').addEventListener('click', function () { irPara(passo - 1); });
+  document.getElementById('irMenu').addEventListener('click', voltar);
+  // a mensagem de erro some assim que a pessoa corrige algo
+  document.addEventListener('input', limparErro);
+  document.addEventListener('change', limparErro);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); comecar(); }
+    if (e.key === 'Enter' && (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' || e.target.tagName === 'SELECT')) {
+      e.preventDefault(); avancar();
+    }
   });
 
+  irPara(1);
   fetch('/api/config').then(function (r) { return r.json(); }).then(function (cfg) {
     if (cfg && cfg.setupCompleted === false) adicionar();
     else voltar(); // já configurado

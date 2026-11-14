@@ -158,10 +158,11 @@ def enter_parent_settings(browser):
 
 
 def run_benikids_setup(browser, artifacts):
-    """Benikids: a fresh install opens configurar.html (children + parent PIN)."""
+    """Benikids: a fresh install opens configurar.html (children, parent PIN, preferences)."""
     browser.wait_for(
         "location.pathname==='/configurar.html' && "
-        "document.querySelectorAll('#criancas .crianca').length===1",
+        "document.querySelectorAll('#criancas .crianca').length===1 && "
+        "!document.querySelector('section.passo[data-passo=\"1\"]').hidden",
         message="A fresh installation did not open the Benikids setup page",
     )
     assert_js(
@@ -171,17 +172,26 @@ def run_benikids_setup(browser, artifacts):
         "document.getElementById('inicio').checked===true",
         "Setup consent defaults changed (device on, usage off, start on login on)",
     )
-    browser.set_device_metrics(800, 600)
+    for width, height in ((800, 600), (390, 844)):
+        browser.set_device_metrics(width, height)
+        assert_js(
+            browser,
+            "document.documentElement.scrollWidth<=window.innerWidth && "
+            "[...document.querySelectorAll('.icone')].every(b=>b.getBoundingClientRect().right<=window.innerWidth)",
+            f"The setup page overflows horizontally at {width}x{height}",
+        )
+        browser.screenshot(artifacts / f"setup-{width}x{height}.png")
+    browser.set_device_metrics(1366, 768)
     assert_js(
         browser,
-        "document.documentElement.scrollWidth<=window.innerWidth",
-        "The setup page overflows horizontally at 800x600",
+        "document.getElementById('avancar').getBoundingClientRect().bottom<=window.innerHeight",
+        "The Continue button is below the fold at 1366x768",
     )
-    browser.screenshot(artifacts / "setup-800x600.png")
-    browser.set_device_metrics(1440, 900)
-    browser.click("#comecar")
+    # step 1: validation stays on the step and points at the field
+    browser.click("#avancar")
     browser.wait_for(
-        "document.getElementById('erro').textContent.length>0",
+        "document.getElementById('erro').textContent.length>0 && "
+        "document.activeElement.classList.contains('nome')",
         message="The setup page accepted a child without a name",
     )
     browser.click("#mais")
@@ -189,28 +199,63 @@ def run_benikids_setup(browser, artifacts):
     browser.click("#criancas .crianca:last-child .remover")
     browser.wait_for("document.querySelectorAll('#criancas .crianca').length===1")
     browser.set_value("#criancas .nome", "Kiddo")
-    browser.click("#criancas .icone.menina")
     browser.set_value("#criancas .mes", "03")
     browser.evaluate(
         "(() => { const s=document.querySelector('#criancas .ano');"
         " s.value=s.options[3].value; s.dispatchEvent(new Event('change',{bubbles:true})); })()"
     )
+    browser.click("#avancar")
+    browser.wait_for(
+        "document.getElementById('erro').textContent.includes('Menino ou Menina')",
+        message="The setup page accepted a child without boy/girl",
+    )
+    browser.click("#criancas .icone.menina")
+    browser.click("#avancar")
+    browser.wait_for(
+        "!document.querySelector('section.passo[data-passo=\"2\"]').hidden && "
+        "document.activeElement.id==='pin'",
+        message="Step 1 did not advance to the parent PIN",
+    )
+    # step 2: weak and mismatched PINs are refused
+    browser.set_value("#pin", "1111")
+    browser.set_value("#pin2", "1111")
+    browser.click("#avancar")
+    browser.wait_for("document.getElementById('erro').textContent.length>0",
+                     message="The setup page accepted a repeated-digit PIN")
     browser.set_value("#pin", PIN)
     browser.set_value("#pin2", "1357")
-    browser.click("#comecar")
+    assert_js(browser, "document.getElementById('confere').classList.contains('nao')",
+              "The PIN match hint did not flag different PINs")
+    browser.click("#avancar")
     browser.wait_for(
         "document.getElementById('erro').textContent.length>0 && "
-        "document.getElementById('pronto').hidden===true",
+        "!document.querySelector('section.passo[data-passo=\"2\"]').hidden",
         message="The setup page accepted two different PINs",
     )
     browser.set_value("#pin2", PIN)
+    assert_js(browser, "document.getElementById('confere').classList.contains('ok')",
+              "The PIN match hint did not confirm equal PINs")
+    browser.click("#avancar")
+    browser.wait_for(
+        "!document.querySelector('section.passo[data-passo=\"3\"]').hidden && "
+        "!document.getElementById('comecar').hidden",
+        message="Step 2 did not advance to preferences",
+    )
+    browser.screenshot(artifacts / "setup-preferences.png")
+    # back keeps what was typed
+    browser.click("#voltarPasso")
+    browser.wait_for("document.getElementById('pin').value===" + json.dumps(PIN))
+    browser.click("#avancar")
+    browser.wait_for("!document.querySelector('section.passo[data-passo=\"3\"]').hidden")
     browser.click("#telemetria")
     browser.click("#inicio")
     browser.click("#comecar")
     browser.wait_for(
-        "document.getElementById('pronto').hidden===false",
+        "document.getElementById('pronto').hidden===false && "
+        "document.getElementById('prontoTitulo').textContent.includes('Kiddo')",
         message="Finishing the Benikids setup did not show the ready screen",
     )
+    browser.screenshot(artifacts / "setup-ready.png")
     saved = browser.evaluate(
         "fetch('/api/config',{cache:'no-store'}).then(response=>response.json())",
         await_promise=True,
@@ -228,11 +273,13 @@ def run_benikids_setup(browser, artifacts):
         and len(saved.get("profiles", [])) == 1
     ):
         raise AssertionError(f"Benikids setup was not persisted: {saved!r}")
+    browser.click("#irMenu")
     browser.wait_for(
         "location.pathname==='/index.html'",
         message="The ready screen did not return to the launcher",
     )
-    log_scenario("Benikids setup validates and saves children, birth month, and parent PIN")
+    browser.set_device_metrics(1440, 900)
+    log_scenario("Benikids setup walks children, parent PIN, and preferences with inline validation")
 
 
 def run_scenarios(browser, release_fixture, installed_version, artifacts, restore_demo):
