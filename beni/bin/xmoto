@@ -1,4 +1,25 @@
 #!/bin/sh
-# Benikids: X-Moto (Motocross) em tela cheia, sem prender o mouse.
+# Benikids: X-Moto (Motocross) em tela cheia na resolução atual da tela, sem prender o mouse.
+# Antes da primeira partida deixa um perfil "Benikids" pronto, em português, sem o aviso
+# de "versão em desenvolvimento" e sem internet: a criança cai direto no menu do jogo.
 B=/usr/games/xmoto; [ -x "$B" ] || B=/usr/bin/xmoto
-LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec "$B" -fs "$@"
+RES=$(xrandr 2>/dev/null | awk '/\*/{print $1; exit}'); RES=${RES:-1366x768}; W=${RES%x*}; H=${RES#*x}
+DB="${XDG_DATA_HOME:-$HOME/.local/share}/xmoto/xm.db"
+[ -f "$DB" ] || DISPLAY= "$B" --listlevels >/dev/null 2>&1   # cria o banco sem abrir janela
+python3 - "$DB" <<'FIM' 2>/dev/null
+import sqlite3, sys, time
+db = sqlite3.connect(sys.argv[1])
+site = db.execute("SELECT value FROM xm_parameters WHERE param='siteKey'").fetchone()[0]
+if not db.execute("SELECT 1 FROM stats_profiles WHERE id_profile='Benikids'").fetchone():
+    db.execute("INSERT INTO stats_profiles VALUES (?, 'Benikids', 0, ?)",
+               (site, time.strftime("%Y-%m-%d %H:%M:%S")))
+for perfil in ("", "Benikids"):
+    for chave, valor in (("NotifyAtInit", "false"), ("Language", "pt_BR"), ("WebConfAtInit", "false"),
+                         ("WebHighscores", "false"), ("CheckHighscoresAtStartup", "false"),
+                         ("CheckNewLevelsAtStartup", "false"), ("ShowInGameWorldRecord", "false"),
+                         ("EnableJoysticks", "true"),
+                         ("KeySwitchFPS", "K:1073741928:0")):  # F13: tira o contador de quadros do F7
+        db.execute("INSERT OR REPLACE INTO profiles_configs VALUES (?, ?, ?)", (perfil, chave, valor))
+db.commit()
+FIM
+LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec "$B" -fs -res "${W}x${H}" -p Benikids --nowww "$@"
