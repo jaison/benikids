@@ -25,7 +25,11 @@ addresses or request headers.
 **Problem reports** (same switch): when the installer, a catalog app install, the native
 menu or an app launch fails, the error code and the end of the relevant log are queued
 and sent. Before leaving the computer the text is cleaned: the user folder and user name
-become `%USERPROFILE%`/`<usuario>` and e-mail addresses become `<email>`.
+become `%USERPROFILE%`/`<usuario>` and e-mail addresses become `<email>`. Once a day
+the receiver groups the reports by signature (e.g. `app.fechou_sozinho:extremetuxracer`)
+and opens or updates a public GitHub issue with only that signature, the counts, the
+Benikids versions and the system names; the log text and the installation ID are never
+published.
 
 **Children's usage report** (separate switch, **off unless a parent turns it on**, in the
 first-run setup and in Parents → System): per child, a random ID (not the name or the

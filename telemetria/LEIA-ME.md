@@ -12,6 +12,20 @@ Endereço: `https://telemetria.benikids.app`. O Worker não grava IP nem cabeça
 Limpeza automática (cron diário): uso com mais de 12 meses, problemas com mais de 6 meses.
 Detalhes em `src/telemetria.py` e `docs/PRIVACY.md`.
 
+## Problemas viram Issues no GitHub
+
+No cron diário, cada assinatura de problema nova vira uma Issue em `jaison/benikids`
+(etiqueta `telemetria`, no máximo 5 novas por dia); se a assinatura já tem Issue, ganha um
+comentário com as ocorrências novas. O repositório é público, então a Issue leva só a
+assinatura, as contagens, as versões e os sistemas: nunca o fim do log nem o id da
+instalação. Sem o segredo `GITHUB_TOKEN` o Worker não faz nada disso.
+
+O token é *fine-grained*, só do repositório `jaison/benikids`, com **Issues: Read and write**:
+
+```bash
+npx wrangler@3 secret put GITHUB_TOKEN
+```
+
 ## Publicar (uma vez)
 
 ```bash

@@ -49,3 +49,16 @@ CREATE TABLE IF NOT EXISTS problemas (
   detalhe     TEXT
 );
 CREATE INDEX IF NOT EXISTS problemas_assinatura ON problemas (assinatura);
+
+-- Uma Issue pública no GitHub por assinatura de problema (cron diário do Worker; só com o
+-- segredo GITHUB_TOKEN). A Issue leva só a assinatura, contagens, versões e sistemas:
+-- nunca o detalhe (fim de log) nem o id da instalação.
+CREATE TABLE IF NOT EXISTS issues (
+  chave       TEXT PRIMARY KEY,  -- assinatura limpa
+  numero      INTEGER NOT NULL   -- número da Issue
+);
+-- até que problemas.n o cron já olhou
+CREATE TABLE IF NOT EXISTS issues_estado (
+  um          INTEGER PRIMARY KEY CHECK (um = 1),
+  ate_n       INTEGER NOT NULL
+);

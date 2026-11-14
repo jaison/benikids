@@ -101,6 +101,109 @@ async function apagar(corpo, env) {
   return 204;
 }
 
+// ---------- Problemas → Issues no GitHub ----------
+// Uma vez por dia: cada assinatura nova vira uma Issue (no máximo NOVAS_POR_DIA); uma
+// assinatura que já tem Issue ganha um comentário com as ocorrências do dia. O repositório
+// é público, então a Issue nunca leva o detalhe (fim de log) nem o id da instalação.
+const NOVAS_POR_DIA = 5;
+const REPO = "jaison/benikids";
+
+function chave(assinatura) {
+  return String(assinatura || "").replace(/[^A-Za-z0-9_.:-]+/g, "_").slice(0, 90);
+}
+
+function lista(valores) {
+  const itens = [...new Set(String(valores || "").split("\u001f").map((v) => chave(v).replace(/_/g, " ").trim()).filter(Boolean))];
+  return itens.length ? itens.slice(0, 8).map((v) => "`" + v + "`").join(", ") : "—";
+}
+
+async function github(env, metodo, caminho, corpo) {
+  const resposta = await fetch(`${env.GITHUB_API || "https://api.github.com"}/repos/${env.GITHUB_REPO || REPO}${caminho}`, {
+    method: metodo,
+    headers: {
+      authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "benikids-telemetria",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(corpo),
+  });
+  if (!resposta.ok) throw new Error(`GitHub ${metodo} ${caminho}: ${resposta.status}`);
+  return resposta.json();
+}
+
+export async function issues(env, chamar = github) {
+  if (!env.GITHUB_TOKEN) return { novas: 0, comentadas: 0 };
+  const estado = await env.DB.prepare(`SELECT ate_n FROM issues_estado WHERE um = 1`).first();
+  const desde = estado ? estado.ate_n : 0;
+  const { results: brutas } = await env.DB.prepare(
+    `SELECT p.assinatura AS assinatura, MIN(p.etapa) AS etapa, COUNT(*) AS vezes,
+            COUNT(DISTINCT p.id) AS instalacoes, MAX(p.n) AS ultimo, MIN(p.recebido) AS desde,
+            GROUP_CONCAT(DISTINCT p.versao) AS versoes, GROUP_CONCAT(DISTINCT p.plataforma) AS plataformas,
+            GROUP_CONCAT(DISTINCT p.sistema) AS sistemas
+       FROM problemas p
+      WHERE p.assinatura IS NOT NULL
+        AND p.n > ?1
+      GROUP BY p.assinatura
+      ORDER BY vezes DESC`
+  ).bind(desde).all();
+  // assinaturas que ficam iguais depois de limpas contam juntas
+  const separar = (v) => String(v || "").split(",").join("\u001f");
+  const porChave = new Map();
+  let ate = desde;
+  for (const l of brutas || []) {
+    ate = Math.max(ate, l.ultimo);
+    const k = chave(l.assinatura);
+    if (!k) continue;
+    const g = porChave.get(k) || { k, etapa: l.etapa, vezes: 0, instalacoes: 0, desde: l.desde, versoes: [], plataformas: [], sistemas: [] };
+    g.vezes += l.vezes;
+    g.instalacoes += l.instalacoes;
+    if (l.desde < g.desde) g.desde = l.desde;
+    g.versoes.push(separar(l.versoes));
+    g.plataformas.push(separar(l.plataformas));
+    g.sistemas.push(separar(l.sistemas));
+    porChave.set(k, g);
+  }
+  const linhas = [...porChave.values()].sort((a, b) => b.vezes - a.vezes).slice(0, 30);
+  let novas = 0, comentadas = 0;
+  for (const l of linhas) {
+    const k = l.k;
+    const resumo =
+      `- **Ocorrências:** ${l.vezes} em ${l.instalacoes} instalação(ões), desde ${l.desde}\n` +
+      `- **Versões:** ${lista(l.versoes.join("\u001f"))}\n` +
+      `- **Plataformas:** ${lista(l.plataformas.join("\u001f"))}\n` +
+      `- **Sistemas:** ${lista(l.sistemas.join("\u001f"))}`;
+    const existente = await env.DB.prepare(`SELECT numero FROM issues WHERE chave = ?1`).bind(k).first();
+    if (!existente && novas >= NOVAS_POR_DIA) {
+      l.adiada = true;
+      continue;
+    }
+    try {
+      if (existente) {
+        await chamar(env, "POST", `/issues/${existente.numero}/comments`, { body: `Novas ocorrências:\n\n${resumo}` });
+        comentadas++;
+        continue;
+      }
+      const issue = await chamar(env, "POST", "/issues", {
+        title: `Problema relatado: ${k}`,
+        labels: ["telemetria"],
+        body:
+          `Aberta pela telemetria do Benikids (relatórios de problema, com o consentimento dos pais).\n\n` +
+          `- **Assinatura:** \`${k}\`\n- **Etapa:** \`${chave(l.etapa) || "—"}\`\n${resumo}\n\n` +
+          `O fim do log fica só no banco da telemetria (tabela \`problemas\`, assinatura acima), por privacidade.`,
+      });
+      await env.DB.prepare(`INSERT INTO issues (chave, numero) VALUES (?1, ?2)`).bind(k, issue.number).run();
+      novas++;
+    } catch (erro) {
+      console.log("issue", k, erro && erro.message); // uma falha não segura as outras
+    }
+  }
+  // As que passaram do limite de novas por dia (proteção contra envios falsos) ganham Issue
+  // quando voltarem a acontecer; continuam no banco de qualquer jeito.
+  await env.DB.prepare(`INSERT INTO issues_estado (um, ate_n) VALUES (1, ?1) ON CONFLICT(um) DO UPDATE SET ate_n = ?1`).bind(ate).run();
+  return { novas, comentadas, adiadas: linhas.filter((l) => l.adiada).length };
+}
+
 const ROTAS = { "/v1/ping": ping, "/v1/uso": uso, "/v1/problema": problema, "/v1/apagar": apagar };
 
 export default {
@@ -113,8 +216,13 @@ export default {
     return new Response(null, { status: await rota(corpo, env) });
   },
 
-  // limpeza diária
+  // limpeza diária e Issues dos problemas novos
   async scheduled(_evento, env) {
+    try {
+      await issues(env);
+    } catch (erro) {
+      console.log("issues:", erro && erro.message);
+    }
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM uso WHERE dia < date('now', '-12 months')`),
       env.DB.prepare(`DELETE FROM uso_apps WHERE dia < date('now', '-12 months')`),
