@@ -1567,25 +1567,25 @@ class ServerApiTests(unittest.TestCase):
         config["setupCompleted"] = False
         server_module.save_cfg(config)
         status, body, _ = self.request("/api/setup", "POST", {
-            "children": [{"name": "  Lívia  ", "icon": "menina", "birthMonth": "2018-05"},
+            "children": [{"name": "  Ângela  ", "icon": "menina", "birthMonth": "2018-05"},
                          {"name": "Beni", "icon": "menino"}],
             "pin": "1234",
         })
         self.assertEqual(status, 200)
-        self.assertEqual([p["name"] for p in body["profiles"]], ["Lívia", "Beni"])
+        self.assertEqual([p["name"] for p in body["profiles"]], ["Ângela", "Beni"])
         stored = server_module.load_stored_cfg()
         self.assertTrue(stored["setupCompleted"])
         self.assertTrue(server_module.verify_pin(stored["pinHash"], "1234"))
-        livia, beni = stored["profiles"]
-        self.assertEqual(stored["activeProfileId"], livia["id"])
-        self.assertEqual((livia["avatar"], livia["theme"], livia["title"]), ("👧", "gelo", "Oi, Lívia!"))
+        angela, beni = stored["profiles"]
+        self.assertEqual(stored["activeProfileId"], angela["id"])
+        self.assertEqual((angela["avatar"], angela["theme"], angela["title"]), ("👧", "gelo", "Oi, Ângela!"))
         self.assertEqual((beni["avatar"], beni["theme"]), ("👦", "heroi"))
-        self.assertNotEqual(livia["id"], beni["id"])
-        self.assertEqual(livia["tiles"], beni["tiles"])
-        self.assertEqual((livia["birthMonth"], livia["gender"], beni["gender"]), ("2018-05", "menina", "menino"))
+        self.assertNotEqual(angela["id"], beni["id"])
+        self.assertEqual(angela["tiles"], beni["tiles"])
+        self.assertEqual((angela["birthMonth"], angela["gender"], beni["gender"]), ("2018-05", "menina", "menino"))
         self.assertNotIn("birthMonth", beni)
-        self.assertRegex(livia["telemetryId"], r"^[0-9a-f]{32}$")
-        self.assertNotEqual(livia["telemetryId"], beni["telemetryId"])
+        self.assertRegex(angela["telemetryId"], r"^[0-9a-f]{32}$")
+        self.assertNotEqual(angela["telemetryId"], beni["telemetryId"])
         self.assertTrue(stored["telemetryEnabled"])
         self.assertFalse(stored["usageTelemetryEnabled"])  # uso por criança: só se os pais marcarem
         # depois de configurado (e com PIN), não aceita de novo

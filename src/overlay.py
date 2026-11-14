@@ -262,6 +262,17 @@ def canto_padrao(tile_id):
     return "tl"
 
 
+def maximizar_no_inicio(tile_id):
+    """"maximizar": true no catálogo do Windows."""
+    try:
+        import catalogo_windows
+
+        item = catalogo_windows.por_id(tile_id or "")
+        return bool(item and item.get("maximizar") is True)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def load_corner(tile_id):
     try:
         with open(CORNER_FILE, encoding="utf-8") as handle:
@@ -461,6 +472,8 @@ class AppOverlay:
         self.place()
         self.root.after(0, self.poll_process)
         self.root.after(0, self.poll_timer)
+        if WINDOWS and maximizar_no_inicio(tile_id):
+            self.root.after(500, lambda: self.maximize_app(40))
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -763,6 +776,19 @@ class AppOverlay:
         focus_launcher()
         self.root.destroy()
         sys.exit(0)
+
+    def maximize_app(self, tentativas):
+        """Apps que abrem numa janela pequena (KDE, Quebra-cabeças, Pencil2D, Scratch):
+        maximiza uma vez, assim que a janela aparece (tenta por uns 20 s)."""
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        try:
+            if record and win.maximizar_processo(record["pid"]):
+                self.root.after(100, self.stay_on_top)
+                return
+        except OSError:
+            pass
+        if tentativas > 1:
+            self.root.after(500, lambda: self.maximize_app(tentativas - 1))
 
     def poll_process(self):
         if not owned_process_alive(

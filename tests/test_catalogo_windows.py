@@ -41,11 +41,11 @@ class CatalogoWindowsTests(unittest.TestCase):
             exe = Path(raiz, "SuperTux 0.7", "bin", "supertux2.exe")
             exe.parent.mkdir(parents=True)
             exe.write_bytes(b"")
-            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Lívia"}), \
+            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Ângela"}), \
                  mock.patch.object(catalogo_windows, "tamanho_da_tela", return_value="2560x1080"):
                 cmd = catalogo_windows.comando(["catalogo:supertux"], bases=[raiz])
             # o SuperTux não abre com acento no caminho do usuário: pasta de dados só ASCII
-            dados = os.path.join(raiz, "Benikids", "dados", "Livia", "supertux")
+            dados = os.path.join(raiz, "Benikids", "dados", "Angela", "supertux")
             self.assertEqual(cmd, [str(exe), "--fullscreen", "--geometry", "2560x1080", "--userdir", dados])
             self.assertTrue(os.path.isdir(dados))
             self.assertIsNone(catalogo_windows.comando(["catalogo:gcompris"], bases=[raiz]))
@@ -76,9 +76,9 @@ class CatalogoWindowsExtrasTests(unittest.TestCase):
     def test_initial_config_is_written_once(self):
         with tempfile.TemporaryDirectory() as raiz:
             item = {"id": "supertux", "config_inicial": {"arquivo": "config", "texto": "(disable_network #t)"}}
-            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Lívia"}):
+            with mock.patch.dict(os.environ, {"ProgramData": raiz, "USERNAME": "Ângela"}):
                 catalogo_windows.gravar_config_inicial(item)
-                caminho = Path(raiz, "Benikids", "dados", "Livia", "supertux", "config")
+                caminho = Path(raiz, "Benikids", "dados", "Angela", "supertux", "config")
                 self.assertEqual(caminho.read_text(), "(disable_network #t)")
                 caminho.write_text("do jogo")
                 catalogo_windows.gravar_config_inicial(item)
@@ -115,6 +115,52 @@ class SincronizarCatalogoTests(unittest.TestCase):
         novo, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
         self.assertFalse(mudou)
         self.assertEqual(novo["profiles"][1]["tiles"], [])
+
+    def test_apps_that_left_the_catalog_leave_the_profiles(self):
+        cfg = self.config(catalogSeen=["gcompris", "kapman", "neverputt"])
+        cfg["profiles"][0]["tiles"] += [
+            {"id": "neverputt", "label": "Minigolfe", "cmd": ["catalogo:neverputt"]},
+            {"id": "site", "label": "Site", "cmd": ["https://exemplo.org"]},
+        ]
+        novo, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
+        self.assertTrue(mudou)
+        self.assertEqual([t["id"] for t in novo["profiles"][0]["tiles"]], ["gcompris", "site"])
+        _, mudou = catalogo_windows.sincronizar_tiles(novo, self.CATALOGO)
+        self.assertFalse(mudou)
+
+
+class ConfigsAntesDeAbrirTests(unittest.TestCase):
+    def test_tux_racer_gets_fullscreen_portuguese_options_next_to_the_exe(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = os.path.join(raiz, "Extreme TuxRacer", "ExtremeTuxRacer.exe")
+            item = {"id": "extremetuxracer", "config_inicial": {
+                "arquivo": "config/options.txt", "junto_do_exe": True,
+                "texto": "[fullscreen] 1\n[language] pt_PT\n"}}
+            catalogo_windows.gravar_config_inicial(item, exe)
+            caminho = Path(raiz, "Extreme TuxRacer", "config", "options.txt")
+            self.assertEqual(caminho.read_text(encoding="utf-8"), "[fullscreen] 1\n[language] pt_PT\n")
+            caminho.write_text("[language] EN_en\n", encoding="utf-8")
+            catalogo_windows.gravar_config_inicial(item, exe)
+            self.assertEqual(caminho.read_text(encoding="utf-8"), "[language] EN_en\n")  # não sobrescreve
+            catalogo_windows.gravar_config_inicial(item, None)  # sem exe, nada a fazer
+
+    def test_scratch_answers_the_telemetry_question_with_no_once(self):
+        import json
+        with tempfile.TemporaryDirectory() as raiz:
+            arquivo = os.path.join(raiz, "Scratch", "telemetry.json")
+            os.makedirs(os.path.dirname(arquivo))
+            with open(arquivo, "w", encoding="utf-8") as f:
+                json.dump({"clientID": "abc", "packetQueue": [1, 2]}, f)
+            self.assertTrue(catalogo_windows.preparar_scratch(arquivo))
+            with open(arquivo, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"clientID": "abc", "packetQueue": [1, 2], "optIn": False})
+            with open(arquivo, "w", encoding="utf-8") as f:
+                json.dump({"optIn": True}, f)
+            self.assertFalse(catalogo_windows.preparar_scratch(arquivo))  # os pais já responderam
+            novo = os.path.join(raiz, "outro", "Scratch", "telemetry.json")
+            self.assertTrue(catalogo_windows.preparar_scratch(novo))
+            with open(novo, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"optIn": False})
 
 
 class PrepararXmotoTests(unittest.TestCase):

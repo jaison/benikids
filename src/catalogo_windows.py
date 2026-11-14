@@ -138,9 +138,11 @@ def comando(cmd, catalogo=None, bases=None):
     if not exe:
         return None
     argv = [exe, *(preencher(arg, item) for arg in item.get("args", []))]
-    gravar_config_inicial(item)
+    gravar_config_inicial(item, exe)
     if item.get("preparar") == "xmoto":
         preparar_xmoto()
+    elif item.get("preparar") == "scratch":
+        preparar_scratch()
     return argv
 
 
@@ -195,16 +197,55 @@ def preparar_xmoto(bancos=None, perfil="Benikids"):
     return preparados
 
 
-def gravar_config_inicial(item):
+def preparar_scratch(arquivo=None):
+    """Scratch 3 sem a pergunta "ajudar a melhorar o Scratch?": a resposta fica em
+    %APPDATA%\\Scratch\\telemetry.json ("optIn"); enquanto falta, o diálogo aparece.
+    Grava "optIn": false (não envia nada) só se ninguém respondeu ainda, mantendo o resto."""
+    import json
+
+    if arquivo is None:
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            return False
+        arquivo = os.path.join(appdata, "Scratch", "telemetry.json")
+    dados = {}
+    if os.path.isfile(arquivo):
+        try:
+            with open(arquivo, encoding="utf-8") as f:
+                dados = json.load(f)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(dados, dict) or "optIn" in dados:
+            return False
+    dados["optIn"] = False
+    try:
+        os.makedirs(os.path.dirname(arquivo), exist_ok=True)
+        with open(arquivo, "w", encoding="utf-8") as f:
+            json.dump(dados, f)
+    except OSError:
+        return False
+    return True
+
+
+def gravar_config_inicial(item, exe=None):
     """Config pronta na pasta de dados do app, se ainda não existe (ex.: SuperTux sem a
-    pergunta "conectar à Internet?": o ✕ fecha o jogo à força e ele nunca grava a resposta)."""
+    pergunta "conectar à Internet?": o ✕ fecha o jogo à força e ele nunca grava a resposta).
+
+    Com "junto_do_exe", o arquivo fica relativo à pasta do .exe (ex.: Tux Racer, que lê
+    config\\options.txt ao lado do programa; a pasta dá escrita a todos os usuários)."""
     inicial = item.get("config_inicial")
     if not isinstance(inicial, dict) or not inicial.get("arquivo"):
         return
-    caminho = os.path.join(pasta_de_dados_ascii(item), inicial["arquivo"])
+    if inicial.get("junto_do_exe"):
+        if not exe:
+            return
+        caminho = os.path.join(os.path.dirname(exe), *inicial["arquivo"].split("/"))
+    else:
+        caminho = os.path.join(pasta_de_dados_ascii(item), inicial["arquivo"])
     if os.path.exists(caminho):
         return
     try:
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
         with open(caminho, "w", encoding="utf-8") as f:
             f.write(inicial.get("texto", ""))
     except OSError:
@@ -215,7 +256,7 @@ def pasta_de_dados_ascii(item, usuario=None, raiz=None):
     """Pasta de dados do app num caminho só com letras ASCII.
 
     O SuperTux 0.7 não abre quando o caminho do usuário tem acento (ex.:
-    C:\\Users\\Lívia): ele não consegue criar a pasta em %APPDATA%. Aqui fica em
+    C:\\Users\\Ângela): ele não consegue criar a pasta em %APPDATA%. Aqui fica em
     %ProgramData%\\Benikids\\dados\\<usuário sem acento>\\<app>, que qualquer usuário cria.
     """
     import unicodedata
@@ -281,6 +322,8 @@ def sincronizar_tiles(stored, catalogo=None):
 
     "catalogSeen" guarda os ids já oferecidos: um app novo no catálogo entra uma vez em
     cada perfil (ligado, como todo o catálogo); um app que os pais removeram não volta.
+    Um app que saiu do catálogo (ex.: Neverputt, que fecha sozinho no Windows) sai dos
+    perfis, para não sobrar um botão que não abre.
     Devolve (config, mudou).
     """
     import copy
@@ -289,10 +332,21 @@ def sincronizar_tiles(stored, catalogo=None):
     novos = tiles(catalogo)
     vistos = set(stored.get("catalogSeen") or [])
     ids_catalogo = [t["id"] for t in novos]
-    if vistos >= set(ids_catalogo):
+    existem = {item["id"] for item in catalogo}
+
+    def fora_do_catalogo(tile):
+        cmd = tile.get("cmd") if isinstance(tile, dict) else None
+        return (isinstance(cmd, list) and len(cmd) == 1 and isinstance(cmd[0], str)
+                and cmd[0].startswith(PREFIXO) and cmd[0][len(PREFIXO):] not in existem)
+
+    orfaos = any(fora_do_catalogo(t) for p in stored.get("profiles", [])
+                 for t in p.get("tiles", []))
+    if vistos >= set(ids_catalogo) and not orfaos:
         return stored, False
     resultado = copy.deepcopy(stored)
     for perfil in resultado.get("profiles", []):
+        if "tiles" in perfil:
+            perfil["tiles"] = [t for t in perfil["tiles"] if not fora_do_catalogo(t)]
         existentes = {t.get("id") for t in perfil.get("tiles", []) if isinstance(t, dict)}
         for tile in novos:
             if tile["id"] not in vistos and tile["id"] not in existentes:

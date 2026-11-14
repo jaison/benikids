@@ -171,22 +171,24 @@ def baixar(item, pasta):
     os.makedirs(destino, exist_ok=True)
     if not item.get("winget"):
         return baixar_da_pagina(item, destino)
-    argv = [
+    base = [
         winget(), "download", "--id", item["winget"], "--exact", "--download-directory", destino,
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
-        "--scope", "machine",
     ]
-    if item.get("instalador"):  # o mesmo tipo que o script de administrador vai rodar
-        argv += ["--installer-type", item["instalador"]]
-    try:
-        subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       creationflags=SEM_CONSOLE, timeout=1800)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    arquivos = [os.path.join(destino, n) for n in os.listdir(destino)
-                if n.lower().endswith((".msi", ".exe"))]
-    if arquivos:
-        return max(arquivos, key=os.path.getmtime)
+    tipo = ["--installer-type", item["instalador"]] if item.get("instalador") else []
+    # primeiro o instalador "por máquina" do tipo que o script de administrador vai rodar;
+    # manifestos sem "Scope" (ex.: Enigma) não passam no filtro --scope machine e o winget
+    # responde 0x8a150010 (nenhum instalador aplicável), então tenta de novo sem ele
+    for extra in (["--scope", "machine"] + tipo, tipo):
+        try:
+            subprocess.run(base + extra, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", creationflags=SEM_CONSOLE, timeout=1800)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        arquivos = [os.path.join(destino, n) for n in os.listdir(destino)
+                    if n.lower().endswith((".msi", ".exe"))]
+        if arquivos:
+            return max(arquivos, key=os.path.getmtime)
     # o winget aponta para uma build do KDE que já saiu do ar: a pasta do KDE tem a nova
     return baixar_da_pagina(item, destino) if item.get("pagina") else None
 
@@ -522,8 +524,26 @@ def janela(itens):
              bg="#f3f0ff", fg="#2d2a3e").pack(pady=(18, 2))
     tk.Label(raiz, text="Pode levar alguns minutos. Dá para usar o computador enquanto isso.",
              font=("Segoe UI", 11), bg="#f3f0ff", fg="#6b6880").pack(pady=(0, 10))
-    quadro = tk.Frame(raiz, bg="#ffffff", padx=14, pady=10)
-    quadro.pack(fill=tk.BOTH, expand=True, padx=18)
+    # botão e aviso presos embaixo, antes da lista: com muitos apps a lista é maior que a
+    # janela, e o "Concluir" não pode sumir (no pacote 8 foi preciso fechar pelo X)
+    botao = tk.Button(raiz, text="Aguarde...", font=("Segoe UI", 12, "bold"), state=tk.DISABLED,
+                      command=raiz.destroy, padx=24, pady=6)
+    botao.pack(side=tk.BOTTOM, pady=(0, 16))
+    rodape = tk.Label(raiz, text="", font=("Segoe UI", 12, "bold"), bg="#f3f0ff", fg="#2d2a3e")
+    rodape.pack(side=tk.BOTTOM, pady=8)
+    # a lista rola (barra e roda do mouse)
+    caixa = tk.Frame(raiz, bg="#ffffff")
+    caixa.pack(fill=tk.BOTH, expand=True, padx=18)
+    tela = tk.Canvas(caixa, bg="#ffffff", highlightthickness=0)
+    barra = tk.Scrollbar(caixa, orient=tk.VERTICAL, command=tela.yview)
+    tela.configure(yscrollcommand=barra.set)
+    barra.pack(side=tk.RIGHT, fill=tk.Y)
+    tela.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    quadro = tk.Frame(tela, bg="#ffffff", padx=14, pady=10)
+    janela_lista = tela.create_window((0, 0), window=quadro, anchor="nw")
+    quadro.bind("<Configure>", lambda _e: tela.configure(scrollregion=tela.bbox("all")))
+    tela.bind("<Configure>", lambda e: tela.itemconfigure(janela_lista, width=e.width))
+    raiz.bind_all("<MouseWheel>", lambda e: tela.yview_scroll(int(-e.delta / 120), "units"))
     linhas = {}
     for item in itens:
         linha = tk.Frame(quadro, bg="#ffffff")
@@ -537,11 +557,6 @@ def janela(itens):
         detalhe = tk.Label(linha, text="", font=("Segoe UI", 10), bg="#ffffff", fg="#6b6880", anchor="e")
         detalhe.pack(side=tk.RIGHT)
         linhas[item["id"]] = (estado, detalhe)
-    rodape = tk.Label(raiz, text="", font=("Segoe UI", 12, "bold"), bg="#f3f0ff", fg="#2d2a3e")
-    rodape.pack(pady=8)
-    botao = tk.Button(raiz, text="Aguarde...", font=("Segoe UI", 12, "bold"), state=tk.DISABLED,
-                      command=raiz.destroy, padx=24, pady=6)
-    botao.pack(pady=(0, 16))
 
     avisos = queue.Queue()
     threading.Thread(target=trabalhar, args=(itens, avisos), daemon=True).start()
