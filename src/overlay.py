@@ -250,13 +250,17 @@ CORNER_FILE = os.path.join(CACHE_DIR, "overlay-corner.json")
 
 def canto_padrao(tile_id):
     """Canto inicial do app no catálogo do Windows (ex.: Tux Paint no direito, para não
-    cobrir as ferramentas); senão, o superior esquerdo."""
+    cobrir as ferramentas). App maximizado vai para o superior direito: no esquerdo a
+    pílula cobre a barra de menus (Come-Come, Scratch); no direito cobre só os botões
+    da janela, e a pílula já fecha o app. Senão, o superior esquerdo."""
     try:
         import catalogo_windows
 
         item = catalogo_windows.por_id(tile_id or "")
         if item and item.get("overlay") in CORNERS:
             return item["overlay"]
+        if item and item.get("maximizar") is True:
+            return "tr"
     except Exception:  # noqa: BLE001
         pass
     return "tl"
@@ -473,7 +477,7 @@ class AppOverlay:
         self.root.after(0, self.poll_process)
         self.root.after(0, self.poll_timer)
         if WINDOWS and maximizar_no_inicio(tile_id):
-            self.root.after(500, lambda: self.maximize_app(40))
+            self.root.after(500, lambda: self.maximize_app(120))
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -778,8 +782,9 @@ class AppOverlay:
         sys.exit(0)
 
     def maximize_app(self, tentativas):
-        """Apps que abrem numa janela pequena (KDE, Quebra-cabeças, Pencil2D, Scratch):
-        maximiza uma vez, assim que a janela aparece (tenta por uns 20 s)."""
+        """Apps que abrem numa janela pequena (KDE, Pencil2D, Scratch): maximiza uma vez,
+        assim que a janela principal aparece (tenta por 1 min: o Quatro em Linha só mostra
+        a janela depois que alguém fecha o aviso dele)."""
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         try:
             if record and win.maximizar_processo(record["pid"]):

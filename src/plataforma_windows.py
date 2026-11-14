@@ -60,6 +60,8 @@ user32.BringWindowToTop.argtypes = [wintypes.HWND]
 user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.IsIconic.argtypes = [wintypes.HWND]
 user32.IsZoomed.argtypes = [wintypes.HWND]
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongW.restype = ctypes.c_long
 user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
 user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t]
 
@@ -290,6 +292,8 @@ GW_OWNER = 4
 SW_RESTORE = 9
 SW_SHOW = 5
 SW_MAXIMIZE = 3
+GWL_STYLE = -16
+WS_MAXIMIZEBOX = 0x00010000
 VK_MENU = 0x12
 VK_LEFT = 0x25
 KEYEVENTF_KEYUP = 0x0002
@@ -343,14 +347,18 @@ def ativar_processo(pid, com_filhos=False):
 
 def maximizar_processo(pid):
     """Maximiza a janela principal do app (e dos filhos). Devolve True quando ela existe
-    e ficou maximizada; False se a janela ainda não apareceu."""
-    janelas = janelas_de(arvore(pid))
-    if not janelas:
-        return False
-    h = janelas[0]
-    if not user32.IsZoomed(h):
-        user32.ShowWindow(h, SW_MAXIMIZE)
-    return True
+    e ficou maximizada; False se ainda não apareceu.
+
+    Só conta janela com botão de maximizar: uma caixa de aviso que abre antes (o Quatro
+    em Linha avisa que falta o motor de IA) não é a janela principal, e forçar
+    SW_MAXIMIZE numa janela de tamanho fixo deixa a tela preta (Quebra-cabeças)."""
+    for h in janelas_de(arvore(pid)):
+        if not user32.GetWindowLongW(h, GWL_STYLE) & WS_MAXIMIZEBOX:
+            continue
+        if not user32.IsZoomed(h):
+            user32.ShowWindow(h, SW_MAXIMIZE)
+        return True
+    return False
 
 
 def pid_da_janela_ativa():
