@@ -173,20 +173,27 @@ cat > "$HOME/.config/autostart/cozy-kids-launcher-autostart.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Beni Launcher (Cozy Kids Launcher)
+Name=Benikids
 Exec=$BIN/cozy-iniciar --autostart
+Icon=benikids
 Terminal=false
 NoDisplay=true
 X-KDE-autostart-phase=2
 EOF
 mkdir -p "$HOME/.local/share/applications"
+# Ícone da marca (docs/marca/icones) no tema hicolor do usuário: o atalho usa Icon=benikids
+for N in 16 32 48 64 128 256 512; do
+  install -D -m 0644 "$REPO/docs/marca/icones/benikids-$N.png" \
+    "$HOME/.local/share/icons/hicolor/${N}x${N}/apps/benikids.png"
+done
+touch "$HOME/.local/share/icons/hicolor" 2>/dev/null || true   # o GTK relê a pasta
 cat > "$HOME/.local/share/applications/cozy-kids-launcher.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Beni Launcher
+Name=Benikids
 Comment=Menu infantil em tela cheia
 Exec=$BIN/cozy-iniciar
-Icon=applications-games
+Icon=benikids
 Terminal=false
 Categories=Education;Game;
 EOF
