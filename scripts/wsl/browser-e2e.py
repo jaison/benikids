@@ -82,12 +82,17 @@ def wait_for_server(url, process, timeout=15):
     raise TimeoutError("Launcher server did not become ready")
 
 
-def write_demo_config(config_path, browser_name):
-    with config_path.open(encoding="utf-8") as handle:
-        config = json.load(handle)
+def write_demo_config(config_path, browser_name, setup_completed=False, base=None):
+    if base is None:
+        with config_path.open(encoding="utf-8") as handle:
+            config = json.load(handle)
+    else:
+        config = json.loads(json.dumps(base))
     config.update({
         "language": "en",
-        "setupCompleted": False,
+        "setupCompleted": setup_completed,
+        "telemetryEnabled": False,
+        "usageTelemetryEnabled": False,
         "parentLabel": "Parent",
         "exitLabel": "Exit kids mode",
         "pinHash": "",
@@ -125,6 +130,7 @@ def write_demo_config(config_path, browser_name):
     with config_path.open("w", encoding="utf-8") as handle:
         json.dump(config, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
+    return config
 
 
 def assert_js(browser, expression, message):
@@ -151,79 +157,99 @@ def enter_parent_settings(browser):
     )
 
 
-def run_scenarios(browser, release_fixture, installed_version, artifacts):
+def run_benikids_setup(browser, artifacts):
+    """Benikids: a fresh install opens configurar.html (children + parent PIN)."""
     browser.wait_for(
-        "typeof cfg !== 'undefined' && cfg !== null && "
-        "bootstrapPromise===null && "
-        "document.querySelectorAll('#grid .tile:not(.placeholder)').length === 2",
-        message="Home screen did not finish rendering",
+        "location.pathname==='/configurar.html' && "
+        "document.querySelectorAll('#criancas .crianca').length===1",
+        message="A fresh installation did not open the Benikids setup page",
     )
-    browser.wait_for(
-        "!document.getElementById('firstRunOverlay').classList.contains('hidden') && "
-        "document.documentElement.lang==='en' && "
-        "document.activeElement.matches('.first-run-choice[aria-pressed=\"true\"]')",
-        message="A fresh installation did not open the guided setup",
+    assert_js(
+        browser,
+        "document.getElementById('telemetria').checked===true && "
+        "document.getElementById('telemetriaUso').checked===false && "
+        "document.getElementById('inicio').checked===true",
+        "Setup consent defaults changed (device on, usage off, start on login on)",
     )
     browser.set_device_metrics(800, 600)
     assert_js(
         browser,
-        "window.innerWidth===800 && window.innerHeight===600 && "
-        "document.documentElement.scrollWidth<=window.innerWidth && "
-        "document.querySelector('.first-run-box').scrollWidth<="
-        "document.querySelector('.first-run-box').clientWidth+1 && "
-        "Array.from(document.querySelectorAll('#firstRunOverlay button:not([disabled])'))"
-        ".every(button=>button.getBoundingClientRect().height>=44)",
-        "Guided setup overflows or exposes undersized controls at 800x600",
+        "document.documentElement.scrollWidth<=window.innerWidth",
+        "The setup page overflows horizontally at 800x600",
     )
-    browser.screenshot(artifacts / "first-run-800x600.png")
+    browser.screenshot(artifacts / "setup-800x600.png")
     browser.set_device_metrics(1440, 900)
-    browser.click('.first-run-choice[data-language="de"]')
+    browser.click("#comecar")
     browser.wait_for(
-        "cfg.language==='de' && document.documentElement.lang==='de' && "
-        "document.getElementById('firstRunTitle').textContent==='Willkommen bei Cozy Kids' && "
-        "uiText.adminTitle==='Eltern-Einstellungen'",
-        message="The setup language choice did not load the German interface locale",
+        "document.getElementById('erro').textContent.length>0",
+        message="The setup page accepted a child without a name",
     )
-    browser.click('.first-run-choice[data-language="en"]')
+    browser.click("#mais")
+    browser.wait_for("document.querySelectorAll('#criancas .crianca').length===2")
+    browser.click("#criancas .crianca:last-child .remover")
+    browser.wait_for("document.querySelectorAll('#criancas .crianca').length===1")
+    browser.set_value("#criancas .nome", "Kiddo")
+    browser.click("#criancas .icone.menina")
+    browser.set_value("#criancas .mes", "03")
+    browser.evaluate(
+        "(() => { const s=document.querySelector('#criancas .ano');"
+        " s.value=s.options[3].value; s.dispatchEvent(new Event('change',{bubbles:true})); })()"
+    )
+    browser.set_value("#pin", PIN)
+    browser.set_value("#pin2", "1357")
+    browser.click("#comecar")
     browser.wait_for(
-        "cfg.language==='en' && document.documentElement.lang==='en' && "
-        "document.getElementById('firstRunTitle').textContent==='Welcome to Cozy Kids' && "
-        "uiText.adminTitle==='Parent settings'",
-        message="The setup language choice did not restore the English interface locale",
+        "document.getElementById('erro').textContent.length>0 && "
+        "document.getElementById('pronto').hidden===true",
+        message="The setup page accepted two different PINs",
     )
-    browser.click("#firstRunNextBtn")
+    browser.set_value("#pin2", PIN)
+    browser.click("#telemetria")
+    browser.click("#inicio")
+    browser.click("#comecar")
     browser.wait_for(
-        "document.getElementById('firstRunChildName')!==null && "
-        "document.getElementById('firstRunContent').classList.contains('setup-step-next')",
-        message="The guided setup did not render and transition to its next step",
+        "document.getElementById('pronto').hidden===false",
+        message="Finishing the Benikids setup did not show the ready screen",
     )
-    browser.set_value("#firstRunChildName", "Kiddo")
-    browser.set_value("#firstRunChildAvatar", "🌈")
-    browser.set_value("#firstRunHomeTitle", "E2E Home")
-    browser.click("#firstRunNextBtn")
-    browser.wait_for("document.querySelectorAll('#firstRunContent input[data-tile-id]').length===2")
-    browser.click("#firstRunNextBtn")
-    browser.wait_for("document.getElementById('firstRunTimerMinutes')!==null")
-    browser.set_value("#firstRunTimerMinutes", "0")
-    browser.click("#firstRunNextBtn")
-    browser.wait_for("document.querySelector('#firstRunContent [data-theme=\"rosa\"]')!==null")
-    browser.click('#firstRunContent [data-theme="rosa"]')
-    browser.click('#firstRunContent [data-layout="gross"]')
-    browser.screenshot(artifacts / "first-run-setup.png")
-    browser.click("#firstRunNextBtn")
-    browser.wait_for(
-        "cfg.setupCompleted===true && "
-        "document.getElementById('firstRunOverlay').classList.contains('hidden') && "
-        "document.getElementById('title').textContent==='E2E Home'",
-        message="Finishing guided setup did not persist and reveal the launcher",
-    )
-    saved_setup = browser.evaluate(
+    saved = browser.evaluate(
         "fetch('/api/config',{cache:'no-store'}).then(response=>response.json())",
         await_promise=True,
     )
-    if saved_setup.get("setupCompleted") is not True:
-        raise AssertionError(f"Guided setup was not persisted: {saved_setup!r}")
-    log_scenario("guided first run covers language, child, apps, time, and appearance")
+    # /api/config flattens the active profile into the top level
+    if not (
+        saved.get("setupCompleted") is True
+        and saved.get("pinConfigured") is True
+        and saved.get("telemetryEnabled") is False
+        and saved.get("usageTelemetryEnabled") is False
+        and saved.get("name") == "Kiddo"
+        and saved.get("avatar") == "👧"
+        and saved.get("gender") == "menina"
+        and str(saved.get("birthMonth", "")).endswith("-03")
+        and len(saved.get("profiles", [])) == 1
+    ):
+        raise AssertionError(f"Benikids setup was not persisted: {saved!r}")
+    browser.wait_for(
+        "location.pathname==='/index.html'",
+        message="The ready screen did not return to the launcher",
+    )
+    log_scenario("Benikids setup validates and saves children, birth month, and parent PIN")
+
+
+def run_scenarios(browser, release_fixture, installed_version, artifacts, restore_demo):
+    run_benikids_setup(browser, artifacts)
+    # the remaining journeys come from the upstream launcher: they start from the
+    # demo profile with setup done and no PIN yet
+    restore_demo()
+    browser.evaluate("location.replace('/index.html')")
+    browser.wait_for(
+        "location.pathname==='/index.html' && "
+        "typeof cfg !== 'undefined' && cfg !== null && "
+        "bootstrapPromise===null && cfg.pinConfigured===false && "
+        "document.querySelectorAll('#grid .tile:not(.placeholder)').length === 2 && "
+        "document.getElementById('firstRunOverlay').classList.contains('hidden') && "
+        "document.getElementById('title').textContent==='E2E Home'",
+        message="Home screen did not finish rendering",
+    )
     assert_js(
         browser,
         "document.getElementById('title').textContent === 'E2E Home' && "
@@ -588,14 +614,15 @@ def run_scenarios(browser, release_fixture, installed_version, artifacts):
     }
     if any(saved_config.get(key) != value for key, value in expected.items()):
         raise AssertionError(f"Saved config does not match the UI: {saved_config!r}")
-    assert_js(
-        browser,
+    # the reduced-motion preset shortens the font-size transition to .01ms, but the
+    # computed size keeps the old value until the next frames run
+    browser.wait_for(
         "['access-large-text','access-high-contrast','access-reduced-motion',"
         "'access-keyboard-focus'].every(name=>document.documentElement.classList.contains(name)) && "
         "getComputedStyle(document.documentElement).fontSize==='18px' && "
         "getComputedStyle(document.body).getPropertyValue('--text').trim()==='#111' && "
         "getComputedStyle(document.querySelector('#grid .tile')).outlineWidth==='6px'",
-        "Saved accessibility presets were not applied to the launcher",
+        message="Saved accessibility presets were not applied to the launcher",
     )
     feedback_result = browser.evaluate(
         "(()=>{window.__toneStarts=0;cozyFeedbackAudioContext=null;"
@@ -1428,6 +1455,7 @@ def main():
                 }),
                 encoding="utf-8",
             )
+            demo_base = json.loads(config_path.read_text(encoding="utf-8"))
             write_demo_config(config_path, browser_name)
             installed_version = (app_root / "version").read_text(encoding="utf-8").strip()
             ReleaseFixtureHandler.latest_version = installed_version
@@ -1470,6 +1498,9 @@ def main():
                         ReleaseFixtureHandler,
                         installed_version,
                         args.artifacts,
+                        lambda: write_demo_config(
+                            config_path, browser_name, setup_completed=True, base=demo_base
+                        ),
                     )
                     run_accessibility_scenarios(browser, args.artifacts)
                     browser.screenshot(args.artifacts / "final-state.png")
