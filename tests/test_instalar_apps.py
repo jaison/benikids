@@ -168,5 +168,33 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertIn("o Windows pediu a senha de um adulto", textos)
 
 
+class BaixarDiretoTests(unittest.TestCase):
+    ITEM = {"id": "puzzles-quinze", "baixar": {"url": "https://exemplo.org/fifteen.exe", "arquivo": "fifteen.exe"}}
+
+    def resposta(self, dados):
+        import io
+        return lambda _url: io.BytesIO(dados)
+
+    def test_program_lands_in_the_benikids_apps_folder(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as raiz:
+            ok, _ = instalar_apps.baixar_direto(self.ITEM, raiz, self.resposta(b"MZ" + b"x" * 30000))
+            self.assertTrue(ok)
+            self.assertTrue(os.path.isfile(os.path.join(raiz, "Benikids Apps", "fifteen.exe")))
+
+    def test_an_error_page_is_not_saved_as_a_program(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as raiz:
+            ok, _ = instalar_apps.baixar_direto(self.ITEM, raiz, self.resposta(b"<html>" + b"x" * 30000))
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(os.path.join(raiz, "Benikids Apps", "fifteen.exe")))
+
+    def test_only_https_and_plain_file_names(self):
+        for info in ({"url": "http://exemplo.org/a.exe", "arquivo": "a.exe"},
+                     {"url": "https://exemplo.org/a.exe", "arquivo": "../a.exe"}):
+            ok, _ = instalar_apps.baixar_direto({"id": "x", "baixar": info}, "/nao", self.resposta(b""))
+            self.assertFalse(ok)
+
+
 if __name__ == "__main__":
     unittest.main()

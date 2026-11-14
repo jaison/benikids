@@ -1,4 +1,4 @@
-"""Instala (pelo winget) os apps do catálogo do Windows que ainda faltam.
+"""Instala (pelo winget ou, para apps de um .exe só, do site do autor) os apps do catálogo do Windows que ainda faltam.
 
 Mostra uma janela simples com o andamento de cada app. Chamado pelo instalador do
 Benikids e pela área dos pais. Uso: pythonw instalar_apps.py [id ...]
@@ -137,6 +137,41 @@ def baixar(item, pasta):
     arquivos = [os.path.join(destino, n) for n in os.listdir(destino)
                 if n.lower().endswith((".msi", ".exe"))]
     return max(arquivos, key=os.path.getmtime) if arquivos else None
+
+
+PASTA_DIRETOS = "Benikids Apps"  # em %LOCALAPPDATA%\\Programs: não precisa de administrador
+
+
+def baixar_direto(item, raiz=None, abrir=None):
+    """Apps de um .exe só, baixados do site do autor quando o winget não serve (ex.: os
+    Quebra-cabeças de Simon Tatham, cujo pacote no winget ficou com o hash velho).
+    Devolve (ok, texto)."""
+    import urllib.request
+
+    info = item.get("baixar") or {}
+    url, arquivo = info.get("url", ""), info.get("arquivo", "")
+    if not url.startswith("https://") or not arquivo or os.sep in arquivo or "/" in arquivo:
+        return False, "sem endereço para baixar"
+    raiz = raiz or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")
+    pasta = os.path.join(raiz, PASTA_DIRETOS)
+    destino = os.path.join(pasta, arquivo)
+    abrir = abrir or (lambda u: urllib.request.urlopen(u, timeout=120))
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        with abrir(url) as resposta:
+            dados = resposta.read(64 * 1024 * 1024)
+    except (OSError, ValueError) as erro:
+        return False, f"não deu para baixar ({erro.__class__.__name__})"
+    if len(dados) < 20 * 1024 or not dados.startswith(b"MZ"):
+        return False, "o arquivo baixado não é um programa"
+    temporario = destino + ".baixando"
+    try:
+        with open(temporario, "wb") as f:
+            f.write(dados)
+        os.replace(temporario, destino)
+    except OSError:
+        return False, "não deu para gravar o programa"
+    return True, "instalado"
 
 
 def tipo_do_instalador(item):
@@ -347,6 +382,12 @@ def trabalhar(itens, avisos, pasta=None):
     for item in itens:
         if catalogo_windows.localizar(item):
             avisos.put((item["id"], "ja", "já estava instalado"))
+        elif item.get("baixar"):
+            avisos.put((item["id"], "instalando", "baixando..."))
+            ok, texto = baixar_direto(item)
+            if ok and not catalogo_windows.localizar(item):
+                ok, texto = False, "baixou, mas não achei o programa"
+            avisos.put((item["id"], "ok" if ok else "erro", texto))
         elif not item.get("winget"):
             avisos.put((item["id"], "erro", "sem instalador automático"))
         elif precisa_de_senha(item, ja_pediram):

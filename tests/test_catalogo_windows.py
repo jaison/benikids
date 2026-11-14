@@ -19,7 +19,7 @@ class CatalogoWindowsTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         for item in itens:
             self.assertRegex(item["id"], r"^[a-z0-9-]+$")
-            self.assertTrue(item.get("winget"), item["id"])
+            self.assertTrue(item.get("winget") or item.get("baixar", {}).get("url", "").startswith("https://"), item["id"])
             self.assertIn(item.get("escopo", ""), ("", "user", "machine"), item["id"])
             self.assertTrue(item.get("exe"), item["id"])
             if item.get("escopo") == "machine":
