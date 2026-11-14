@@ -41,10 +41,14 @@ enum AcaoPin {
     Perfil(String),
 }
 
+/// Quanto tempo a mensagem fica na tela se ninguém tocar em OK.
+const MENSAGEM_SEGUNDOS: u32 = 30;
+
 #[derive(Clone, PartialEq)]
 enum Janela {
-    /// Mensagem amigável (limite de uso). Some sozinha em 15 s.
-    Mensagem { icone: &'static str, titulo: String, corpo: String, geracao: u64 },
+    /// Mensagem amigável (limite de uso, app que não abriu). Some sozinha depois de
+    /// MENSAGEM_SEGUNDOS, com a contagem à vista.
+    Mensagem { icone: &'static str, titulo: String, corpo: String, geracao: u64, restante: u32 },
     /// Fora do horário (perfil) ou app bloqueado no horário.
     Bloqueio { perfil: bool, foco: usize },
     /// "Faltam 5 minutos!" (6 s).
@@ -473,20 +477,30 @@ impl Menu {
 
     fn mostrar_aviso(&mut self, icone: &'static str, titulo: String, corpo: String) {
         self.geracao += 1;
-        self.janela = Some(Janela::Mensagem { icone, titulo, corpo, geracao: self.geracao });
+        self.janela = Some(Janela::Mensagem { icone, titulo, corpo, geracao: self.geracao, restante: MENSAGEM_SEGUNDOS });
     }
 
     fn agendar_fechar_mensagem(&mut self, cx: &mut Context<Self>) {
         if let Some(Janela::Mensagem { geracao, .. }) = &self.janela {
             let g = *geracao;
-            cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(Duration::from_secs(15)).await;
-                let _ = this.update(cx, |m, cx| {
-                    if matches!(&m.janela, Some(Janela::Mensagem { geracao, .. }) if *geracao == g) {
-                        m.janela = None;
-                        cx.notify();
-                    }
-                });
+            cx.spawn(async move |this, cx| loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let seguir = this
+                    .update(cx, |m, cx| match &mut m.janela {
+                        Some(Janela::Mensagem { geracao, restante, .. }) if *geracao == g => {
+                            *restante = restante.saturating_sub(1);
+                            if *restante == 0 {
+                                m.janela = None;
+                            }
+                            cx.notify();
+                            m.janela.is_some()
+                        }
+                        _ => false,
+                    })
+                    .unwrap_or(false);
+                if !seguir {
+                    break;
+                }
             })
             .detach();
         }
@@ -1872,7 +1886,7 @@ impl Menu {
         let titulo = |texto: String| div().text_size(p.f(28.)).font_weight(FontWeight(800.)).text_center().child(texto);
         let corpo = |texto: String| div().text_size(p.f(18.)).text_center().child(texto);
         let caixa = match j {
-            Janela::Mensagem { icone, titulo: t, corpo: c, .. } => self
+            Janela::Mensagem { icone, titulo: t, corpo: c, restante, .. } => self
                 .caixa_janela(p)
                 .child(div().text_size(p.f(48.)).child(icone))
                 .child(titulo(t))
@@ -1880,7 +1894,8 @@ impl Menu {
                 .child(self.botao_janela(p, "ok", "OK 👍".into(), true).on_click(cx.listener(|m, _: &ClickEvent, _, cx| {
                     m.janela = None;
                     cx.notify();
-                }))),
+                })))
+                .child(div().text_size(p.f(14.)).opacity(0.7).text_center().child(format!("Fecha sozinho em {restante} s"))),
             Janela::AvisoTimer { texto, .. } => self
                 .caixa_janela(p)
                 .child(p.icone("timer", 0xe65100, 48.))

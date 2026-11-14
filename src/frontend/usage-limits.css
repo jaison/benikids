@@ -70,3 +70,4 @@ body.theme-ninja .usage-pill.usage-low .usage-count, body.theme-ninja .usage-pil
 .usage-learning-rule .usage-limit-row { grid-template-columns:minmax(140px,320px) 90px auto; }
 .usage-learning-rule p { margin:0; }
 .usage-learning-status { font-weight:800; }
+#usageMessage .conta-fechar { display:block; margin-top:12px; font-size:.95rem; opacity:.7; }

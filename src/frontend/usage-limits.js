@@ -172,13 +172,18 @@ function showUsageMessage(title,body){
   document.getElementById('usageMessageBody').textContent=body;
   overlay.classList.remove('hidden');
   document.getElementById('usageMessageOk').focus();
-  if(usageMessageTimer!==null) clearTimeout(usageMessageTimer);
-  usageMessageTimer=setTimeout(hideUsageMessage,15000);
+  if(usageMessageTimer!==null) clearInterval(usageMessageTimer);
+  // Some sozinha depois de 30 s, com a contagem à vista
+  let restante=30;
+  const conta=document.getElementById('usageMessageConta');
+  const mostrar=()=>{ if(conta) conta.textContent='Fecha sozinho em '+restante+' s'; };
+  mostrar();
+  usageMessageTimer=setInterval(()=>{ restante-=1; if(restante<=0) hideUsageMessage(); else mostrar(); },1000);
 }
 function hideUsageMessage(){
   const overlay=document.getElementById('usageMessage');
   if(overlay) overlay.classList.add('hidden');
-  if(usageMessageTimer!==null) clearTimeout(usageMessageTimer);
+  if(usageMessageTimer!==null) clearInterval(usageMessageTimer);
   usageMessageTimer=null;
 }
 function usageLimitTexts(reason,categoryId){
