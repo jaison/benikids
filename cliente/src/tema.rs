@@ -61,6 +61,10 @@ pub struct Tema {
     pub cartao_texto: u32,
     pub cartao_borda: f32,
     pub cartao_borda_cor: u32,
+    /// Cor da borda por posição (em ciclo); vazio = cartao_borda_cor em todos.
+    pub cartao_borda_cores: &'static [u32],
+    /// Na escolha, a cor vem da opção (Aprender 0, Passatempo 1, Jogar 2), não da posição.
+    pub cores_por_escolha: bool,
     pub cartao_raio: f32,
     pub cartao_sombras: &'static [Sombra],
     pub cartao_sombras_par: &'static [Sombra], // vazio = iguais
@@ -73,6 +77,12 @@ pub struct Tema {
     pub foco_largura: f32,
     pub foco_distancia: f32,
     pub foco_tracejado: bool,
+    /// Anel colado ao cartão por dentro do contorno de foco (cor, largura).
+    pub foco_anel: Option<(u32, f32)>,
+    /// Quanto o cartão sobe com o mouse em cima (0 = não sobe).
+    pub hover_sobe: f32,
+    /// Imagem ao lado do título na tela inicial (caminho a partir da pasta do app).
+    pub mascote: Option<&'static str>,
     // botões pequenos / relógio
     pub peq_fundo: u32, // 0xRRGGBBAA
     pub peq_texto: u32,
@@ -128,6 +138,8 @@ const BASE: Tema = Tema {
     cartao_texto: 0x5f2148,
     cartao_borda: 0.,
     cartao_borda_cor: 0,
+    cartao_borda_cores: &[],
+    cores_por_escolha: false,
     cartao_raio: 32.,
     cartao_sombras: SOMBRA_PADRAO,
     cartao_sombras_par: &[],
@@ -138,6 +150,9 @@ const BASE: Tema = Tema {
     foco_largura: 4.,
     foco_distancia: 4.,
     foco_tracejado: false,
+    foco_anel: None,
+    hover_sobe: 0.,
+    mascote: None,
     peq_fundo: 0xfff7fbff,
     peq_texto: 0x5f2148,
     peq_borda: 0.,
@@ -172,7 +187,43 @@ const fn mundo(id: &'static str, img: &'static str, bg1: u32, texto: u32, botao:
     }
 }
 
+/// Sombra do título Benikids: 0 6px rgba(30,62,100,.22) já misturada ao céu (#acdef9),
+/// porque as sombras de texto aqui são cores sólidas.
+const BENIKIDS_SOMBRA_TITULO: u32 = 0x8dbbd8;
+
+/// O tema da marca (padrão das instalações novas e de ids desconhecidos).
+/// Traduzido do bloco "BENIKIDS" de src/frontend/cozy-temas.css.
+pub const BENIKIDS: Tema = Tema {
+    id: "benikids", fundo: Fundo::Imagem("benikids.svg"), bg1: 0xacdef9, bg2: 0xd4eefc,
+    texto: 0x1e3e64, botao: 0xb8441a, fonte: Some("Fredoka"), fonte_peso: Some(600),
+    // h1: marinho com contorno branco de 3px e sombra embaixo (a sombra vai primeiro,
+    // para ficar atrás do contorno)
+    titulo_cor: 0x1e3e64,
+    titulo_sombras: &[
+        (0., 6., BENIKIDS_SOMBRA_TITULO),
+        (3., 0., 0xffffff), (-3., 0., 0xffffff), (0., 3., 0xffffff), (0., -3., 0xffffff),
+        (2., 2., 0xffffff), (-2., 2., 0xffffff), (2., -2., 0xffffff), (-2., -2., 0xffffff),
+    ],
+    titulo_fundo: None,
+    // cartões brancos com borda e "degrau" na cor de destaque: azul, amarelo, laranja
+    cartao_cores: &[0xffffffff], cartao_texto: 0x1e3e64,
+    cartao_borda: 4., cartao_borda_cores: &[0x2a78b2, 0xfbb813, 0xf2622e],
+    cartao_cores_escuras: &[0x1d5f93, 0xc98f00, 0xb8441a],
+    cores_por_escolha: true,
+    cartao_raio: 28.,
+    cartao_sombras: &[s(0., 14., 26., 0., 0x1e3e6429)],
+    // foco do controle: anel amarelo de 6px colado + contorno marinho de 4px afastado 6px
+    foco_cor: 0x1e3e64, foco_largura: 4., foco_distancia: 6., foco_anel: Some((0xfbb813, 6.)),
+    hover_sobe: 4.,
+    mascote: Some("marca/mascote-acenando.png"),
+    peq_fundo: 0xffffffff, peq_texto: 0x1e3e64, peq_borda: 3., peq_borda_cor: 0xcfe8f7, peq_raio: 18.,
+    peq_sombras: &[s(0., 5., 0., 0., 0x1e3e6429)],
+    tamanho_emoji_grande: 74.,
+    ..BASE
+};
+
 pub static TEMAS: &[Tema] = &[
+    BENIKIDS,
     cores("rosa", 0xffd6e8, 0xffeef6, 0x5f2148, 0xe85a9c, 0xfff7fb, 0),
     cores("lila", 0xe3d6ff, 0xf4eeff, 0x45216a, 0x9b59b6, 0xfaf5ff, 0x45216a30),
     cores("blau", 0xd7ebff, 0xeef7ff, 0x1f4670, 0x3498db, 0xf0f8ff, 0x1f467030),
@@ -281,7 +332,30 @@ pub static TEMAS: &[Tema] = &[
 ];
 
 pub fn tema(id: &str) -> Tema {
-    TEMAS.iter().find(|t| t.id == id).copied().unwrap_or(TEMAS[0])
+    TEMAS.iter().find(|t| t.id == id).copied().unwrap_or(BENIKIDS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn benikids_e_o_padrao() {
+        assert_eq!(tema("benikids").id, "benikids");
+        assert_eq!(tema("").id, "benikids");
+        assert_eq!(tema("nao-existe").id, "benikids");
+        assert_eq!(tema("rosa").id, "rosa");
+        assert_eq!(tema("heroi").id, "heroi");
+    }
+
+    #[test]
+    fn benikids_cores_da_marca() {
+        let t = tema("benikids");
+        assert!(t.fundo == Fundo::Imagem("benikids.svg"));
+        assert_eq!(t.cartao_borda_cores, &[0x2a78b2, 0xfbb813, 0xf2622e]);
+        assert_eq!(t.cartao_cores_escuras.len(), t.cartao_borda_cores.len());
+        assert_eq!(t.foco_anel, Some((0xfbb813, 6.)));
+    }
 }
 
 /// Fontes que o menu registra (ficam em themes/fonts).

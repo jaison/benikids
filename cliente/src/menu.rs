@@ -1274,6 +1274,24 @@ impl Menu {
         }
         let tamanho = if t.fonte.is_some() { 64. } else { 54. };
         let el = p.texto_com_sombra(p.caixa(&texto), tamanho, t.titulo_cor, t.titulo_sombras);
+        // mascote ao lado do "Oi, ...!" só na tela inicial (na lista filtrada há o "Voltar")
+        let na_lista = self.modo.is_some() && self.escolha_habilitada();
+        let el = match t.mascote {
+            Some(rel) if !na_lista => div()
+                .flex()
+                .items_end()
+                .gap(p.z(14.))
+                .child(
+                    img(self.o.app_root.join(rel))
+                        .w(p.z(61.))
+                        .h(p.z(112.))
+                        .flex_none()
+                        .object_fit(ObjectFit::Contain),
+                )
+                .child(el)
+                .into_any_element(),
+            _ => el,
+        };
         match t.titulo_fundo {
             Some(f) if t.fundo != Fundo::Cores => div()
                 .px(p.z(26.))
@@ -1428,7 +1446,11 @@ impl Menu {
             None => d.bg(hsla_a(cor)),
         };
         if t.cartao_borda > 0. {
-            d = d.border(p.z(t.cartao_borda)).border_color(hsla(t.cartao_borda_cor));
+            let borda = match t.cartao_borda_cores {
+                [] => t.cartao_borda_cor,
+                cores => cores[indice % cores.len()],
+            };
+            d = d.border(p.z(t.cartao_borda)).border_color(hsla(borda));
         }
         match t.enfeite {
             Enfeite::Floco => {
@@ -1457,7 +1479,7 @@ impl Menu {
     fn foco_el(&self, p: &Pincel) -> AnyElement {
         let t = &p.t;
         let fora = t.foco_distancia + t.foco_largura;
-        div()
+        let contorno = div()
             .absolute()
             .top(p.z(-fora))
             .left(p.z(-fora))
@@ -1466,8 +1488,28 @@ impl Menu {
             .rounded(p.z(t.cartao_raio + fora))
             .border(p.z(t.foco_largura))
             .border_color(hsla(t.foco_cor))
-            .when(t.foco_tracejado, |d| d.border_dashed())
-            .into_any_element()
+            .when(t.foco_tracejado, |d| d.border_dashed());
+        let Some((cor, largura)) = t.foco_anel else { return contorno.into_any_element() };
+        // anel colado ao cartão (box-shadow 0 0 0 Npx do CSS), por dentro do contorno
+        let anel = div()
+            .absolute()
+            .top(p.z(-largura))
+            .left(p.z(-largura))
+            .right(p.z(-largura))
+            .bottom(p.z(-largura))
+            .rounded(p.z(t.cartao_raio + largura))
+            .border(p.z(largura))
+            .border_color(hsla(cor));
+        div().absolute().inset_0().child(anel).child(contorno).into_any_element()
+    }
+
+    /// Célula de cartão: sobe um pouco com o mouse em cima (hover do CSS), se o tema pede.
+    fn sobe_no_hover(&self, p: &Pincel, celula: gpui::Stateful<gpui::Div>) -> gpui::Stateful<gpui::Div> {
+        if p.t.hover_sobe <= 0. || dados::verdade(&self.cfg, "accessibilityReducedMotion") {
+            return celula;
+        }
+        let sobe = p.z(-p.t.hover_sobe);
+        celula.hover(move |s| s.top(sobe))
     }
 
     fn visual(&self, p: &Pincel, emoji: &str, tamanho: f32, largura: f32, altura: f32) -> AnyElement {
@@ -1513,8 +1555,14 @@ impl Menu {
                 .when(tempo.esgotada, |d| {
                     d.child(div().absolute().right(p.z(-30.)).bottom(p.z(-8.)).text_size(p.f(52.)).child("🔒"))
                 });
+            // Benikids: Aprender azul, Passatempo amarelo, Jogar laranja, mesmo sem o Passatempo
+            let cor = if p.t.cores_por_escolha {
+                dados::OPCOES.iter().position(|x| x.id == o.id).unwrap_or(i)
+            } else {
+                i
+            };
             let mut c = self
-                .cartao(p, i, largura, altura)
+                .cartao(p, cor, largura, altura)
                 .gap(p.z(10.))
                 .px(p.z(18.))
                 .child(emoji)
@@ -1540,7 +1588,7 @@ impl Menu {
                 );
             }
             let id = o.id;
-            let mut celula = div()
+            let celula = div()
                 .id(("escolha", i))
                 .relative()
                 .cursor_pointer()
@@ -1551,6 +1599,7 @@ impl Menu {
                     m.entrar(id, cx);
                     cx.notify();
                 }));
+            let mut celula = self.sobe_no_hover(p, celula);
             if self.foco == i && self.foco_visivel && self.janela.is_none() {
                 celula = celula.child(self.foco_el(p));
             }
@@ -1631,7 +1680,7 @@ impl Menu {
                 c = c.child(div().absolute().top(p.z(10.)).right(p.z(12.)).text_size(p.f(20.)).child("🔒"));
             }
             let tile_c = tile.clone();
-            let mut celula = div()
+            let celula = div()
                 .id(("tile", i))
                 .relative()
                 .cursor_pointer()
@@ -1642,6 +1691,7 @@ impl Menu {
                     m.lancar(tile_c.clone(), cx);
                     cx.notify();
                 }));
+            let mut celula = self.sobe_no_hover(p, celula);
             if self.foco == i && self.foco_visivel && self.janela.is_none() {
                 celula = celula.child(self.foco_el(p));
             }
