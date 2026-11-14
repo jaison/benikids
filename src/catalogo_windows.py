@@ -139,7 +139,60 @@ def comando(cmd, catalogo=None, bases=None):
         return None
     argv = [exe, *(preencher(arg, item) for arg in item.get("args", []))]
     gravar_config_inicial(item)
+    if item.get("preparar") == "xmoto":
+        preparar_xmoto()
     return argv
+
+
+# Mesmo ajuste do beni/bin/xmoto no Linux: português, sem o aviso de "versão em
+# desenvolvimento", sem internet e sem o contador de quadros (F7 → F13).
+XMOTO_CONFIG = (
+    ("NotifyAtInit", "false"), ("Language", "pt_BR"), ("WebConfAtInit", "false"),
+    ("WebHighscores", "false"), ("CheckHighscoresAtStartup", "false"),
+    ("CheckNewLevelsAtStartup", "false"), ("ShowInGameWorldRecord", "false"),
+    ("EnableJoysticks", "true"), ("KeySwitchFPS", "K:1073741928:0"),
+)
+
+
+def bancos_xmoto():
+    """Onde o X-Moto guarda o xm.db no Windows (varia com a versão do jogo)."""
+    candidatos = []
+    for variavel, sub in (("APPDATA", "xmoto"), ("LOCALAPPDATA", "xmoto"),
+                          ("USERPROFILE", os.path.join(".local", "share", "xmoto")),
+                          ("USERPROFILE", ".xmoto")):
+        raiz = os.environ.get(variavel)
+        if raiz:
+            candidatos.append(os.path.join(raiz, sub, "xm.db"))
+    return candidatos
+
+
+def preparar_xmoto(bancos=None, perfil="Benikids"):
+    """Deixa o perfil "Benikids" pronto no xm.db que já existe. O banco só nasce na
+    primeira vez que o jogo abre; daí em diante a criança cai direto no menu."""
+    import sqlite3
+    import time
+
+    preparados = []
+    for caminho in bancos if bancos is not None else bancos_xmoto():
+        if not os.path.isfile(caminho):
+            continue
+        try:
+            db = sqlite3.connect(caminho, timeout=2)
+            try:
+                site = db.execute("SELECT value FROM xm_parameters WHERE param='siteKey'").fetchone()
+                if site and not db.execute("SELECT 1 FROM stats_profiles WHERE id_profile=?", (perfil,)).fetchone():
+                    db.execute("INSERT INTO stats_profiles VALUES (?, ?, 0, ?)",
+                               (site[0], perfil, time.strftime("%Y-%m-%d %H:%M:%S")))
+                for nome in ("", perfil):
+                    for chave, valor in XMOTO_CONFIG:
+                        db.execute("INSERT OR REPLACE INTO profiles_configs VALUES (?, ?, ?)", (nome, chave, valor))
+                db.commit()
+                preparados.append(caminho)
+            finally:
+                db.close()
+        except sqlite3.Error:
+            continue
+    return preparados
 
 
 def gravar_config_inicial(item):

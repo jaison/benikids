@@ -56,7 +56,7 @@
     {"id": "granatier", "label": "Bombinhas", "emoji": "💣", "category": "jogos", "winget": "KDE.Granatier", "escopo": "user", "registro": "Granatier", "exe": ["granatier*/bin/granatier.exe", "Granatier*/**/granatier.exe"]},
     {"id": "picmi", "label": "Pintar por Números", "emoji": "🔲", "category": "passatempo", "winget": "KDE.Picmi", "escopo": "user", "registro": "Picmi", "exe": ["picmi*/bin/picmi.exe", "Picmi*/**/picmi.exe"]},
     {"id": "pencil2d", "label": "Desenho Animado", "emoji": "✏️", "category": "passatempo", "winget": "Pencil2D.Pencil", "escopo": "user", "exe": ["Microsoft/WinGet/Packages/Pencil2D.Pencil*/**/pencil2d.exe"]},
-    {"id": "xmoto", "label": "Motocross", "emoji": "🏍️", "category": "jogos", "gamepad": true, "winget": "XMoto.XMoto", "escopo": "machine", "instalador": "nullsoft", "registro": "XMoto", "args": ["-fs"], "exe": ["XMoto*/xmoto.exe", "X-Moto*/xmoto.exe", "*Moto*/**/xmoto.exe"]},
+    {"id": "xmoto", "label": "Motocross", "emoji": "🏍️", "category": "jogos", "gamepad": true, "winget": "XMoto.XMoto", "escopo": "machine", "instalador": "nullsoft", "registro": "XMoto", "args": ["-fs", "-res", "{tela}", "-p", "Benikids", "--nowww"], "preparar": "xmoto", "exe": ["XMoto*/xmoto.exe", "X-Moto*/xmoto.exe", "*Moto*/**/xmoto.exe"]},
     {"id": "vlc", "label": "VLC", "emoji": "🎬", "tile": false,
      "winget": "VideoLAN.VLC", "escopo": "user",
      "exe": ["Microsoft/WinGet/Links/vlc.exe", "VideoLAN/VLC/vlc.exe", "Microsoft/WinGet/Packages/VideoLAN.VLC*/**/vlc.exe"]}

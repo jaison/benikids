@@ -1,7 +1,6 @@
 import os
 import sys
 import tempfile
-import os
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -116,6 +115,44 @@ class SincronizarCatalogoTests(unittest.TestCase):
         novo, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
         self.assertFalse(mudou)
         self.assertEqual(novo["profiles"][1]["tiles"], [])
+
+
+class PrepararXmotoTests(unittest.TestCase):
+    def banco(self, pasta):
+        import sqlite3
+        caminho = os.path.join(pasta, "xm.db")
+        db = sqlite3.connect(caminho)
+        db.execute("CREATE TABLE xm_parameters(param, value)")
+        db.execute("INSERT INTO xm_parameters VALUES ('siteKey', 'abc')")
+        db.execute("CREATE TABLE stats_profiles(sitekey, id_profile, nbStarts, since)")
+        db.execute("CREATE TABLE profiles_configs(id_profile, key, value, PRIMARY KEY(id_profile, key))")
+        db.execute("INSERT INTO profiles_configs VALUES ('', 'Language', 'en_US')")
+        db.commit()
+        db.close()
+        return caminho
+
+    def test_existing_database_gets_the_benikids_profile_in_portuguese(self):
+        import sqlite3
+        import tempfile
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = self.banco(pasta)
+            faltando = os.path.join(pasta, "nao", "xm.db")
+            self.assertEqual(catalogo_windows.preparar_xmoto([faltando, caminho]), [caminho])
+            catalogo_windows.preparar_xmoto([caminho])  # de novo: não duplica o perfil
+            db = sqlite3.connect(caminho)
+            self.assertEqual(db.execute("SELECT count(*) FROM stats_profiles WHERE id_profile='Benikids'").fetchone()[0], 1)
+            cfg = dict(db.execute("SELECT key, value FROM profiles_configs WHERE id_profile=''").fetchall())
+            db.close()
+            self.assertEqual(cfg["Language"], "pt_BR")
+            self.assertEqual(cfg["NotifyAtInit"], "false")
+
+    def test_broken_database_is_ignored(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = os.path.join(pasta, "xm.db")
+            with open(caminho, "w") as f:
+                f.write("isto não é sqlite")
+            self.assertEqual(catalogo_windows.preparar_xmoto([caminho]), [])
 
 
 if __name__ == "__main__":
