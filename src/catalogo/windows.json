@@ -3,10 +3,10 @@
   "apps": [
     {"id": "gcompris", "label": "GCompris", "emoji": "🧩", "category": "educativo",
      "winget": "KDE.GCompris", "escopo": "machine", "instalador": "msi",
-     "firewall": "bloquear", "registro": "GCompris",
+     "firewall": "bloquear", "registro": "GCompris", "overlay": "tr",
      "exe": ["GCompris*/bin/GCompris.exe", "GCompris*/bin/gcompris-qt.exe", "GCompris*/**/GCompris.exe", "GCompris*/**/gcompris-qt.exe"]},
     {"id": "tuxpaint", "label": "Tux Paint", "emoji": "🎨", "category": "passatempo",
-     "winget": "NewBreedSoftware.TuxPaint", "escopo": "machine", "instalador": "inno", "args": ["--windowsize", "{tela}"], "overlay": "tr",
+     "winget": "NewBreedSoftware.TuxPaint", "escopo": "machine", "instalador": "inno", "args": ["--windowsize", "{tela}"], "overlay": "bl",
      "exe": ["Tux Paint/tuxpaint.exe", "TuxPaint/tuxpaint.exe", "Tux Paint*/**/tuxpaint.exe"]},
     {"id": "supertux", "label": "SuperTux", "emoji": "🐧", "category": "jogos", "gamepad": true,
      "winget": "SuperTux.SuperTux", "escopo": "machine", "instalador": "msi",
