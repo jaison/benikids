@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 PACOTE = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
@@ -69,13 +70,70 @@ def pasta_especial(csidl):
     return buf.value
 
 
-def main():
-    if processo_rodando():
-        aviso("O Benikids está aberto. Feche (Pais → Sair) e rode o instalador de novo.", estilo=0x30)
-        return 1
+def copiar_pacote():
     os.makedirs(APP_ROOT, exist_ok=True)
     copiar_arvore(os.path.join(PACOTE, "app"), APP_ROOT)
     copiar_arvore(os.path.join(PACOTE, "python"), os.path.join(APP_ROOT, "python"))
+
+
+def esperar_sair(pid, limite=60):
+    """Espera o processo (o iniciador antigo) terminar, para os arquivos ficarem livres."""
+    try:
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x00100000, False, int(pid))  # SYNCHRONIZE
+        if handle:
+            kernel.WaitForSingleObject(handle, int(limite * 1000))
+            kernel.CloseHandle(handle)
+    except (AttributeError, OSError, ValueError):
+        time.sleep(5)
+    for _ in range(limite):
+        if not processo_rodando():
+            return True
+        time.sleep(1)
+    return False
+
+
+def atualizar(pid):
+    """--atualizacao: chamado pelo iniciador (atualizar_windows.aplicar_e_sair), com o
+    Python deste pacote novo. Sem perguntas: guarda uma cópia, instala por cima e abre o
+    Benikids de novo; se falhar, volta a cópia."""
+    sys.path.insert(0, os.path.join(PACOTE, "app"))
+    import atualizar_windows
+    import telemetria
+
+    with open(os.path.join(PACOTE, "app", "version"), encoding="utf-8") as f:
+        versao = f.read().strip()
+    copia = APP_ROOT + ".anterior"
+    pythonw = os.path.join(APP_ROOT, "python", "pythonw.exe")
+    iniciador = os.path.join(APP_ROOT, "beni_windows.py")
+    try:
+        if not esperar_sair(pid):
+            raise RuntimeError("o Benikids não fechou")
+        shutil.rmtree(copia, ignore_errors=True)
+        shutil.copytree(APP_ROOT, copia)
+        try:
+            copiar_pacote()
+        except Exception:
+            copiar_arvore(copia, APP_ROOT)
+            raise
+    except Exception:  # noqa: BLE001
+        import traceback
+
+        atualizar_windows.marcar_falha(versao)
+        telemetria.relatar_problema("atualizar_windows", traceback.format_exc(),
+                                    assinatura="atualizar_windows:" + type(sys.exc_info()[1]).__name__)
+    subprocess.Popen([pythonw, iniciador], cwd=APP_ROOT, close_fds=True, creationflags=0x08000000)
+    return 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:1] == ["--atualizacao"]:
+        return atualizar(args[1] if len(args) > 1 else 0)
+    if processo_rodando():
+        aviso("O Benikids está aberto. Feche (Pais → Sair) e rode o instalador de novo.", estilo=0x30)
+        return 1
+    copiar_pacote()
     criou_config = False
     if not os.path.isfile(CONFIG):
         os.makedirs(os.path.dirname(CONFIG), exist_ok=True)

@@ -181,6 +181,41 @@ def encerrar_tudo(servidor, vigia, menu):
     remove_process_record(BROWSER_PIDFILE)
 
 
+def atualizacao_pendente():
+    """Versão nova já baixada e conferida: chama o instalador dela antes de subir qualquer
+    coisa (o Python e os arquivos daqui ficam livres quando este processo sai)."""
+    try:
+        import atualizar_windows
+
+        pronta = atualizar_windows.pendente(APP_ROOT)
+        if not pronta:
+            return False
+        log(f"atualização: instalando a versão {pronta[0]}")
+        return atualizar_windows.aplicar_e_sair(pronta[1], log)
+    except Exception as erro:  # noqa: BLE001 — a atualização nunca impede o Benikids de abrir
+        log(f"atualização: {erro}")
+        return False
+
+
+def procurar_atualizacao_depois(espera=120):
+    """Em segundo plano, alguns minutos depois de abrir: procura e baixa uma versão nova
+    (no máximo uma vez por dia). Ela é instalada na próxima vez que o Benikids abrir."""
+    import threading
+
+    def trabalhar():
+        time.sleep(espera)
+        try:
+            import atualizar_windows
+
+            versao = atualizar_windows.verificar(APP_ROOT)
+            if versao:
+                log(f"atualização: versão {versao} baixada; instala na próxima abertura")
+        except Exception as erro:  # noqa: BLE001
+            log(f"atualização: não deu para procurar ({erro})")
+
+    threading.Thread(target=trabalhar, daemon=True).start()
+
+
 def main():
     os.makedirs(CACHE, exist_ok=True)
     if "--autostart" in sys.argv[1:]:
@@ -199,6 +234,9 @@ def main():
     except OSError:
         pass
     log(f"início (python {sys.version.split()[0]}, {APP_ROOT})")
+    if atualizacao_pendente():
+        return 0  # o instalador da versão nova abre o Benikids de novo quando terminar
+    procurar_atualizacao_depois()
 
     servidor = None if porta_aberta() else subir_servidor()
     vigia = iniciar([pythonw(), os.path.join(APP_ROOT, "timer_watchdog.py"), "--port", str(PORTA)])

@@ -133,6 +133,8 @@ jobs:
     name: Pacote Windows
     needs: windows
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # só usado para anexar o pacote na Release
     steps:
       - uses: actions/checkout@v7
 
@@ -176,3 +178,16 @@ jobs:
           name: Beni-Windows
           path: pacote/
           if-no-files-found: error
+
+      # O atualizador do Windows (src/atualizar_windows.py) baixa este zip da Release
+      - name: Anexar à Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          test "$(cat pacote/Beni/app/version)" = "${tag#v}"
+          (cd pacote && zip -qr ../Benikids-Windows.zip Beni)
+          sha256sum Benikids-Windows.zip > Benikids-Windows.zip.sha256
+          gh release upload "$tag" Benikids-Windows.zip Benikids-Windows.zip.sha256 --clobber
