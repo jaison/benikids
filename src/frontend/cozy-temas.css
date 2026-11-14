@@ -113,9 +113,7 @@ body.theme-ninja .smallbtn, body.theme-ninja .nav, body.theme-ninja #clockBadge 
   color:#f4c542 !important; background:rgba(6,24,18,.9) !important; border:2px solid #b8860b !important;
 }
 
-/* O painel dos pais e as janelas usam o texto escuro; só a tela da criança usa as cores fortes. */
-body.theme-ninja #admin .smallbtn, body.theme-ninja .pinbox .smallbtn, body.theme-ninja .install-overlay .smallbtn { color:#f4c542 !important; }
-body.theme-blocos #admin .smallbtn { color:#222 !important; }
+/* O painel dos pais, o PIN e as janelas usam sempre a marca Benikids (marca.css). */
 
 /* =====================================================================
    Temas da Bea (5 anos): Reino do Gelo, Casinha Mágica, Castelo Encantado
@@ -239,3 +237,100 @@ body.theme-castelo .smallbtn, body.theme-castelo .nav, body.theme-castelo #clock
 .launcher-preview.theme-casinha .preview-tile:nth-child(4n+3) { background:#bff3e3; }
 .launcher-preview.theme-casinha .preview-tile:nth-child(4n+4) { background:#fff0b8; }
 .launcher-preview.theme-castelo .preview-tile { color:#6b2a7a; border:3px solid #f4c542; border-radius:16px; background:linear-gradient(180deg,#fffdf8,#ffeef7); }
+
+/* =====================================================================
+   BENIKIDS: o tema da marca (padrão das instalações novas)
+   Mesma identidade do site benikids.app. Para portar ao menu nativo (cliente/src/tema.rs):
+
+   Fundo        degradê vertical #acdef9 (céu) → #d4eefc, com engrenagens e pixels brancos
+                (themes/benikids.svg; 1440x900, "cover").
+   Título (h1)  Fredoka 700, marinho #1e3e64, contorno branco de 3px e sombra
+                0 6px 0 rgba(30,62,100,.22).
+   Cartões      fundo #ffffff, texto marinho #1e3e64 em Fredoka 600, cantos 28px,
+                borda 4px na cor de destaque e "degrau" embaixo: sombra 0 8px 0 na cor
+                escura + 0 14px 26px rgba(30,62,100,.16).
+                Destaques em ciclo (nth-child 3n+1, 3n+2, 3n+3):
+                  azul    #2a78b2 / degrau #1d5f93
+                  amarelo #fbb813 / degrau #c98f00
+                  laranja #f2622e / degrau #b8441a
+                Na escolha: Aprender azul, Passatempo amarelo, Jogar laranja.
+                Ícone (local-tile-icon) na cor de destaque.
+   Foco         anel amarelo #fbb813 de 6px colado ao cartão + contorno marinho #1e3e64
+                de 4px, afastado 6px (controle de videogame).
+   Hover        sobe 4px (translateY(-4px)); nada de giro.
+   Botões       (smallbtn, nav, relógio) fundo #ffffff, texto #1e3e64, Fredoka 600,
+                borda 3px #cfe8f7, cantos 18px, sombra 0 5px 0 rgba(30,62,100,.16).
+   Botão forte  (.save) laranja-escuro #b8441a com texto branco (contraste 5:1).
+   Escolhido    (aria-pressed) azul-escuro #1d5f93 com texto branco, degrau #1e3e64.
+   Mascote      marca/mascote-acenando.png ao lado do título "Oi, ...!" (decorativo).
+   Variáveis    --bg1 #acdef9 --bg2 #d4eefc --card #fff --text #1e3e64 --btn #b8441a
+                --btn-text #fff --smallbtn-bg #fff --input-border #9ccbe8
+   ===================================================================== */
+body.theme-benikids #themeBg { background-image:url('/themes/benikids.svg'); opacity:1; }
+.launcher-preview.theme-benikids { background:url('/themes/benikids.svg') center/cover; }
+body.theme-benikids, .launcher-preview.theme-benikids {
+  --bg1:#acdef9; --bg2:#d4eefc; --card:#ffffff; --text:#1e3e64;
+  --shadow:0 8px 0 rgba(30,62,100,.14), 0 14px 26px rgba(30,62,100,.16);
+  --btn:#b8441a; --btn-text:#fff; --smallbtn-bg:#ffffff; --input-border:#9ccbe8;
+  --rec-shadow:rgba(30,62,100,.1);
+  --destaque:#2a78b2; --destaque-escuro:#1d5f93;
+}
+body.theme-benikids .tile, body.theme-benikids h1,
+body.theme-benikids .smallbtn, body.theme-benikids .nav, body.theme-benikids #clockBadge {
+  font-family:'Fredoka',system-ui,sans-serif; font-weight:600;
+}
+body.theme-benikids h1 {
+  font-weight:700; font-size:clamp(2.6rem,6vw,4.4rem); color:#1e3e64; letter-spacing:.01em;
+  text-shadow:
+    3px 0 0 #fff, -3px 0 0 #fff, 0 3px 0 #fff, 0 -3px 0 #fff,
+    2px 2px 0 #fff, -2px 2px 0 #fff, 2px -2px 0 #fff, -2px -2px 0 #fff,
+    0 6px 0 rgba(30,62,100,.22);
+}
+body.theme-benikids #grid h1.escolha-pergunta { font-size:clamp(1.8rem,3.6vw,2.7rem); }
+body.theme-benikids .grid.gross .tile { font-size:clamp(1.6rem,3vw,2.3rem); }
+body.theme-benikids .grid.gross .emoji { font-size:4.6rem; }
+body.theme-benikids .tile {
+  color:#1e3e64; background:#ffffff; border:4px solid var(--destaque); border-radius:28px;
+  box-shadow:0 8px 0 var(--destaque-escuro), 0 14px 26px rgba(30,62,100,.16);
+}
+body.theme-benikids .grid .tile:nth-child(3n+2) { --destaque:#fbb813; --destaque-escuro:#c98f00; }
+body.theme-benikids .grid .tile:nth-child(3n+3) { --destaque:#f2622e; --destaque-escuro:#b8441a; }
+/* Escolha: Aprender azul, Passatempo amarelo, Jogar laranja (as cores do logo) */
+body.theme-benikids #grid .tile.escolha-educativo { --destaque:#2a78b2; --destaque-escuro:#1d5f93; }
+body.theme-benikids #grid .tile.escolha-passatempo { --destaque:#fbb813; --destaque-escuro:#c98f00; }
+body.theme-benikids #grid .tile.escolha-jogos { --destaque:#f2622e; --destaque-escuro:#b8441a; }
+body.theme-benikids .tile .local-tile-icon { color:var(--destaque); }
+body.theme-benikids .tile:hover { transform:translateY(-4px); box-shadow:0 12px 0 var(--destaque-escuro), 0 18px 30px rgba(30,62,100,.2); }
+body.theme-benikids .tile:active { transform:translateY(4px); box-shadow:0 4px 0 var(--destaque-escuro), 0 8px 16px rgba(30,62,100,.16); }
+body.theme-benikids .tile.focused {
+  outline:4px solid #1e3e64; outline-offset:6px;
+  box-shadow:0 0 0 6px #fbb813, 0 8px 0 var(--destaque-escuro), 0 14px 26px rgba(30,62,100,.16);
+}
+body.theme-benikids .tile.last-launched { box-shadow:0 0 0 4px #fbb813, 0 8px 0 var(--destaque-escuro); }
+body.theme-benikids .smallbtn, body.theme-benikids .nav, body.theme-benikids #clockBadge, body.theme-benikids #batteryBadge {
+  color:#1e3e64; background:#ffffff; border:3px solid #cfe8f7; border-radius:18px;
+  box-shadow:0 5px 0 rgba(30,62,100,.16);
+}
+body.theme-benikids .smallbtn.save { color:#fff; background:#b8441a; border-color:#b8441a; box-shadow:0 5px 0 #8a3313; }
+/* Botão escolhido (filtros da mídia etc.): azul-escuro com texto branco */
+body.theme-benikids .smallbtn[aria-pressed="true"] { color:#fff; background:#1d5f93; border-color:#1d5f93; box-shadow:0 5px 0 #1e3e64; }
+/* Mascote acenando ao lado do "Oi, ...!" (só na tela inicial, não na lista filtrada) */
+body.theme-benikids #kids .titlewrap::before {
+  content:''; flex:none; width:61px; height:112px; margin-right:14px;
+  background:url('/marca/mascote-acenando.png') bottom/contain no-repeat;
+}
+body.theme-benikids #kids .titlewrap:has(.escolha-voltar:not([hidden]))::before { display:none; }
+@media (max-width:900px), (max-height:700px) {
+  body.theme-benikids #kids .titlewrap::before { width:34px; height:64px; margin-right:8px; }
+  body.theme-benikids .tile { border-width:3px; border-radius:22px; }
+}
+html.access-high-contrast body.theme-benikids #kids .titlewrap::before { display:none; }
+html.access-high-contrast body.theme-benikids h1 { text-shadow:none; }
+/* Prévia (Pais > Aparência) */
+.launcher-preview.theme-benikids .preview-launcher-title { font-family:'Fredoka',system-ui,sans-serif; color:#1e3e64; }
+.launcher-preview.theme-benikids .preview-tile {
+  font-family:'Fredoka',system-ui,sans-serif; color:#1e3e64; background:#fff;
+  border:3px solid #2a78b2; border-radius:16px; box-shadow:0 4px 0 #1d5f93;
+}
+.launcher-preview.theme-benikids .preview-tile:nth-child(3n+2) { border-color:#fbb813; box-shadow:0 4px 0 #c98f00; }
+.launcher-preview.theme-benikids .preview-tile:nth-child(3n+3) { border-color:#f2622e; box-shadow:0 4px 0 #b8441a; }

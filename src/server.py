@@ -317,7 +317,7 @@ def load_cfg():
 # Mesma lista de theme-runtime.js (COZY_WORLD_THEME_IDS).
 WORLD_THEME_IDS = frozenset((
     "wald", "weltraum", "ocean", "dinosaurier", "baustelle", "prinzessin", "bauernhof",
-    "katzen", "hunde", "heroi", "blocos", "ninja", "gelo", "casinha", "castelo",
+    "katzen", "hunde", "heroi", "blocos", "ninja", "gelo", "casinha", "castelo", "benikids",
 ))
 INDEX_BODY_TAG = '<body class="theme-rosa">'
 
@@ -987,9 +987,10 @@ def timer_status(cfg):
 
 # Primeira configuração (configurar.html): crianças (nome + menino/menina) e o
 # PIN dos pais. Só vale enquanto setupCompleted é false e ainda não há PIN.
+# Tema inicial: o da marca (Benikids) para todos; os pais trocam em Pais > Aparência.
 SETUP_ICONES = {
-    "menino": {"avatar": "👦", "theme": "heroi"},
-    "menina": {"avatar": "👧", "theme": "gelo"},
+    "menino": {"avatar": "👦", "theme": "benikids"},
+    "menina": {"avatar": "👧", "theme": "benikids"},
 }
 SETUP_MAX_CRIANCAS = 8
 
