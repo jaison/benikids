@@ -177,6 +177,12 @@ class ConfigsAntesDeAbrirTests(unittest.TestCase):
             self.assertIn('key="FullScreen" value="1"', texto)
             self.assertIn('key="VideoMode" value="0"', texto)
 
+    def test_kfourinline_gets_its_folder_in_the_path(self):
+        exe = os.path.join("C:", "kfourinline", "bin", "kfourinline.exe")
+        self.assertEqual(catalogo_windows.pasta_no_path(["catalogo:kfourinline"], [exe]), os.path.dirname(exe))
+        self.assertEqual(catalogo_windows.pasta_no_path(["catalogo:gcompris"], ["x/GCompris.exe"]), "")
+        self.assertEqual(catalogo_windows.pasta_no_path(["tuxpaint"], ["tuxpaint"]), "")
+
 
 class PrepararXmotoTests(unittest.TestCase):
     def banco(self, pasta):

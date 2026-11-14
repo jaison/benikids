@@ -949,6 +949,7 @@ class ServerApiTests(unittest.TestCase):
             tile_id="paint",
             profile_id="default",
             track_activity=True,
+            path_extra="",
         )
 
     def test_speech_feedback_uses_only_a_visible_server_resolved_tile(self):

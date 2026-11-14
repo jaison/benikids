@@ -951,6 +951,7 @@ def launch_owned_tile(
     tile_id="",
     profile_id="",
     track_activity=False,
+    path_extra="",
 ):
     process = application_launcher().launch_owned_tile(
         command,
@@ -959,6 +960,7 @@ def launch_owned_tile(
         tile_id=tile_id,
         profile_id=profile_id,
         track_activity=track_activity,
+        path_extra=path_extra,
     )
     profile = stored_profiles_cached().get(profile_id) or {}
     usage_tracker().set_active(
@@ -2234,6 +2236,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(204)
                 self.end_headers()
                 return
+            path_extra = ""
             if clean[0].startswith(catalogo_windows.PREFIXO):
                 resolved = catalogo_windows.comando(clean)
                 if not resolved:
@@ -2241,6 +2244,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     log_runtime_event("launch.failed", level="warning", actionType="app", result="missing")
                     self.json_response({"status": "missing", "message": "App not installed"}, 404)
                     return
+                path_extra = catalogo_windows.pasta_no_path(clean, resolved)
                 clean = resolved
             clean = direct_app_command(clean)
             try:
@@ -2251,6 +2255,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     tile_id=tile_id,
                     profile_id=cfg.get("activeProfileId", ""),
                     track_activity=cfg.get("activityTrackingEnabled", False),
+                    path_extra=path_extra,
                 )
             except OSError:
                 log_runtime_event(

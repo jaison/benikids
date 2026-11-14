@@ -230,6 +230,15 @@ def preparar_scratch(arquivo=None):
     return True
 
 
+def pasta_no_path(cmd, resolvido):
+    """Pasta do exe para pôr no PATH do app, quando o catálogo pede ("path_do_exe": o
+    Quatro em Linha só acha o kfourinlineproc.exe pelo PATH). Senão, ""."""
+    item = por_id(cmd[0][len(PREFIXO):]) if cmd and cmd[0].startswith(PREFIXO) else None
+    if not item or not item.get("path_do_exe") or not resolvido:
+        return ""
+    return os.path.dirname(resolvido[0])
+
+
 ENIGMA_PADRAO = (
     '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
     "<preferences>\n  <properties>\n"

@@ -221,6 +221,7 @@ class ApplicationLauncher:
         tile_id="",
         profile_id="",
         track_activity=False,
+        path_extra="",
     ):
         if not command or not os.path.isfile(self.process_supervisor):
             raise OSError("Tile process supervisor is unavailable")
@@ -245,9 +246,14 @@ class ApplicationLauncher:
                     tile_id,
                 ])
             wrapped.extend(["--", *command])
+            env = dict(os.environ)
+            if path_extra:
+                # Só para este app e seus filhos (ex.: o Quatro em Linha acha o motor de IA
+                # pelo PATH); o PATH do servidor não muda.
+                env["PATH"] = path_extra + os.pathsep + env.get("PATH", "")
             process = subprocess.Popen(
                 wrapped,
-                env=dict(os.environ),
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=(os.name == "posix"),
