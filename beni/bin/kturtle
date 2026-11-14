@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: kturtle (KDE) em tela cheia.
+B=/usr/games/kturtle; [ -x "$B" ] || B=/usr/bin/kturtle
+exec cozy-fullscreen kturtle "$B" "$@"

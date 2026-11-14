@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Desembaraçar (Simon Tatham's Puzzles: Untangle) em tela cheia.
+B=/usr/games/sgt-untangle; [ -x "$B" ] || B=/usr/bin/sgt-untangle
+exec cozy-fullscreen sgt-untangle "$B" "$@"

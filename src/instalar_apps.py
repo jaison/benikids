@@ -315,11 +315,18 @@ def trabalhar(itens, avisos, pasta=None):
     pasta = pasta or pasta_dos_instaladores()
     ja_pediram = pedem_senha()
     baixando = {}  # id → (item, futuro com o caminho do instalador), na ordem em que entraram
+    junto = {}  # id do app que instala → outros apps do mesmo pacote
     trava = threading.Lock()
     baixador = ThreadPoolExecutor(max_workers=DOWNLOADS_SIMULTANEOS)
 
     def agendar(item):
         avisos.put((item["id"], "espera", "baixando para instalar no fim, com a senha..."))
+        with trava:
+            # mesmo pacote para dois apps (ex.: Neverball e Neverputt): baixa e instala uma vez
+            for outro, futuro_existente in baixando.values():
+                if outro.get("winget") == item.get("winget"):
+                    junto.setdefault(outro["id"], []).append(item)
+                    return
 
         def baixado(futuro, item=item):
             try:
@@ -348,6 +355,9 @@ def trabalhar(itens, avisos, pasta=None):
             sem_senha.append(item)
 
     for item in sem_senha:
+        if catalogo_windows.localizar(item):  # veio junto com outro app do mesmo pacote
+            avisos.put((item["id"], "ok", "instalado"))
+            continue
         avisos.put((item["id"], "instalando", "instalando..."))
 
         def pediu_senha(item=item):
@@ -378,6 +388,10 @@ def trabalhar(itens, avisos, pasta=None):
         por_id = {item["id"]: item for item, _ in pares}
 
         def terminou(item_id, codigo):
+            for outro in junto.get(item_id, []):
+                achou = bool(catalogo_windows.localizar(outro))
+                avisos.put((outro["id"], "ok" if achou else "erro",
+                            "instalado" if achou else "instalou, mas não achei o programa"))
             ok = bool(catalogo_windows.localizar(por_id[item_id]))
             if ok:
                 avisos.put((item_id, "ok", "instalado"))

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: kblocks (KDE) em tela cheia.
+B=/usr/games/kblocks; [ -x "$B" ] || B=/usr/bin/kblocks
+exec cozy-fullscreen kblocks "$B" "$@"

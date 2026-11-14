@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Neverball (Bola Maluca) em tela cheia, sem prender o mouse.
+B=/usr/games/neverball; [ -x "$B" ] || B=/usr/bin/neverball
+LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec cozy-fullscreen neverball "$B" "$@"

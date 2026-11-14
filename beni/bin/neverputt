@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Neverputt (Minigolfe) em tela cheia, sem prender o mouse.
+B=/usr/games/neverputt; [ -x "$B" ] || B=/usr/bin/neverputt
+LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec cozy-fullscreen neverputt "$B" "$@"

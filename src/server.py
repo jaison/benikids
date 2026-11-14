@@ -2304,6 +2304,14 @@ def main():
             )
             log_runtime_event("server.started", version=get_version())
             usage_tracker().start()
+            if os.name == "nt":
+                try:  # apps novos do catálogo chegam também a quem já tinha instalado
+                    atual, mudou = catalogo_windows.sincronizar_tiles(load_stored_cfg())
+                    if mudou:
+                        save_stored_cfg(atual)
+                        log_runtime_event("catalogo.sincronizado")
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 telemetria_service().iniciar()
             except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor

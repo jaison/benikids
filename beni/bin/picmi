@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: picmi (KDE) em tela cheia.
+B=/usr/games/picmi; [ -x "$B" ] || B=/usr/bin/picmi
+exec cozy-fullscreen picmi "$B" "$@"

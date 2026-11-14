@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: kdiamond (KDE) em tela cheia.
+B=/usr/games/kdiamond; [ -x "$B" ] || B=/usr/bin/kdiamond
+exec cozy-fullscreen kdiamond "$B" "$@"

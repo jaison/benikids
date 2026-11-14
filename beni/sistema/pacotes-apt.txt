@@ -23,3 +23,20 @@ stellarium
 retroarch
 libretro-snes9x
 pcsxr
+# jogos leves (2026-11-13)
+neverball
+neverputt
+planetblupi
+enigma
+kfourinline
+kapman
+kblocks
+kdiamond
+kolf
+granatier
+picmi
+kturtle
+minuet
+pencil2d
+xmoto
+sgt-puzzles

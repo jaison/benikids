@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: granatier (KDE) em tela cheia.
+B=/usr/games/granatier; [ -x "$B" ] || B=/usr/bin/granatier
+exec cozy-fullscreen granatier "$B" "$@"

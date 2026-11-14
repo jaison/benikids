@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Enigma em tela cheia, sem prender o mouse.
+B=/usr/games/enigma; [ -x "$B" ] || B=/usr/bin/enigma
+LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec cozy-fullscreen enigma "$B" "$@"

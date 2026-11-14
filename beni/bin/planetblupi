@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Planeta Blupi (já abre em tela cheia), sem prender o mouse.
+B=/usr/games/planetblupi; [ -x "$B" ] || B=/usr/bin/planetblupi
+LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec "$B" "$@"

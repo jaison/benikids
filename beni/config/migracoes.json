@@ -23,6 +23,252 @@
           }
         }
       ]
+    },
+    {
+      "id": "2026-11-13-jogos-leves",
+      "descricao": "16 jogos livres e leves (Neverball, Planeta Blupi, Enigma, jogos do KDE, Pencil2D, X-Moto, Quebra-cabeças)",
+      "operacoes": [
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "neverball",
+            "label": "Bola Maluca",
+            "emoji": "🔵",
+            "cmd": [
+              "neverball"
+            ],
+            "visible": true,
+            "category": "jogos",
+            "gamepad": true
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "neverputt",
+            "label": "Minigolfe",
+            "emoji": "⛳",
+            "cmd": [
+              "neverputt"
+            ],
+            "visible": true,
+            "category": "jogos"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "planetblupi",
+            "label": "Planeta Blupi",
+            "emoji": "🥚",
+            "cmd": [
+              "planetblupi"
+            ],
+            "visible": true,
+            "category": "jogos"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "enigma",
+            "label": "Enigma",
+            "emoji": "🔮",
+            "cmd": [
+              "enigma"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "kfourinline",
+            "label": "Quatro em Linha",
+            "emoji": "🔴",
+            "cmd": [
+              "kfourinline"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "kapman",
+            "label": "Come-Come",
+            "emoji": "🟡",
+            "cmd": [
+              "kapman"
+            ],
+            "visible": true,
+            "category": "jogos"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "kblocks",
+            "label": "Blocos",
+            "emoji": "🧱",
+            "cmd": [
+              "kblocks"
+            ],
+            "visible": true,
+            "category": "jogos"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "kdiamond",
+            "label": "Diamantes",
+            "emoji": "💎",
+            "cmd": [
+              "kdiamond"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "kolf",
+            "label": "Golfe",
+            "emoji": "🏌️",
+            "cmd": [
+              "kolf"
+            ],
+            "visible": true,
+            "category": "jogos"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "granatier",
+            "label": "Bombinhas",
+            "emoji": "💣",
+            "cmd": [
+              "granatier"
+            ],
+            "visible": true,
+            "category": "jogos"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "picmi",
+            "label": "Pintar por Números",
+            "emoji": "🔲",
+            "cmd": [
+              "picmi"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "kturtle",
+            "label": "Tartaruga",
+            "emoji": "🐢",
+            "cmd": [
+              "kturtle"
+            ],
+            "visible": true,
+            "category": "educativo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "minuet",
+            "label": "Ouvido Musical",
+            "emoji": "🎵",
+            "cmd": [
+              "minuet"
+            ],
+            "visible": true,
+            "category": "educativo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "pencil2d",
+            "label": "Desenho Animado",
+            "emoji": "✏️",
+            "cmd": [
+              "pencil2d"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "xmoto",
+            "label": "Motocross",
+            "emoji": "🏍️",
+            "cmd": [
+              "xmoto"
+            ],
+            "visible": true,
+            "category": "jogos",
+            "gamepad": true
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "puzzles-desembaracar",
+            "label": "Desembaraçar",
+            "emoji": "🧶",
+            "cmd": [
+              "puzzles-desembaracar"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        },
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "tile": {
+            "id": "puzzles-quinze",
+            "label": "Jogo do Quinze",
+            "emoji": "🔢",
+            "cmd": [
+              "puzzles-quinze"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        }
+      ]
     }
   ]
 }

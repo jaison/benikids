@@ -139,6 +139,19 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertIn("GCompris*/bin/GCompris.exe", linha)
         self.assertLess(texto.index("GCompris.msi"), texto.index("New-NetFirewallRule"))
 
+    def test_mesmo_pacote_para_dois_apps_baixa_e_instala_uma_vez(self):
+        itens = [
+            {"id": "desembaracar", "winget": "S.Puzzles", "escopo": "machine"},
+            {"id": "quinze", "winget": "S.Puzzles", "escopo": "machine"},
+        ]
+        baixados = []
+        with mock.patch.object(instalar_apps.catalogo_windows, "localizar", return_value=None), \
+             mock.patch.object(instalar_apps, "baixar", side_effect=lambda item, pasta: baixados.append(item["id"]) or "p.msi"), \
+             mock.patch.object(instalar_apps, "instalar_como_admin", return_value={}) as admin:
+            instalar_apps.trabalhar(itens, queue.Queue(), pasta=self.tmp.name)
+        self.assertEqual(baixados, ["desembaracar"])
+        self.assertEqual([i["id"] for i, _ in admin.call_args[0][0]], ["desembaracar"])
+
     def test_avisa_quando_o_windows_abre_o_uac_numa_instalacao_por_usuario(self):
         itens = [{"id": "eleva", "winget": "D.Eleva", "escopo": "user"}]
 

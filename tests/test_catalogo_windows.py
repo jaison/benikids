@@ -86,5 +86,37 @@ class CatalogoWindowsExtrasTests(unittest.TestCase):
                 self.assertEqual(caminho.read_text(), "do jogo")  # não sobrescreve
 
 
+class SincronizarCatalogoTests(unittest.TestCase):
+    CATALOGO = [
+        {"id": "gcompris", "label": "GCompris", "emoji": "🧩"},
+        {"id": "kapman", "label": "Come-Come", "emoji": "🟡", "category": "jogos"},
+        {"id": "vlc", "label": "VLC", "tile": False},
+    ]
+
+    def config(self, **extra):
+        cfg = {"configVersion": 2, "activeProfileId": "a", "profiles": [
+            {"id": "a", "name": "Ana", "tiles": [{"id": "gcompris", "label": "GCompris", "cmd": ["catalogo:gcompris"]}]},
+            {"id": "b", "name": "Bia", "tiles": []},
+        ]}
+        cfg.update(extra)
+        return cfg
+
+    def test_new_catalog_apps_reach_existing_profiles_once(self):
+        cfg, mudou = catalogo_windows.sincronizar_tiles(self.config(), self.CATALOGO)
+        self.assertTrue(mudou)
+        self.assertEqual([t["id"] for t in cfg["profiles"][0]["tiles"]], ["gcompris", "kapman"])
+        self.assertEqual([t["id"] for t in cfg["profiles"][1]["tiles"]], ["gcompris", "kapman"])
+        self.assertEqual(cfg["catalogSeen"], ["gcompris", "kapman"])
+        validate_stored_config(cfg, existing_pin_hash="", allow_pin_hash=True)
+        _, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
+        self.assertFalse(mudou)
+
+    def test_apps_removed_by_parents_do_not_come_back(self):
+        cfg = self.config(catalogSeen=["gcompris", "kapman"])
+        novo, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
+        self.assertFalse(mudou)
+        self.assertEqual(novo["profiles"][1]["tiles"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Pencil2D (Desenho Animado) em tela cheia.
+B=/usr/games/pencil2d; [ -x "$B" ] || B=/usr/bin/pencil2d
+exec cozy-fullscreen pencil2d "$B" "$@"

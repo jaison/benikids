@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: minuet (KDE) em tela cheia.
+B=/usr/games/minuet; [ -x "$B" ] || B=/usr/bin/minuet
+exec cozy-fullscreen minuet "$B" "$@"

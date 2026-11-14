@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: kolf (KDE) em tela cheia.
+B=/usr/games/kolf; [ -x "$B" ] || B=/usr/bin/kolf
+exec cozy-fullscreen kolf "$B" "$@"

@@ -221,3 +221,28 @@ def tiles(catalogo=None):
             tile["gamepad"] = True
         resultado.append(tile)
     return resultado
+
+
+def sincronizar_tiles(stored, catalogo=None):
+    """Põe nos perfis os apps do catálogo que este computador ainda não viu.
+
+    "catalogSeen" guarda os ids já oferecidos: um app novo no catálogo entra uma vez em
+    cada perfil (ligado, como todo o catálogo); um app que os pais removeram não volta.
+    Devolve (config, mudou).
+    """
+    import copy
+
+    catalogo = catalogo if catalogo is not None else carregar()
+    novos = tiles(catalogo)
+    vistos = set(stored.get("catalogSeen") or [])
+    ids_catalogo = [t["id"] for t in novos]
+    if vistos >= set(ids_catalogo):
+        return stored, False
+    resultado = copy.deepcopy(stored)
+    for perfil in resultado.get("profiles", []):
+        existentes = {t.get("id") for t in perfil.get("tiles", []) if isinstance(t, dict)}
+        for tile in novos:
+            if tile["id"] not in vistos and tile["id"] not in existentes:
+                perfil.setdefault("tiles", []).append(copy.deepcopy(tile))
+    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo))
+    return resultado, True

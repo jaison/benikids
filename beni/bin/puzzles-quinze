@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: Jogo do Quinze (Simon Tatham's Puzzles: Fifteen) em tela cheia.
+B=/usr/games/sgt-fifteen; [ -x "$B" ] || B=/usr/bin/sgt-fifteen
+exec cozy-fullscreen sgt-fifteen "$B" "$@"

@@ -39,6 +39,7 @@ _SAFE_EVENT_FIELDS = {
     "profile.selected": set(),
     "setup.completed": {"profiles"},
     "telemetria.apagar": {"result"},
+    "catalogo.sincronizado": set(),
     "request.rejected": {"statusCode"},
     "server.crashed": {"exceptionType"},
     "site_login.finished": {"result", "exceptionType"},

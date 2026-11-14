@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: kfourinline (KDE) em tela cheia.
+B=/usr/games/kfourinline; [ -x "$B" ] || B=/usr/bin/kfourinline
+exec cozy-fullscreen kfourinline "$B" "$@"

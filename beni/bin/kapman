@@ -1,0 +1,4 @@
+#!/bin/sh
+# Benikids: kapman (KDE) em tela cheia.
+B=/usr/games/kapman; [ -x "$B" ] || B=/usr/bin/kapman
+exec cozy-fullscreen kapman "$B" "$@"
