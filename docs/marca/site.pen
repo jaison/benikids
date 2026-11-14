@@ -1,0 +1,3208 @@
+{
+  "version": "2.22",
+  "children": [
+    {
+      "type": "frame",
+      "id": "ttQeU",
+      "x": 0,
+      "y": 0,
+      "name": "Site — desktop (pt)",
+      "clip": true,
+      "width": 1440,
+      "fill": "$page",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "v9mne",
+          "name": "Hero",
+          "width": "fill_container",
+          "fill": "$sky",
+          "layout": "vertical",
+          "padding": [
+            24,
+            96,
+            0,
+            96
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "GyXI0",
+              "layoutPosition": "absolute",
+              "x": 0,
+              "y": 0,
+              "name": "Decoração",
+              "width": 1440,
+              "height": 760,
+              "layout": "none",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "rbjk0",
+                  "x": 40,
+                  "y": 120,
+                  "name": "Engrenagem",
+                  "width": 120,
+                  "height": 120,
+                  "icon": "settings",
+                  "library": "lucide",
+                  "fill": "#FFFFFF55"
+                },
+                {
+                  "type": "icon",
+                  "id": "zBsc3",
+                  "x": 520,
+                  "y": 130,
+                  "name": "Engrenagem",
+                  "width": 70,
+                  "height": 70,
+                  "icon": "settings",
+                  "library": "lucide",
+                  "fill": "#FFFFFF44"
+                },
+                {
+                  "type": "icon",
+                  "id": "W089F",
+                  "x": 1240,
+                  "y": 520,
+                  "name": "Engrenagem",
+                  "width": 90,
+                  "height": 90,
+                  "icon": "settings",
+                  "library": "lucide",
+                  "fill": "#FFFFFF44"
+                },
+                {
+                  "type": "icon",
+                  "id": "KxbAu",
+                  "x": 640,
+                  "y": 600,
+                  "name": "Engrenagem",
+                  "width": 60,
+                  "height": 60,
+                  "icon": "settings",
+                  "library": "lucide",
+                  "fill": "#FFFFFF33"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Y6EhVS",
+                  "x": 1300,
+                  "y": 60,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 28,
+                  "height": 28
+                },
+                {
+                  "type": "rectangle",
+                  "id": "m5ZTe",
+                  "x": 1340,
+                  "y": 100,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 20,
+                  "height": 20
+                },
+                {
+                  "type": "rectangle",
+                  "id": "B0ba3K",
+                  "x": 1376,
+                  "y": 60,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 28,
+                  "height": 28
+                },
+                {
+                  "type": "rectangle",
+                  "id": "DjRFU",
+                  "x": 1270,
+                  "y": 140,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 20,
+                  "height": 20
+                },
+                {
+                  "type": "rectangle",
+                  "id": "B8mF64",
+                  "x": 1392,
+                  "y": 150,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 16,
+                  "height": 16
+                },
+                {
+                  "type": "rectangle",
+                  "id": "x6iksC",
+                  "x": 24,
+                  "y": 600,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 24,
+                  "height": 24
+                },
+                {
+                  "type": "rectangle",
+                  "id": "dzjeJ",
+                  "x": 60,
+                  "y": 640,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 18,
+                  "height": 18
+                },
+                {
+                  "type": "rectangle",
+                  "id": "WF41S",
+                  "x": 24,
+                  "y": 660,
+                  "name": "Pixel",
+                  "fill": "#FFFFFF55",
+                  "width": 14,
+                  "height": 14
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "IMitD",
+              "name": "Topo",
+              "width": "fill_container",
+              "padding": [
+                8,
+                0
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Usgob",
+                  "name": "Logo",
+                  "width": 210,
+                  "height": 48,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "recortes/logo-texto.png",
+                    "mode": "contain"
+                  }
+                },
+                {
+                  "type": "frame",
+                  "id": "zTuVE",
+                  "name": "Links",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "p8uGCc",
+                      "name": "O que tem",
+                      "cornerRadius": 999,
+                      "padding": [
+                        8,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "zuzgN",
+                          "name": "Texto",
+                          "fill": "$navy",
+                          "content": "O que tem",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "M7DU2",
+                      "name": "Para os pais",
+                      "cornerRadius": 999,
+                      "padding": [
+                        8,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "tzkn5",
+                          "name": "Texto",
+                          "fill": "$navy",
+                          "content": "Para os pais",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Lpp5N",
+                      "name": "Instalar",
+                      "cornerRadius": 999,
+                      "padding": [
+                        8,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "VseJr",
+                          "name": "Texto",
+                          "fill": "$navy",
+                          "content": "Instalar",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "XVpEA",
+                      "name": "Privacidade",
+                      "cornerRadius": 999,
+                      "padding": [
+                        8,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "hz7km",
+                          "name": "Texto",
+                          "fill": "$navy",
+                          "content": "Privacidade",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "x8Vneg",
+                  "name": "Idioma",
+                  "fill": "$white",
+                  "cornerRadius": 999,
+                  "gap": 8,
+                  "padding": [
+                    8,
+                    16
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zgDIa",
+                      "name": "PT",
+                      "fill": "$navy",
+                      "content": "🇧🇷 Português",
+                      "fontFamily": "Nunito",
+                      "fontSize": 15,
+                      "fontWeight": "800"
+                    },
+                    {
+                      "type": "text",
+                      "id": "muoBe",
+                      "name": "EN",
+                      "fill": "$blue",
+                      "content": "· 🇺🇸 English",
+                      "fontFamily": "Nunito",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "bEnHH",
+              "name": "Hero conteúdo",
+              "width": "fill_container",
+              "gap": 40,
+              "padding": [
+                40,
+                0,
+                24,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "i5QQAi",
+                  "name": "Texto",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 22,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "IGyIe",
+                      "name": "Selo",
+                      "fill": "$orangetext",
+                      "content": "GRATUITO · CÓDIGO ABERTO",
+                      "fontFamily": "Nunito",
+                      "fontSize": 14,
+                      "fontWeight": "800",
+                      "letterSpacing": 1.2
+                    },
+                    {
+                      "type": "text",
+                      "id": "czDXD",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Um computador para crianças que equilibra aprender e brincar",
+                      "lineHeight": 1.08,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 58,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "yJ3JJ",
+                      "name": "Lead",
+                      "fill": "$ink",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "O Benikids é um menu em tela cheia para crianças de 5 a 10 anos, no Windows e no Linux. A criança só encontra o que os pais aprovaram, e é leve o bastante para dar vida nova àquele notebook antigo esquecido na gaveta.",
+                      "lineHeight": 1.55,
+                      "fontFamily": "Nunito",
+                      "fontSize": 20,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Qv1tz",
+                      "name": "Tags",
+                      "gap": 10,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "JvKLL",
+                          "name": "Gratuito e de código aberto",
+                          "fill": "$white",
+                          "cornerRadius": 999,
+                          "gap": 8,
+                          "padding": [
+                            7,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "ellipse",
+                              "id": "G0s2LL",
+                              "name": "Ponto",
+                              "fill": "$yellow",
+                              "width": 10,
+                              "height": 10
+                            },
+                            {
+                              "type": "text",
+                              "id": "E6Ih72",
+                              "name": "Texto",
+                              "fill": "$navy",
+                              "content": "Gratuito e de código aberto",
+                              "fontFamily": "Nunito",
+                              "fontSize": 15,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "r2zdo",
+                          "name": "Windows 10 e 11",
+                          "fill": "$white",
+                          "cornerRadius": 999,
+                          "gap": 8,
+                          "padding": [
+                            7,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "ellipse",
+                              "id": "YTQum",
+                              "name": "Ponto",
+                              "fill": "$blue",
+                              "width": 10,
+                              "height": 10
+                            },
+                            {
+                              "type": "text",
+                              "id": "bJY6O",
+                              "name": "Texto",
+                              "fill": "$navy",
+                              "content": "Windows 10 e 11",
+                              "fontFamily": "Nunito",
+                              "fontSize": 15,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "el19p",
+                          "name": "Linux Mint XFCE",
+                          "fill": "$white",
+                          "cornerRadius": 999,
+                          "gap": 8,
+                          "padding": [
+                            7,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "ellipse",
+                              "id": "toXdJ",
+                              "name": "Ponto",
+                              "fill": "$orange",
+                              "width": 10,
+                              "height": 10
+                            },
+                            {
+                              "type": "text",
+                              "id": "k5wqAD",
+                              "name": "Texto",
+                              "fill": "$navy",
+                              "content": "Linux Mint XFCE",
+                              "fontFamily": "Nunito",
+                              "fontSize": 15,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Rq3Rq",
+                          "name": "Em português do Brasil",
+                          "fill": "$white",
+                          "cornerRadius": 999,
+                          "gap": 8,
+                          "padding": [
+                            7,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "ellipse",
+                              "id": "xPFsE",
+                              "name": "Ponto",
+                              "fill": "$navy",
+                              "width": 10,
+                              "height": 10
+                            },
+                            {
+                              "type": "text",
+                              "id": "P1m84Y",
+                              "name": "Texto",
+                              "fill": "$navy",
+                              "content": "Em português do Brasil",
+                              "fontFamily": "Nunito",
+                              "fontSize": 15,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yG8Dp",
+                      "name": "Botões",
+                      "gap": 14,
+                      "padding": [
+                        8,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "TqVon",
+                          "name": "Como instalar",
+                          "fill": "$blue",
+                          "cornerRadius": 16,
+                          "effect": {
+                            "type": "shadow",
+                            "shadowType": "outer",
+                            "color": "$bluedark",
+                            "offset": {
+                              "x": 0,
+                              "y": 5
+                            }
+                          },
+                          "padding": [
+                            16,
+                            28
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "d40qe5",
+                              "name": "Texto",
+                              "fill": "$white",
+                              "content": "Como instalar",
+                              "fontFamily": "Nunito",
+                              "fontSize": 18,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "yyAuR",
+                          "name": "Área dos pais",
+                          "fill": "$white",
+                          "cornerRadius": 16,
+                          "stroke": "$navy",
+                          "strokeWidth": 2,
+                          "padding": [
+                            16,
+                            28
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "di3vR",
+                              "name": "Texto",
+                              "fill": "$navy",
+                              "content": "Ver a área dos pais",
+                              "fontFamily": "Nunito",
+                              "fontSize": 18,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "O3PUZ",
+                  "name": "Mascote",
+                  "width": 470,
+                  "height": 554,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "recortes/logo-principal.png",
+                    "mode": "contain"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "h8m6pQ",
+              "name": "Print",
+              "width": "fill_container",
+              "padding": [
+                16,
+                0,
+                0,
+                0
+              ],
+              "justifyContent": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "W9qWz",
+                  "name": "Tela inicial",
+                  "width": 1040,
+                  "height": 585,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../site/img/tela-inicial.webp",
+                    "mode": "cover"
+                  },
+                  "cornerRadius": [
+                    24,
+                    24,
+                    0,
+                    0
+                  ],
+                  "stroke": "$white",
+                  "strokeWidth": 10,
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#1E3E6433",
+                    "offset": {
+                      "x": 0,
+                      "y": -6
+                    },
+                    "blur": 30
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "hzbEA",
+          "name": "O que tem",
+          "width": "fill_container",
+          "fill": "$white",
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            88,
+            96
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "OQZoy",
+              "name": "Topo da seção",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "lgRxw",
+                  "name": "Cabeçalho",
+                  "width": 760,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "irEx2",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Kicker",
+                      "enabled": false,
+                      "fill": "$orangetext",
+                      "content": "O QUE TEM",
+                      "fontFamily": "Nunito",
+                      "fontSize": 14,
+                      "fontWeight": "800",
+                      "letterSpacing": 1.2
+                    },
+                    {
+                      "type": "text",
+                      "id": "k00um",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "content": "O que tem",
+                      "fontFamily": "Fredoka",
+                      "fontSize": 42,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "z8UpN",
+                      "name": "Intro",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Tudo pensado para a criança usar sozinha, com regras que os pais definem uma vez.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 19,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "K13Is3",
+                  "name": "Mascote ideia",
+                  "width": 190,
+                  "height": 256,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "recortes/mascote-ideia.png",
+                    "mode": "contain"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "BHfsw",
+              "name": "Linha 1",
+              "width": "fill_container",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "jfJeQ",
+                  "name": "Aprender, Passatempo e Jogar",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$blue",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "y0InD",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "hYwbZ",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "📚🎨🎮",
+                          "fontFamily": "Inter",
+                          "fontSize": 18,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "K7w6c",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Aprender, Passatempo e Jogar",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "DEC2s",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "A criança escolhe o que quer fazer, e cada cartão mostra quanto tempo ainda resta hoje.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "EyfgH",
+                  "name": "Tempo de tela por categoria",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$yellow",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZTwJZ",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "mdHRQ",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "⏳",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "PunjM",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Tempo de tela por categoria",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "l8Z8s",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Diferente em cada dia da semana, se você quiser. Nos últimos segundos, uma contagem avisa a criança, e o próprio Benikids fecha o jogo no fim do tempo.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "FkRwG",
+                  "name": "Primeiro, aprender (opcional)",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$orange",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Q5ZFtu",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "E9DSC",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "⭐",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "z3Z7d",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Primeiro, aprender (opcional)",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "k7rrrS",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Se ontem faltou a parte de Aprender, hoje o tempo de jogo fica menor.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "d41xGc",
+                  "name": "Jogos e programas livres já escolhidos",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$navy",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Ar3Is",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "meM9B",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "🎲",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "O3otI8",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Jogos e programas livres já escolhidos",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Cj0Wl",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "GCompris, Tux Paint, SuperTux, SuperTuxKart, Luanti, Scratch, Planetário, Digitação e outros. Tudo vem ligado, e os pais desligam o que não quiserem.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "P8zyY",
+              "name": "Linha 2",
+              "width": "fill_container",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aTUai",
+                  "name": "Controles USB genéricos",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$orange",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ysx6M",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "jaAmA",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "🕹️",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "hBcji",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Controles USB genéricos",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "M7Ug1",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Inclusive os baratos sem marca. Um assistente configura botão por botão, e o mesmo controle serve no menu e nos jogos. Segurar Start + Select fecha o jogo e volta ao menu.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "AxiPc",
+                  "name": "Um perfil por criança",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$blue",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "xTmVi",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "I7O4I",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "👧👦",
+                          "fontFamily": "Inter",
+                          "fontSize": 18,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "adsgX",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Um perfil por criança",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Fp55a",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Com temas próprios: Herói Aranha, Blocos de Montar, Dojo Ninja, Reino do Gelo, Casinha Mágica e Castelo Encantado. A área dos pais fica protegida por PIN.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "BabSo",
+                  "name": "Leve, até em computador antigo",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$yellow",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "jASf7",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "i9VBxP",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "⚡",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "ulyiR",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Leve, até em computador antigo",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "E6Huz5",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "O menu é um app nativo desenhado pela placa de vídeo. Num notebook de 2011, abre em cerca de 1 segundo e fica parado em ~1% de CPU.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "LXrsy",
+                  "name": "Tudo em português do Brasil",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 24,
+                  "stroke": "$navy",
+                  "strokeWidth": {
+                    "top": 6
+                  },
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "GnNdy",
+                      "name": "Ícone",
+                      "width": 56,
+                      "height": 56,
+                      "fill": "$white",
+                      "cornerRadius": 16,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "m1PRJG",
+                          "name": "Emoji",
+                          "fill": "#000000",
+                          "content": "🇧🇷",
+                          "fontFamily": "Inter",
+                          "fontSize": 18,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "Imrm4",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Tudo em português do Brasil",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "fkY4k",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "As telas das crianças e a área dos pais.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Fn71z",
+              "name": "Linux extra",
+              "width": "fill_container",
+              "fill": "$navy",
+              "cornerRadius": 28,
+              "gap": 40,
+              "padding": [
+                32,
+                40
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OmJIS",
+                  "name": "Texto",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "cY75X",
+                      "name": "Título",
+                      "fill": "$white",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "No Linux, o computador inteiro vira o computador das crianças.",
+                      "lineHeight": 1.2,
+                      "fontFamily": "Fredoka",
+                      "fontSize": 26,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Iy7pz",
+                      "name": "Texto",
+                      "fill": "#D6E8F7",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Ele liga direto no menu e ganha mais estes recursos:",
+                      "fontFamily": "Nunito",
+                      "fontSize": 17,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "z118Gp",
+                  "name": "Recursos",
+                  "width": 640,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "s6W0B",
+                      "name": "filtro de internet em qualquer Wi‑Fi, com Busca Segura e YouTube restrito",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "FScT3",
+                          "name": "Check",
+                          "width": 20,
+                          "height": 20,
+                          "icon": "circle-check",
+                          "library": "lucide",
+                          "fill": "$yellow"
+                        },
+                        {
+                          "type": "text",
+                          "id": "kNPzW",
+                          "name": "Texto",
+                          "fill": "$white",
+                          "content": "filtro de internet em qualquer Wi‑Fi, com Busca Segura e YouTube restrito",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "WiPzN",
+                      "name": "login automático no Khan Academy e no Teach Your Monster",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "zexn9",
+                          "name": "Check",
+                          "width": 20,
+                          "height": 20,
+                          "icon": "circle-check",
+                          "library": "lucide",
+                          "fill": "$yellow"
+                        },
+                        {
+                          "type": "text",
+                          "id": "mReyC",
+                          "name": "Texto",
+                          "fill": "$white",
+                          "content": "login automático no Khan Academy e no Teach Your Monster",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "LcIqK",
+                      "name": "jogos do itch.io",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "O8mHPw",
+                          "name": "Check",
+                          "width": 20,
+                          "height": 20,
+                          "icon": "circle-check",
+                          "library": "lucide",
+                          "fill": "$yellow"
+                        },
+                        {
+                          "type": "text",
+                          "id": "vTdVT",
+                          "name": "Texto",
+                          "fill": "$white",
+                          "content": "jogos do itch.io",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "D2qPHE",
+                      "name": "Super Nintendo e PlayStation",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "hI74f",
+                          "name": "Check",
+                          "width": 20,
+                          "height": 20,
+                          "icon": "circle-check",
+                          "library": "lucide",
+                          "fill": "$yellow"
+                        },
+                        {
+                          "type": "text",
+                          "id": "pd7zc",
+                          "name": "Texto",
+                          "fill": "$white",
+                          "content": "Super Nintendo e PlayStation",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "o3dlp",
+                      "name": "atualização automática",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "k1MA09",
+                          "name": "Check",
+                          "width": 20,
+                          "height": 20,
+                          "icon": "circle-check",
+                          "library": "lucide",
+                          "fill": "$yellow"
+                        },
+                        {
+                          "type": "text",
+                          "id": "vbAZp",
+                          "name": "Texto",
+                          "fill": "$white",
+                          "content": "atualização automática",
+                          "fontFamily": "Nunito",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "CD6uA",
+          "name": "Para os pais",
+          "width": "fill_container",
+          "fill": "$sky",
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            88,
+            96
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "NwIri",
+              "name": "Topo da seção",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "drRJS",
+                  "name": "Cabeçalho",
+                  "width": 760,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "LQVjx",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Kicker",
+                      "enabled": false,
+                      "fill": "$navy",
+                      "content": "PARA OS PAIS",
+                      "fontFamily": "Nunito",
+                      "fontSize": 14,
+                      "fontWeight": "800",
+                      "letterSpacing": 1.2
+                    },
+                    {
+                      "type": "text",
+                      "id": "UTkfB",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "content": "Para os pais",
+                      "fontFamily": "Fredoka",
+                      "fontSize": 42,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "udASH",
+                      "name": "Intro",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Tudo o que os pais configuram fica na área dos pais, protegida por um PIN que só vocês sabem.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 19,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "amYLm",
+                  "name": "Mascote acenando",
+                  "width": 150,
+                  "height": 300,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "recortes/mascote-acenando.png",
+                    "mode": "contain"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "JbOOo",
+              "name": "Galeria",
+              "width": "fill_container",
+              "gap": 24,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "BjFRQ",
+                  "name": "Coluna 1",
+                  "width": 380,
+                  "layout": "vertical",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "pAndU",
+                      "name": "Configuração inicial",
+                      "width": "fill_container",
+                      "fill": "$white",
+                      "cornerRadius": 24,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "mn63F",
+                          "name": "Imagem",
+                          "width": "fill_container",
+                          "height": 470,
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../../site/img/pais-configuracao-inicial.webp",
+                            "mode": "cover"
+                          },
+                          "cornerRadius": 14
+                        },
+                        {
+                          "type": "frame",
+                          "id": "wePvD",
+                          "name": "Legenda",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 2,
+                          "padding": [
+                            0,
+                            6,
+                            4,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "M21eOo",
+                              "name": "Título",
+                              "fill": "$navy",
+                              "content": "Configuração inicial",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 18,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "tDGZj",
+                              "name": "Texto",
+                              "fill": "$muted",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Cadastre as crianças, crie o PIN dos pais e escolha se o Benikids abre sozinho.",
+                              "lineHeight": 1.45,
+                              "fontFamily": "Nunito",
+                              "fontSize": 15,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "rLvld",
+                  "name": "Coluna 2",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Lp2vr",
+                      "name": "Linha A",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "o2UPD1",
+                          "name": "Tempo de tela",
+                          "width": "fill_container",
+                          "fill": "$white",
+                          "cornerRadius": 24,
+                          "layout": "vertical",
+                          "gap": 12,
+                          "padding": 12,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "mbUMv",
+                              "name": "Imagem",
+                              "width": "fill_container",
+                              "height": 230,
+                              "fill": {
+                                "type": "image",
+                                "enabled": true,
+                                "url": "../../site/img/pais-tempo-de-tela.webp",
+                                "mode": "cover"
+                              },
+                              "cornerRadius": 14
+                            },
+                            {
+                              "type": "frame",
+                              "id": "MG8Va",
+                              "name": "Legenda",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": [
+                                0,
+                                6,
+                                4,
+                                6
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "n7B5C",
+                                  "name": "Título",
+                                  "fill": "$navy",
+                                  "content": "Tempo de tela",
+                                  "fontFamily": "Fredoka",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "feYUI",
+                                  "name": "Texto",
+                                  "fill": "$muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Limite por categoria, por dia da semana, e a regra de aprender primeiro.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "Nunito",
+                                  "fontSize": 15,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "q5Wbu",
+                          "name": "Controles",
+                          "width": "fill_container",
+                          "fill": "$white",
+                          "cornerRadius": 24,
+                          "layout": "vertical",
+                          "gap": 12,
+                          "padding": 12,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "fSJ4M",
+                              "name": "Imagem",
+                              "width": "fill_container",
+                              "height": 230,
+                              "fill": {
+                                "type": "image",
+                                "enabled": true,
+                                "url": "../../site/img/pais-controles.webp",
+                                "mode": "cover"
+                              },
+                              "cornerRadius": 14
+                            },
+                            {
+                              "type": "frame",
+                              "id": "lhQ0R",
+                              "name": "Legenda",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": [
+                                0,
+                                6,
+                                4,
+                                6
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "GgaTx",
+                                  "name": "Título",
+                                  "fill": "$navy",
+                                  "content": "Controles",
+                                  "fontFamily": "Fredoka",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "q0G9j",
+                                  "name": "Texto",
+                                  "fill": "$muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Um assistente configura o controle USB, e os jogos que aceitam controle ganham um selo.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "Nunito",
+                                  "fontSize": 15,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "P9xGZ",
+                      "name": "Linha B",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "nhY2H",
+                          "name": "Crianças",
+                          "width": "fill_container",
+                          "fill": "$white",
+                          "cornerRadius": 24,
+                          "layout": "vertical",
+                          "gap": 12,
+                          "padding": 12,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "o1lrJ",
+                              "name": "Imagem",
+                              "width": "fill_container",
+                              "height": 230,
+                              "fill": {
+                                "type": "image",
+                                "enabled": true,
+                                "url": "../../site/img/pais-criancas-logins.webp",
+                                "mode": "cover"
+                              },
+                              "cornerRadius": 14
+                            },
+                            {
+                              "type": "frame",
+                              "id": "ucG1O",
+                              "name": "Legenda",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": [
+                                0,
+                                6,
+                                4,
+                                6
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "LlaH1",
+                                  "name": "Título",
+                                  "fill": "$navy",
+                                  "content": "Crianças e logins automáticos",
+                                  "fontFamily": "Fredoka",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "v946f",
+                                  "name": "Texto",
+                                  "fill": "$muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Cada criança com seu perfil e, no Linux, login automático nos sites.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "Nunito",
+                                  "fontSize": 15,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "BsYrR",
+                          "name": "Aparência",
+                          "width": "fill_container",
+                          "fill": "$white",
+                          "cornerRadius": 24,
+                          "layout": "vertical",
+                          "gap": 12,
+                          "padding": 12,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "B9nky",
+                              "name": "Imagem",
+                              "width": "fill_container",
+                              "height": 230,
+                              "fill": {
+                                "type": "image",
+                                "enabled": true,
+                                "url": "../../site/img/pais-aparencia.webp",
+                                "mode": "cover"
+                              },
+                              "cornerRadius": 14
+                            },
+                            {
+                              "type": "frame",
+                              "id": "wi236",
+                              "name": "Legenda",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": [
+                                0,
+                                6,
+                                4,
+                                6
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "RronT",
+                                  "name": "Título",
+                                  "fill": "$navy",
+                                  "content": "Aparência, com prévia",
+                                  "fontFamily": "Fredoka",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "hjpjn",
+                                  "name": "Texto",
+                                  "fill": "$muted",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Tema e tamanho dos ícones, vendo na hora como o menu vai ficar.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "Nunito",
+                                  "fontSize": 15,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "FjPao",
+          "name": "Instalar",
+          "width": "fill_container",
+          "fill": "$white",
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            88,
+            96
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "m55fi",
+              "name": "Cabeçalho",
+              "width": 760,
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "R6whec",
+                  "name": "Título",
+                  "fill": "$navy",
+                  "content": "Instalar",
+                  "fontFamily": "Fredoka",
+                  "fontSize": 42,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "bUUnM",
+                  "name": "Intro",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "É gratuito. Escolha o sistema do computador da criança.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "Nunito",
+                  "fontSize": 19,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "PrI38",
+              "name": "Cartões",
+              "width": "fill_container",
+              "gap": 24,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "anJHu",
+                  "name": "Windows",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 28,
+                  "layout": "vertical",
+                  "gap": 18,
+                  "padding": 32,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "QPcqt",
+                      "name": "Topo",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "k90ST",
+                          "name": "Selo",
+                          "width": 48,
+                          "height": 48,
+                          "fill": "$blue",
+                          "cornerRadius": 14,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "yAZPp",
+                              "name": "Emoji",
+                              "fill": "#000",
+                              "content": "🪟",
+                              "fontFamily": "Inter",
+                              "fontSize": 24,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "LbcOc",
+                          "name": "Título",
+                          "fill": "$navy",
+                          "content": "Windows 10 e 11",
+                          "fontFamily": "Fredoka",
+                          "fontSize": 26,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "IKLOA",
+                      "name": "Passo 1",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "zVqVF",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$blue",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "j2uLFb",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "1",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "FdBtx",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Entre no usuário do Windows da criança. Ele não precisa ser administrador.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Ogu0M",
+                      "name": "Passo 2",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "tqUia",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$blue",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ffA1X",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "2",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "n6POn6",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Baixe o Beni-Windows.zip, descompacte e dê dois cliques em Instalar Benikids.cmd.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "gdDHM",
+                      "name": "Passo 3",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "ze4dH",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$blue",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "eznmN",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "3",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "OPLeH",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Aceite instalar os jogos e programas. Alguns pedem uma vez a senha de um administrador do computador.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "D3JTa4",
+                      "name": "Passo 4",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "zg8RN",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$blue",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "z4wXPk",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "4",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "MrLZ9",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Na primeira abertura, cadastre o nome de cada criança e o PIN dos pais.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "x6gLb",
+                      "name": "Baixar",
+                      "fill": "$orange",
+                      "cornerRadius": 16,
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#B8441A",
+                        "offset": {
+                          "x": 0,
+                          "y": 5
+                        }
+                      },
+                      "gap": 10,
+                      "padding": [
+                        16,
+                        26
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "LnZ2K",
+                          "name": "Ícone",
+                          "width": 20,
+                          "height": 20,
+                          "icon": "download",
+                          "library": "lucide",
+                          "fill": "$white"
+                        },
+                        {
+                          "type": "text",
+                          "id": "WhMR9",
+                          "name": "Texto",
+                          "fill": "$white",
+                          "content": "Baixar Beni-Windows.zip",
+                          "fontFamily": "Nunito",
+                          "fontSize": 18,
+                          "fontWeight": "800"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "A18NQC",
+                      "name": "Nota",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "O Benikids passa a abrir sozinho quando a criança entra no Windows (dá para desligar em Pais). Para atualizar, baixe o pacote de novo e rode o instalador: a configuração e o tempo de tela continuam como estavam.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "SFLex",
+                  "name": "Linux",
+                  "width": "fill_container",
+                  "fill": "$skysoft",
+                  "cornerRadius": 28,
+                  "layout": "vertical",
+                  "gap": 18,
+                  "padding": 32,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "TfTkV",
+                      "name": "Topo",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "UV4Ci",
+                          "name": "Selo",
+                          "width": 48,
+                          "height": 48,
+                          "fill": "$yellow",
+                          "cornerRadius": 14,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "K9D9hN",
+                              "name": "Emoji",
+                              "fill": "#000",
+                              "content": "🐧",
+                              "fontFamily": "Inter",
+                              "fontSize": 24,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "XA6Yd",
+                          "name": "Título",
+                          "fill": "$navy",
+                          "content": "Linux (Mint XFCE)",
+                          "fontFamily": "Fredoka",
+                          "fontSize": 26,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "s89C5",
+                      "name": "Passo 1",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "l6H3C",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$orangetext",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "TU1a4",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "1",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "DXp2Y",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Instale o Linux Mint XFCE, crie o usuário da criança e ative o login automático.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "CoGz2",
+                      "name": "Passo 2",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "jOvIU",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$orangetext",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "QFMBq",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "2",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "hRCGs",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "No usuário da criança, abra o Terminal e rode:",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "hlsIs",
+                      "name": "Código",
+                      "width": "fill_container",
+                      "fill": "$navy",
+                      "cornerRadius": 16,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": [
+                        18,
+                        20
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "sPDSq",
+                          "name": "Linha",
+                          "fill": "#F4F8FF",
+                          "content": "git clone https://github.com/jaison/benikids.git",
+                          "fontFamily": "JetBrains Mono",
+                          "fontSize": 15,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "e1mOY",
+                          "name": "Linha",
+                          "fill": "#F4F8FF",
+                          "content": "cd benikids",
+                          "fontFamily": "JetBrains Mono",
+                          "fontSize": 15,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "vDi5c",
+                          "name": "Linha",
+                          "fill": "#F4F8FF",
+                          "content": "./instalar.sh",
+                          "fontFamily": "JetBrains Mono",
+                          "fontSize": 15,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "AMnrV",
+                      "name": "Passo 3",
+                      "width": "fill_container",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "RfjY8",
+                          "name": "Número",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "$orangetext",
+                          "cornerRadius": 999,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "XP005",
+                              "name": "N",
+                              "fill": "$white",
+                              "content": "3",
+                              "fontFamily": "Fredoka",
+                              "fontSize": 17,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "RzUqb",
+                          "name": "Texto",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Saia e entre de novo: o menu abre sozinho. Em Pais → Sistema, crie o PIN dos pais.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Nunito",
+                          "fontSize": 17,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "E3X0kD",
+                      "name": "Nota",
+                      "fill": "$muted",
+                      "content": "A partir daí, o notebook se atualiza sozinho.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Nunito",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "H8bIxa",
+          "name": "Privacidade",
+          "width": "fill_container",
+          "fill": "$skysoft",
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            88,
+            96
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "I2fDyU",
+              "name": "Cabeçalho",
+              "width": 760,
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "RYm6W",
+                  "name": "Título",
+                  "fill": "$navy",
+                  "content": "Privacidade",
+                  "fontFamily": "Fredoka",
+                  "fontSize": 42,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "ojCjM",
+                  "name": "Intro",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "O Benikids funciona no próprio computador. Ele só envia dados anônimos para ajudar o projeto, e quem decide são os pais.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "Nunito",
+                  "fontSize": 19,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Wmhbl",
+              "name": "Cartões",
+              "width": "fill_container",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "D7TEC",
+                  "name": "Sobre o computador",
+                  "width": "fill_container",
+                  "fill": "$white",
+                  "cornerRadius": 24,
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 28,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "G3RIMr",
+                      "name": "Selo",
+                      "width": 48,
+                      "height": 48,
+                      "fill": "$blue",
+                      "cornerRadius": 14,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "zOoxT",
+                          "name": "Ícone",
+                          "width": 24,
+                          "height": 24,
+                          "icon": "monitor",
+                          "library": "lucide",
+                          "fill": "$white"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "WDwnb",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "content": "Sobre o computador",
+                      "fontFamily": "Fredoka",
+                      "fontSize": 22,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t88A3B",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Uma vez por dia, uma descrição anônima da máquina (sistema, processador, memória, placa de vídeo, resolução). Se algo der erro, um relatório do problema, sem nome de usuário nem e‑mail. Vem ligado e pode ser desligado.",
+                      "lineHeight": 1.55,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "SAcfw",
+                  "name": "Sobre o uso das crianças",
+                  "width": "fill_container",
+                  "fill": "$white",
+                  "cornerRadius": 24,
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 28,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Sclck",
+                      "name": "Selo",
+                      "width": 48,
+                      "height": 48,
+                      "fill": "$yellow",
+                      "cornerRadius": 14,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "oawWB",
+                          "name": "Ícone",
+                          "width": 24,
+                          "height": 24,
+                          "icon": "smile",
+                          "library": "lucide",
+                          "fill": "$white"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "dQ8ug",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "content": "Sobre o uso das crianças",
+                      "fontFamily": "Fredoka",
+                      "fontSize": 22,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "E3h02",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Só se os pais ligarem (vem desligado). Nunca o nome da criança: só um código aleatório e a faixa de idade.",
+                      "lineHeight": 1.55,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "GujBo",
+                  "name": "Você no controle",
+                  "width": "fill_container",
+                  "fill": "$white",
+                  "cornerRadius": 24,
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": 28,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "es0Yg",
+                      "name": "Selo",
+                      "width": 48,
+                      "height": 48,
+                      "fill": "$orange",
+                      "cornerRadius": 14,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "kizAy",
+                          "name": "Ícone",
+                          "width": 24,
+                          "height": 24,
+                          "icon": "trash-2",
+                          "library": "lucide",
+                          "fill": "$white"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "WvAiF",
+                      "name": "Título",
+                      "fill": "$navy",
+                      "content": "Você no controle",
+                      "fontFamily": "Fredoka",
+                      "fontSize": 22,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "XCQfP",
+                      "name": "Texto",
+                      "fill": "$muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "O botão Apagar os dados já enviados, em Pais → Sistema, apaga tudo. O servidor não guarda endereço IP.",
+                      "lineHeight": 1.55,
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "y2Vnq",
+          "name": "História",
+          "width": "fill_container",
+          "fill": "$sky",
+          "gap": 48,
+          "padding": [
+            80,
+            96
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "evb1x",
+              "name": "Mascote código",
+              "width": 300,
+              "height": 367,
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "recortes/mascote-codigo.png",
+                "mode": "contain"
+              }
+            },
+            {
+              "type": "frame",
+              "id": "uCMRN",
+              "name": "Citação",
+              "width": 720,
+              "fill": "$white",
+              "cornerRadius": 32,
+              "layout": "vertical",
+              "gap": 16,
+              "padding": [
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "IUtYv",
+                  "name": "Título",
+                  "fill": "$navy",
+                  "content": "Por que este projeto existe",
+                  "fontFamily": "Fredoka",
+                  "fontSize": 34,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "hxk9U",
+                  "name": "P1",
+                  "fill": "$ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Eu sou o Jaison. Eu queria dar vida nova a um notebook de 2011 para o meu sobrinho Benício (o Beni), e transformar uma máquina que ia ficar parada num computador que ele pudesse usar sozinho, com segurança: teclado e mouse de verdade, só programas e sites testados por mim, internet com filtro, regras de tempo e nada de senha para decorar.",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Nunito",
+                  "fontSize": 18,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "N5ijjw",
+                  "name": "P2",
+                  "fill": "$ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "No caminho, ganhou o perfil da minha sobrinha Bea, de 5 anos, com jogos e temas para ela, e depois uma versão para Windows. Está tudo aqui, para quem quiser fazer o mesmo.",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Nunito",
+                  "fontSize": 18,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "qBAbg",
+          "name": "Rodapé",
+          "width": "fill_container",
+          "fill": "$navy",
+          "layout": "vertical",
+          "gap": 20,
+          "padding": [
+            48,
+            96
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "EfK5s",
+              "name": "Linha",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "NVzwW",
+                  "name": "Logo",
+                  "width": 180,
+                  "height": 41,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "recortes/logo-texto.png",
+                    "mode": "contain"
+                  }
+                },
+                {
+                  "type": "frame",
+                  "id": "nwomv",
+                  "name": "Links",
+                  "gap": 24,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "m2c9Ux",
+                      "name": "Código no GitHub",
+                      "fill": "$white",
+                      "content": "Código no GitHub",
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "jYquF",
+                      "name": "Licença MIT",
+                      "fill": "$white",
+                      "content": "Licença MIT",
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "TfWSa",
+                      "name": "🇧🇷 Português · 🇺🇸 English",
+                      "fill": "$white",
+                      "content": "🇧🇷 Português · 🇺🇸 English",
+                      "fontFamily": "Nunito",
+                      "fontSize": 16,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "UqWmz",
+              "name": "Créditos",
+              "fill": "#C9DCEE",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Gratuito e de código aberto, sob a licença MIT. Nasceu do Cozy Kids Launcher, © 2026 Tristan e colaboradores. Os apps, jogos e sites pertencem aos seus autores e só são baixados ou abertos das fontes oficiais.",
+              "lineHeight": 1.5,
+              "fontFamily": "Nunito",
+              "fontSize": 15,
+              "fontWeight": "500"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "GJFPb",
+      "x": 1540,
+      "y": 0,
+      "name": "Site — celular (pt)",
+      "clip": true,
+      "width": 390,
+      "fill": "$sky",
+      "layout": "vertical",
+      "gap": 18,
+      "padding": [
+        16,
+        16,
+        0,
+        16
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "QLtL7",
+          "name": "Topo",
+          "width": "fill_container",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "GEpgE",
+              "name": "Logo",
+              "width": 150,
+              "height": 34,
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "recortes/logo-texto.png",
+                "mode": "contain"
+              }
+            },
+            {
+              "type": "frame",
+              "id": "w6duJ",
+              "name": "Idioma",
+              "fill": "$white",
+              "cornerRadius": 999,
+              "padding": [
+                6,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "YvCVm",
+                  "name": "EN",
+                  "fill": "$blue",
+                  "content": "English",
+                  "fontFamily": "Nunito",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Bx1NC",
+          "name": "Mascote",
+          "width": "fill_container",
+          "height": 300,
+          "fill": {
+            "type": "image",
+            "enabled": true,
+            "url": "recortes/logo-principal.png",
+            "mode": "contain"
+          }
+        },
+        {
+          "type": "text",
+          "id": "rW1Jf",
+          "name": "Título",
+          "fill": "$navy",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Um computador para crianças que equilibra aprender e brincar",
+          "lineHeight": 1.1,
+          "fontFamily": "Fredoka",
+          "fontSize": 34,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "bFCta",
+          "name": "Lead",
+          "fill": "$ink",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "O Benikids é um menu em tela cheia para crianças de 5 a 10 anos, no Windows e no Linux. A criança só encontra o que os pais aprovaram.",
+          "lineHeight": 1.5,
+          "fontFamily": "Nunito",
+          "fontSize": 17,
+          "fontWeight": "500"
+        },
+        {
+          "type": "frame",
+          "id": "vL2UX",
+          "name": "Como instalar",
+          "width": "fill_container",
+          "fill": "$blue",
+          "cornerRadius": 16,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "$bluedark",
+            "offset": {
+              "x": 0,
+              "y": 5
+            }
+          },
+          "padding": [
+            16,
+            24
+          ],
+          "justifyContent": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "uoTJ8",
+              "name": "Texto",
+              "fill": "$white",
+              "content": "Como instalar",
+              "fontFamily": "Nunito",
+              "fontSize": 18,
+              "fontWeight": "800"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Vnm7Z",
+          "name": "Área dos pais",
+          "width": "fill_container",
+          "fill": "$white",
+          "cornerRadius": 16,
+          "stroke": "$navy",
+          "strokeWidth": 2,
+          "padding": [
+            16,
+            24
+          ],
+          "justifyContent": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "WsA1E",
+              "name": "Texto",
+              "fill": "$navy",
+              "content": "Ver a área dos pais",
+              "fontFamily": "Nunito",
+              "fontSize": 18,
+              "fontWeight": "800"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "k4ZzB8",
+          "name": "Tela inicial",
+          "width": "fill_container",
+          "height": 200,
+          "fill": {
+            "type": "image",
+            "enabled": true,
+            "url": "../../site/img/tela-inicial.webp",
+            "mode": "cover"
+          },
+          "cornerRadius": [
+            18,
+            18,
+            0,
+            0
+          ],
+          "stroke": "$white",
+          "strokeWidth": 6
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "sky": {
+      "type": "color",
+      "value": "#ACDEF9"
+    },
+    "skysoft": {
+      "type": "color",
+      "value": "#E8F6FE"
+    },
+    "page": {
+      "type": "color",
+      "value": "#F7FBFF"
+    },
+    "blue": {
+      "type": "color",
+      "value": "#2A78B2"
+    },
+    "bluedark": {
+      "type": "color",
+      "value": "#1D5F93"
+    },
+    "navy": {
+      "type": "color",
+      "value": "#1E3E64"
+    },
+    "ink": {
+      "type": "color",
+      "value": "#16304F"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#46607E"
+    },
+    "yellow": {
+      "type": "color",
+      "value": "#FBB813"
+    },
+    "orange": {
+      "type": "color",
+      "value": "#F2622E"
+    },
+    "orangetext": {
+      "type": "color",
+      "value": "#B8441A"
+    },
+    "white": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "line": {
+      "type": "color",
+      "value": "#CFE6F5"
+    }
+  },
+  "fileToken": "36db1ba8-3be3-4b63-a419-b880bf100801"
+}
