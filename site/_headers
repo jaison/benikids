@@ -17,5 +17,5 @@
 /style.css
   Cache-Control: public, max-age=3600
 
-/favicon.svg
+/favicon.ico
   Cache-Control: public, max-age=604800

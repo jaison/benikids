@@ -9,8 +9,10 @@
 <link rel="alternate" hreflang="pt-BR" href="https://benikids.app/">
 <link rel="alternate" hreflang="en" href="https://benikids.app/en/">
 <link rel="alternate" hreflang="x-default" href="https://benikids.app/">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#6c4bff">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#acdef9">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Benikids">
 <meta property="og:locale" content="en_US">
@@ -31,7 +33,7 @@
 
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="/en/" aria-label="Benikids, home"><span class="brand-mark" aria-hidden="true">B</span>Benikids</a>
+    <a class="brand" href="/en/"><img src="/img/marca/logo.svg" width="196" height="42" alt="Benikids, home page"></a>
     <nav aria-label="Sections">
       <a href="#whats-inside">What's inside</a>
       <a href="#for-parents">For parents</a>
@@ -46,6 +48,8 @@
 
 <section class="hero">
   <div class="wrap">
+    <div class="hero-grid">
+      <div class="hero-text">
     <h1>A computer for kids that balances learning and play</h1>
     <p class="lead">Benikids is a full-screen menu for children aged 5 to 10, on Windows and Linux. Kids only see what their parents approved, and it's light enough to bring that old laptop forgotten in a drawer back to life.</p>
     <ul class="hero-tags">
@@ -58,15 +62,25 @@
       <a class="btn btn-primary" href="#install">How to install</a>
       <a class="btn btn-ghost" href="#for-parents">See the parents' area</a>
     </div>
-    <img class="shot" src="/img/tela-inicial.webp" width="1366" height="768"
+      </div>
+      <img class="hero-mascot" src="/img/marca/logo-principal.webp" width="622" height="733" alt="The Benikids mascot: a smiling brown-haired boy in a navy T-shirt, waving, above the colorful BENIKIDS logo.">
+    </div>
+    <div class="hero-shot">
+    <img src="/img/tela-inicial.webp" width="1366" height="768"
          alt="Benikids home screen with the spider hero theme: “E aí, Beni! O que você quer fazer?” (Hey Beni! What do you want to do?) and three cards, Learn, Hobbies and Play, each with a bar showing how much time is left today.">
+    </div>
   </div>
 </section>
 
-<section id="whats-inside" class="alt">
+<section id="whats-inside" class="sec-branco">
   <div class="wrap">
-    <h2>What's inside</h2>
-    <p class="section-intro">Made for kids to use on their own, with rules parents set once.</p>
+    <div class="sec-head">
+      <div>
+        <h2>What's inside</h2>
+        <p class="section-intro">Made for kids to use on their own, with rules parents set once.</p>
+      </div>
+      <img src="/img/marca/mascote-ideia.webp" width="246" height="463" alt="" loading="lazy">
+    </div>
     <ul class="features">
       <li><span class="emoji" aria-hidden="true">📚🎨🎮</span><h3>Learn, Hobbies and Play</h3><p>The child picks what to do, and each card shows how much time is left today.</p></li>
       <li><span class="emoji" aria-hidden="true">⏳</span><h3>Screen time per category</h3><p>Different for each weekday if you like. In the last seconds a countdown warns the child, and Benikids closes the game itself when time runs out.</p></li>
@@ -90,10 +104,15 @@
   </div>
 </section>
 
-<section id="for-parents">
+<section id="for-parents" class="sec-ceu">
   <div class="wrap">
-    <h2>For parents</h2>
-    <p class="section-intro">Everything parents set up lives in the <strong>parents' area</strong>, protected by a PIN only you know. (The screens are in Portuguese.)</p>
+    <div class="sec-head">
+      <div>
+        <h2>For parents</h2>
+        <p class="section-intro">Everything parents set up lives in the <strong>parents' area</strong>, protected by a PIN only you know. (The screens are in Portuguese.)</p>
+      </div>
+      <img class="acenando" src="/img/marca/mascote-acenando.webp" width="235" height="466" alt="" loading="lazy">
+    </div>
     <div class="gallery">
       <figure class="tall">
         <a href="/img/pais-configuracao-inicial.webp"><img class="shot" src="/img/pais-configuracao-inicial.webp" width="800" height="1052" loading="lazy"
@@ -124,24 +143,24 @@
   </div>
 </section>
 
-<section id="install" class="alt">
+<section id="install" class="sec-branco">
   <div class="wrap">
     <h2>Install</h2>
     <p class="section-intro">It's free. Pick the system on your child's computer.</p>
     <div class="install">
       <article class="card">
-        <h3>🪟 Windows 10 and 11</h3>
+        <h3><span class="selo" aria-hidden="true">🪟</span>Windows 10 and 11</h3>
         <ol class="steps">
           <li>Sign in to the <strong>child's Windows account</strong>. It doesn't need administrator rights.</li>
           <li>Download <strong>Beni-Windows.zip</strong>, unzip it and double-click <strong>Instalar Benikids.cmd</strong>.</li>
           <li>Accept installing the games and programs. A few of them ask <strong>once</strong> for the password of an administrator of the computer.</li>
           <li>The first time it opens, enter each child's name and the <strong>parents' PIN</strong>.</li>
         </ol>
-        <a class="btn btn-primary" href="https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip">⬇️ Download Beni-Windows.zip</a>
+        <a class="btn btn-download" href="https://nightly.link/jaison/benikids/workflows/menu-nativo/main/Beni-Windows.zip"><span aria-hidden="true">⬇️</span> Download Beni-Windows.zip</a>
         <p class="note">From then on, Benikids opens by itself when the child signs in to Windows (you can turn this off in the parents' area). <strong>To update</strong>, download the package again and run the installer: settings and screen time are kept.</p>
       </article>
       <article class="card">
-        <h3>🐧 Linux (Mint XFCE)</h3>
+        <h3><span class="selo" aria-hidden="true">🐧</span>Linux (Mint XFCE)</h3>
         <ol class="steps">
           <li>Install <strong>Linux Mint XFCE</strong>, create the child's user and turn on <strong>automatic login</strong>.</li>
           <li>In the child's account, open the Terminal and run:
@@ -156,7 +175,7 @@ cd benikids
   </div>
 </section>
 
-<section id="privacy">
+<section id="privacy" class="sec-suave">
   <div class="wrap">
     <h2>Privacy</h2>
     <p class="section-intro">Benikids runs on the computer itself. It only sends anonymous data to help the project, and parents decide.</p>
@@ -184,13 +203,16 @@ cd benikids
   </div>
 </section>
 
-<section id="story" class="alt">
+<section id="story" class="sec-ceu">
   <div class="wrap story">
+    <img src="/img/marca/mascote-codigo.webp" width="339" height="415" alt="" loading="lazy">
+    <div class="quote">
     <h2>Why this project exists</h2>
     <blockquote>
       <p>I'm <strong>Jaison</strong>. I wanted to give new life to a 2011 laptop for my nephew <strong>Benício</strong> (Beni), and turn a machine that would sit unused into a computer he could use on his own, safely: a real keyboard and mouse, only programs and sites I had tested, filtered internet, time rules and no passwords to remember.</p>
       <p>Along the way it gained a profile for my 5-year-old niece <strong>Bea</strong>, with games and themes for her, and later a Windows version. It's all here, for anyone who wants to do the same.</p>
     </blockquote>
+    </div>
   </div>
 </section>
 
@@ -198,11 +220,14 @@ cd benikids
 
 <footer>
   <div class="wrap">
+    <div class="foot-row">
+    <img src="/img/marca/logo.svg" width="170" height="37" alt="Benikids" loading="lazy">
     <ul>
       <li><a href="https://github.com/jaison/benikids">Source code on GitHub</a></li>
       <li><a href="https://github.com/jaison/benikids/blob/main/LICENSE">MIT license</a></li>
       <li><span aria-hidden="true">🇧🇷</span> <a href="/" hreflang="pt-BR" lang="pt-BR">Português</a> · <span aria-hidden="true">🇺🇸</span> English</li>
     </ul>
+    </div>
     <p>Free and open source, under the MIT license. Started from <a href="https://github.com/TrissyGE/cozy-kids-launcher">Cozy Kids Launcher</a>, © 2026 Tristan and contributors. The apps, games and sites belong to their authors and are only downloaded or opened from their official sources.</p>
   </div>
 </footer>
