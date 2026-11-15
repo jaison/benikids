@@ -32,26 +32,9 @@
   --radius: 24px;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
   --font-title: "Fredoka", var(--font-body);
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1a2b;
-    --ceu: #12294a;
-    --ceu-suave: #10223b;
-    --surface: #17345a;
-    --title: #ffffff;
-    --text: #e8f2fc;
-    --muted: #b5c9de;
-    --link: #8fcbf2;
-    --border: #284c78;
-    --chip: #1d3f68;
-    --code-bg: #08131f;
-    --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-    --deco: url("/img/marca/fundo-escuro.svg");
-  }
-}
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -73,7 +56,6 @@ img { max-width: 100%; height: auto; display: block; }
 a { color: var(--link); text-underline-offset: 3px; }
 a:hover { text-decoration-thickness: 2px; }
 :focus-visible { outline: 3px solid var(--laranja-escuro); outline-offset: 3px; border-radius: 8px; }
-@media (prefers-color-scheme: dark) { :focus-visible { outline-color: var(--amarelo); } }
 
 h1, h2, h3 { font-family: var(--font-title); font-weight: 600; line-height: 1.15; margin: 0 0 0.5em; color: var(--title); }
 h1 { font-size: clamp(2.1rem, 5.2vw, 3.6rem); line-height: 1.08; }
@@ -133,7 +115,6 @@ section { padding: 88px 0; }
 .sec-branco { background: var(--surface); }
 .sec-ceu { background: var(--ceu); }
 .sec-suave { background: var(--ceu-suave); }
-@media (prefers-color-scheme: dark) { .sec-branco { background: var(--bg); } }
 .section-intro { color: var(--muted); font-size: 1.15rem; max-width: 46rem; margin-bottom: 2.2em; }
 .sec-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .sec-head > div { max-width: 48rem; }
@@ -145,12 +126,7 @@ section { padding: 88px 0; }
 .features li:nth-child(2), .features li:nth-child(7) { border-top-color: var(--amarelo); }
 .features li:nth-child(3), .features li:nth-child(5) { border-top-color: var(--laranja); }
 .features li:nth-child(4), .features li:nth-child(8) { border-top-color: var(--marinho); }
-@media (prefers-color-scheme: dark) {
-  .features li { background: var(--surface); }
-  .features li:nth-child(4), .features li:nth-child(8) { border-top-color: #8fcbf2; }
-}
 .features .emoji { display: grid; place-items: center; min-width: 56px; width: fit-content; height: 56px; padding: 0 10px; border-radius: 16px; background: var(--surface); font-size: 1.6rem; line-height: 1; margin-bottom: 14px; }
-@media (prefers-color-scheme: dark) { .features .emoji { background: var(--chip); } }
 .features h3 { font-size: 1.25rem; margin-bottom: 0.4em; }
 .features p { margin: 0; color: var(--muted); }
 
@@ -160,7 +136,6 @@ section { padding: 88px 0; }
 .linux-extra ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .linux-extra li { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; }
 .linux-extra li::before { content: ""; flex: none; width: 20px; height: 20px; margin-top: 3px; border-radius: 50%; background: var(--amarelo) url("/img/marca/check.svg") center / 100% no-repeat; }
-@media (prefers-color-scheme: dark) { .linux-extra { background: var(--surface); } }
 
 /* Galeria */
 .gallery { display: grid; gap: 24px; grid-template-columns: minmax(0, 0.8fr) repeat(2, minmax(0, 1fr)); margin: 0; }
@@ -176,7 +151,6 @@ section { padding: 88px 0; }
 .install { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
 .card { background: var(--surface); border-radius: var(--radius); padding: 28px; min-width: 0; }
 .install .card { background: var(--ceu-suave); padding: 32px; border-radius: 28px; }
-@media (prefers-color-scheme: dark) { .install .card { background: var(--surface); } }
 .install h3 { font-size: 1.6rem; display: flex; align-items: center; gap: 12px; }
 .install h3 .selo { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 14px; background: var(--azul); font-size: 1.5rem; }
 .install .card + .card h3 .selo { background: var(--amarelo); }
@@ -209,7 +183,6 @@ pre code { font-size: 0.92rem; }
 
 /* Rodapé */
 footer { background: var(--marinho); color: #c9dcee; padding: 48px 0 56px; font-size: 0.95rem; }
-@media (prefers-color-scheme: dark) { footer { background: #08131f; } }
 footer a { color: #fff; font-weight: 700; }
 footer .foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 24px; margin-bottom: 20px; }
 footer .foot-row img { width: 170px; }
