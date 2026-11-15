@@ -63,6 +63,12 @@ class RuntimeDiagnosticsTests(unittest.TestCase):
             finally:
                 logger.close()
 
+    def test_cliente_recuperado_aceita_so_etapas_da_lista(self):
+        event = runtime_diagnostics.sanitize_event("cliente.recuperado", details={"etapa": "pin"})
+        self.assertEqual(event["details"], {"etapa": "pin"})
+        with self.assertRaises(ValueError):
+            runtime_diagnostics.sanitize_event("cliente.recuperado", details={"etapa": "Ana"})
+
     def test_recovery_attempt_is_bounded_and_privacy_safe(self):
         event = runtime_diagnostics.sanitize_event(
             "launcher.recovered",

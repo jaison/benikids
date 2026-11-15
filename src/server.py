@@ -1409,6 +1409,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if action == "api/cliente/voltar":
             self.json_response({"voltar": cliente_voltar_registrar()})
             return
+        if action == "api/cliente/evento":
+            # A página aberta pelo menu nativo achou a tela vazia e se recuperou
+            # (diagnóstico para os testes; só valores da lista de etapas).
+            body = self.read_json_body()
+            if body is None:
+                return
+            etapa = body.get("etapa") if isinstance(body, dict) else None
+            ok = isinstance(etapa, str) and log_runtime_event("cliente.recuperado", level="warning", etapa=etapa)
+            self.json_response({"status": "ok" if ok else "ignored"})
+            return
         if action == "api/feedback/speak":
             body = self.read_json_body()
             if body is None:

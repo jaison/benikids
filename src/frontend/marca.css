@@ -59,7 +59,8 @@ html:not(.access-high-contrast) #admin.screen {
 /* ---------- Botões: sem os enfeites do tema (quadrinhos, blocos, dourado...) ---------- */
 html body #admin .smallbtn,
 html body .pinoverlay .smallbtn,
-html body .install-overlay .smallbtn {
+html body .install-overlay .smallbtn,
+html body .cliente-espera .smallbtn {
   font-family:inherit !important; font-weight:700 !important; font-size:.95rem !important;
   letter-spacing:0 !important; text-transform:none !important;
   color:var(--marca-marinho) !important; background:#fff !important;
@@ -68,7 +69,8 @@ html body .install-overlay .smallbtn {
 }
 html body #admin .smallbtn:hover,
 html body .pinoverlay .smallbtn:hover,
-html body .install-overlay .smallbtn:hover { border-color:var(--marca-azul) !important; }
+html body .install-overlay .smallbtn:hover,
+html body .cliente-espera .smallbtn:hover { border-color:var(--marca-azul) !important; }
 html body #admin .smallbtn.save,
 html body .pinoverlay .smallbtn.save,
 html body .install-overlay .smallbtn.save {
