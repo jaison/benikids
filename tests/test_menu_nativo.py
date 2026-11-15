@@ -47,6 +47,15 @@ class ClienteNativoServidorTests(unittest.TestCase):
         _, agora, _ = self.request("/api/cliente/estado")
         self.assertEqual(agora["voltar"], antes["voltar"] + 1)
 
+    def test_evento_de_recuperacao_so_aceita_etapas_conhecidas(self):
+        with mock.patch.object(server_module, "log_runtime_event", return_value=True) as log:
+            status, corpo, _ = self.request("/api/cliente/evento", method="POST", body={"etapa": "config"})
+            self.assertEqual((status, corpo["status"]), (200, "ok"))
+            log.assert_called_once_with("cliente.recuperado", level="warning", etapa="config")
+            status, corpo, _ = self.request("/api/cliente/evento", method="POST", body={"etapa": 5})
+            self.assertEqual((status, corpo["status"]), (200, "ignored"))
+            self.assertEqual(log.call_count, 1)
+
     def test_voltar_recusa_outro_site(self):
         _, antes, _ = self.request("/api/cliente/estado")
         status, _, _ = self.request(
@@ -115,10 +124,25 @@ class ClienteNativoWebTests(unittest.TestCase):
         js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
         # pede o PIN logo que a configuração chega (sem PIN, espera carregar tudo)
         self.assertIn("if (!cfg.pinConfigured && !carregou) return;", js)
-        self.assertLess(js.index("abrirPais();\n  function depoisDeCarregar"), js.index("inicio.then(depoisDeCarregar"))
         # se o navegador não fechar depois de "voltar", a página aparece de novo
         self.assertIn("document.body.style.visibility = '';", js)
         self.assertIn("}, 5000);", js)
+
+    def test_vigia_recupera_a_tela_vazia(self):
+        # Windows, pacote 10.2: ao reabrir rápido, se o /api/config falhava ou travava
+        # uma vez, a aba ficava só com o fundo até o F5 (o aviso de erro fica na tela
+        # da criança, escondida nesta aba).
+        js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
+        self.assertIn("setInterval(vigiar, 1000);", js)
+        # sem configuração: carrega de novo; travou: recarrega como o F5
+        self.assertIn("if (!carregando) { registrar('config'); carregar(); return; }", js)
+        self.assertIn("location.reload();", js)
+        # PIN aceito antes da configuração voltar: o painel abre depois
+        self.assertIn("if (!temCfg()) { entrarDepois = true; return; }", js)
+        # nada na tela: pede o PIN de novo
+        self.assertIn("registrar('pin');", js)
+        # mensagem visível enquanto carrega, com saída para o menu
+        self.assertIn("Abrindo a área dos pais…", js)
 
     def test_pin_fica_acima_do_aviso_de_tempo_esgotado(self):
         import re

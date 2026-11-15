@@ -40,6 +40,8 @@ _SAFE_EVENT_FIELDS = {
     "setup.completed": {"profiles"},
     "telemetria.apagar": {"result"},
     "catalogo.sincronizado": set(),
+    # área dos pais aberta pelo menu nativo: a página se recuperou de uma tela vazia
+    "cliente.recuperado": {"etapa"},
     "request.rejected": {"statusCode"},
     "server.crashed": {"exceptionType"},
     "site_login.finished": {"result", "exceptionType"},
@@ -72,6 +74,7 @@ _SAFE_EXCEPTION_TYPES = {
 }
 _SAFE_RESULTS = {"already", "blocked", "failure", "missing", "redirect", "success"}
 _SAFE_SOURCES = {"legacy-main", "release"}
+_SAFE_ETAPAS = {"config", "pin", "painel", "voltar"}
 _SAFE_LIFECYCLE = STATE_REASONS
 _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.+-]{1,80}$")
 _VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -119,6 +122,8 @@ def _safe_detail(name, value):
     if name == "exceptionType":
         return value if value in _SAFE_EXCEPTION_TYPES else "OtherError"
     if name == "result" and value in _SAFE_RESULTS:
+        return value
+    if name == "etapa" and value in _SAFE_ETAPAS:
         return value
     if name == "source" and value in _SAFE_SOURCES:
         return value
