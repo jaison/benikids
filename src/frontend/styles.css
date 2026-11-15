@@ -273,6 +273,8 @@
   #timerBadge.warning { background:#fff3e0; color:#e65100; }
   #timerBadge.expired { background:#ffebee; color:#c00; }
   .timeroverlay { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:250; }
+  /* O PIN fica acima do "Acabou o tempo!": o botão Sair dele pede o PIN. */
+  #pin.pinoverlay { z-index:260; }
   .timerbox h2 { margin:0 0 12px; }
   .timerbox .emoji { font-size:3rem; }
   .availability-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:var(--space-2); margin-top:var(--space-4); }

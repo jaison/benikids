@@ -105,6 +105,28 @@ class ClienteNativoWebTests(unittest.TestCase):
         self.assertIn("if (!doCliente) return;", js)
         self.assertIn("/api/cliente/voltar", js)
 
+    def test_avisos_de_tempo_nao_cobrem_o_pin_na_aba_do_menu_nativo(self):
+        # Com o tempo esgotado, o "Acabou o tempo!" da página (z-index 250) cobria o
+        # PIN e a área dos pais, com o tema da criança; o aviso é do menu nativo.
+        js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
+        self.assertIn("html.beni-cliente #timerBlock, html.beni-cliente #timerWarning { display:none !important; }", js)
+
+    def test_pin_aparece_sem_esperar_o_carregamento_e_tela_nao_fica_vazia(self):
+        js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
+        # pede o PIN logo que a configuração chega (sem PIN, espera carregar tudo)
+        self.assertIn("if (!cfg.pinConfigured && !carregou) return;", js)
+        self.assertLess(js.index("abrirPais();\n  function depoisDeCarregar"), js.index("inicio.then(depoisDeCarregar"))
+        # se o navegador não fechar depois de "voltar", a página aparece de novo
+        self.assertIn("document.body.style.visibility = '';", js)
+        self.assertIn("}, 5000);", js)
+
+    def test_pin_fica_acima_do_aviso_de_tempo_esgotado(self):
+        import re
+        css = (ROOT / "src" / "frontend" / "styles.css").read_text(encoding="utf-8")
+        timer = int(re.search(r"\.timeroverlay \{[^}]*z-index:(\d+)", css).group(1))
+        pin = int(re.search(r"#pin\.pinoverlay \{ z-index:(\d+)", css).group(1))
+        self.assertGreater(pin, timer)
+
     def test_instalador_leva_o_binario_quando_existe(self):
         texto = (ROOT / "instalar.sh").read_text(encoding="utf-8")
         self.assertIn('"$REPO/cliente/bin/beni-menu"', texto)
