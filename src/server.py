@@ -1416,7 +1416,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if body is None:
                 return
             etapa = body.get("etapa") if isinstance(body, dict) else None
-            ok = isinstance(etapa, str) and log_runtime_event("cliente.recuperado", level="warning", etapa=etapa)
+            detalhes = {"etapa": etapa}
+            erro = body.get("erro") if isinstance(body, dict) else None
+            if isinstance(erro, str) and erro.strip():
+                detalhes["erro"] = erro[:600]
+            ok = isinstance(etapa, str) and log_runtime_event("cliente.recuperado", level="warning", **detalhes)
             self.json_response({"status": "ok" if ok else "ignored"})
             return
         if action == "api/feedback/speak":
@@ -2296,8 +2300,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
+class Servidor(http.server.ThreadingHTTPServer):
+    # Cada pedido abre uma conexão nova (HTTP/1.0), e a página pede uns 30 arquivos
+    # de uma vez ao abrir. Com a fila padrão (5), o Windows recusa as conexões que
+    # sobram quando o servidor demora a aceitar, e o arquivo não carrega (a tela
+    # sai sem a marca ou para). A fila maior absorve esses picos.
+    request_queue_size = 128
+
+
 def create_server(host="127.0.0.1", port=PORT):
-    return http.server.ThreadingHTTPServer((host, port), Handler)
+    return Servidor((host, port), Handler)
 
 
 def main():

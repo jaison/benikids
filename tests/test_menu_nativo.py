@@ -52,9 +52,17 @@ class ClienteNativoServidorTests(unittest.TestCase):
             status, corpo, _ = self.request("/api/cliente/evento", method="POST", body={"etapa": "config"})
             self.assertEqual((status, corpo["status"]), (200, "ok"))
             log.assert_called_once_with("cliente.recuperado", level="warning", etapa="config")
+            status, corpo, _ = self.request("/api/cliente/evento", method="POST", body={"etapa": "render", "erro": "x is not defined"})
+            self.assertEqual(status, 200)
+            log.assert_called_with("cliente.recuperado", level="warning", etapa="render", erro="x is not defined")
+            log.reset_mock()
             status, corpo, _ = self.request("/api/cliente/evento", method="POST", body={"etapa": 5})
             self.assertEqual((status, corpo["status"]), (200, "ignored"))
-            self.assertEqual(log.call_count, 1)
+            log.assert_not_called()
+
+    def test_fila_de_conexoes_aguenta_a_abertura_da_pagina(self):
+        # a página pede ~30 arquivos de uma vez; com a fila padrão (5) o Windows recusa
+        self.assertGreaterEqual(server_module.Servidor.request_queue_size, 64)
 
     def test_voltar_recusa_outro_site(self):
         _, antes, _ = self.request("/api/cliente/estado")
@@ -129,20 +137,41 @@ class ClienteNativoWebTests(unittest.TestCase):
         self.assertIn("}, 5000);", js)
 
     def test_vigia_recupera_a_tela_vazia(self):
-        # Windows, pacote 10.2: ao reabrir rápido, se o /api/config falhava ou travava
-        # uma vez, a aba ficava só com o fundo até o F5 (o aviso de erro fica na tela
-        # da criança, escondida nesta aba).
+        # Windows, pacotes 10.2/10.3: um arquivo da página ou o /api/config falhando na
+        # abertura deixava a aba só com o fundo (ou o PIN no tema) até o F5.
         js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
         self.assertIn("setInterval(vigiar, 1000);", js)
-        # sem configuração: carrega de novo; travou: recarrega como o F5
-        self.assertIn("if (!carregando) { registrar('config'); carregar(); return; }", js)
+        # o tempo conta desde a PRIMEIRA falha: carregar() não reinicia o relógio
+        self.assertNotIn("cargaDesde = Date.now()", js)
+        self.assertIn("if (Date.now() - semCfgDesde > 6000 || falhasSeguidas >= 3) {", js)
+        self.assertIn("espera.hidden = Date.now() - semCfgDesde < 2000;", js)
+        # recarrega como o F5, no máximo 3 vezes por aba
+        self.assertIn("const MAX_RECARGAS = 3;", js)
         self.assertIn("location.reload();", js)
+        # arquivo da página que não carregou (capturado no index.html)
+        self.assertIn("recarregar('recurso'", js)
         # PIN aceito antes da configuração voltar: o painel abre depois
         self.assertIn("if (!temCfg()) { entrarDepois = true; return; }", js)
-        # nada na tela: pede o PIN de novo
         self.assertIn("registrar('pin');", js)
-        # mensagem visível enquanto carrega, com saída para o menu
+        # o erro real vai para o diagnóstico, sem textos entre aspas
+        self.assertIn("dados.erro = textoDoErro(erro);", js)
         self.assertIn("Abrindo a área dos pais…", js)
+
+    def test_index_guarda_os_arquivos_que_nao_carregaram_antes_de_tudo(self):
+        html = (ROOT / "src" / "index.html").read_text(encoding="utf-8")
+        captura = html.index('<script src="/frontend/recursos.js"></script>')
+        self.assertLess(captura, html.index('<link rel="stylesheet"'))
+        js = (ROOT / "src" / "frontend" / "recursos.js").read_text(encoding="utf-8")
+        self.assertIn("window.beniRecursosFalhos = [];", js)
+        self.assertIn("window.addEventListener('error', function (e) {", js)
+        self.assertIn("recursos.js marca.css", (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8"))
+
+    def test_erro_ao_desenhar_nao_apaga_a_configuracao(self):
+        js = (ROOT / "src" / "frontend" / "launcher-ui.js").read_text(encoding="utf-8")
+        self.assertIn("erro.etapa='render';", js)
+        self.assertIn("if(!cfg||!e||e.etapa!=='render'){", js)
+        # uma carga por vez
+        self.assertIn("if(bootstrapPromise) return bootstrapPromise;", js)
 
     def test_pin_fica_acima_do_aviso_de_tempo_esgotado(self):
         import re
@@ -150,6 +179,17 @@ class ClienteNativoWebTests(unittest.TestCase):
         timer = int(re.search(r"\.timeroverlay \{[^}]*z-index:(\d+)", css).group(1))
         pin = int(re.search(r"#pin\.pinoverlay \{ z-index:(\d+)", css).group(1))
         self.assertGreater(pin, timer)
+
+    def test_pin_nao_e_campo_de_senha(self):
+        # type=password fazia o Edge oferecer "Salvar senha" com o PIN dos pais
+        for nome, ids in (("index.html", ("pinInput", "timerBlockPin", "cfgPin", "cfgPinConfirm")),
+                          ("configurar.html", ("pin", "pin2")), ("browser.html", ("timerBlockPin",))):
+            html = (ROOT / "src" / nome).read_text(encoding="utf-8")
+            for i in ids:
+                self.assertIn(f'<input id="{i}" type="text" class="campo-pin" inputmode="numeric" autocomplete="off"', html, (nome, i))
+            self.assertNotIn('type="password"', html, nome)
+        css = (ROOT / "src" / "frontend" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn(".campo-pin{-webkit-text-security:disc}", css)
 
     def test_instalador_leva_o_binario_quando_existe(self):
         texto = (ROOT / "instalar.sh").read_text(encoding="utf-8")

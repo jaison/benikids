@@ -6,6 +6,7 @@
 <title>Cozy Kids Launcher</title>
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" type="image/png" sizes="192x192" href="/marca/icone-192.png">
+<script src="/frontend/recursos.js"></script>
 <link rel="stylesheet" href="/frontend/design-system.css">
 <link rel="stylesheet" href="/frontend/styles.css">
 <link rel="stylesheet" href="/frontend/cozy-temas.css">
@@ -35,7 +36,7 @@
 <div id="pin" class="pinoverlay hidden">
   <div class="pinbox">
     <h2 id="pinTitle">Digite o PIN</h2>
-    <input id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="4 a 6 dígitos" onkeydown="if(event.key==='Enter')submitPin()">
+    <input id="pinInput" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6" placeholder="4 a 6 dígitos" onkeydown="if(event.key==='Enter')submitPin()">
     <div class="err" id="pinErr"></div>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:8px;">
       <button id="pinCancelBtn" class="smallbtn" data-local-icon="back" onclick="cancelPin()">Voltar</button>
@@ -123,7 +124,7 @@
     <div class="emoji" data-local-icon="timer" data-icon-only aria-label="Acabou o tempo!"></div>
     <h2 id="timerBlockTitle">Acabou o tempo!</h2>
     <p id="timerBlockBody">Peça para a mamãe ou o papai para continuar brincando.</p>
-    <input id="timerBlockPin" type="password" inputmode="numeric" maxlength="6" placeholder="4 a 6 dígitos" onkeydown="if(event.key==='Enter')extendFromBlock()">
+    <input id="timerBlockPin" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6" placeholder="4 a 6 dígitos" onkeydown="if(event.key==='Enter')extendFromBlock()">
     <div class="err" id="timerBlockErr"></div>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
       <button class="smallbtn" onclick="extendFromBlock(15)">+15</button>
@@ -475,8 +476,8 @@
           <section id="adminSectionSystem" class="admin-section" data-admin-panel="system" aria-labelledby="adminNavSystem" hidden>
             <h3 class="section-heading" tabindex="-1"></h3>
             <div class="row2" style="grid-template-columns:1fr 1fr 1fr 1fr; margin-top:8px;">
-              <input id="cfgPin" type="password" inputmode="numeric" maxlength="6" placeholder="Definir PIN">
-              <input id="cfgPinConfirm" type="password" inputmode="numeric" maxlength="6" placeholder="Repita">
+              <input id="cfgPin" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6" placeholder="Definir PIN">
+              <input id="cfgPinConfirm" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6" placeholder="Repita">
               <button class="smallbtn" id="setPinBtn" data-local-icon="lock" onclick="savePin()">Definir PIN</button>
               <button class="smallbtn" id="removePinBtn" onclick="removePin()">Remover PIN</button>
             </div>

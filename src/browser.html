@@ -39,6 +39,7 @@
   .timerbox button:focus-visible, .timerbox input:focus-visible, #closeBtn:focus-visible { outline:3px solid #b8441a; outline-offset:3px; }
   .timerbox .emoji { font-size:3rem; }
   .hidden { display:none !important; }
+.campo-pin{-webkit-text-security:disc}.campo-pin.mostrar{-webkit-text-security:none}
 </style>
 </head>
 <body>
@@ -70,7 +71,7 @@
     <div class="emoji">⏰</div>
     <h2>Acabou o tempo!</h2>
     <p>Peça para a mamãe ou o papai para continuar brincando.</p>
-    <input id="timerBlockPin" type="password" inputmode="numeric" maxlength="6" placeholder="4 a 6 dígitos">
+    <input id="timerBlockPin" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6" placeholder="4 a 6 dígitos">
     <div id="timerBlockErr" style="color:#b3261e; font-weight:600; min-height:24px;"></div>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
       <button style="border:0; border-radius:18px; padding:10px 18px; font-size:1rem; font-weight:700; background:#b8441a; color:#fff; box-shadow:0 4px 0 #8a3313; cursor:pointer;" onclick="extendFromBlock(15)">+15</button>
@@ -83,6 +84,9 @@
   </div>
 </div>
 <script>
+// Navegador sem -webkit-text-security (Firefox antigo): o PIN volta a ser password
+// para nunca aparecer às claras.
+if(!(window.CSS&&CSS.supports&&CSS.supports('-webkit-text-security','disc'))){document.querySelectorAll('input.campo-pin').forEach(function(c){c.type='password';});}
 const browserParams = new URLSearchParams(location.search);
 const tileId = browserParams.get('tile') || '';
 const activityToken = browserParams.get('activity') || '';

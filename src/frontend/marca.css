@@ -73,13 +73,15 @@ html body .install-overlay .smallbtn:hover,
 html body .cliente-espera .smallbtn:hover { border-color:var(--marca-azul) !important; }
 html body #admin .smallbtn.save,
 html body .pinoverlay .smallbtn.save,
-html body .install-overlay .smallbtn.save {
+html body .install-overlay .smallbtn.save,
+html body .cliente-espera .smallbtn.save {
   color:#fff !important; background:var(--marca-laranja-escuro) !important;
   border-color:var(--marca-laranja-escuro) !important; box-shadow:0 4px 0 #8a3313 !important;
 }
 html body #admin .smallbtn.save:hover,
 html body .pinoverlay .smallbtn.save:hover,
-html body .install-overlay .smallbtn.save:hover { background:#a03a15 !important; }
+html body .install-overlay .smallbtn.save:hover,
+html body .cliente-espera .smallbtn.save:hover { background:#a03a15 !important; }
 html body #admin .smallbtn.danger { color:#9b1c31 !important; border-color:#e3a3ad !important; }
 html body #admin .smallbtn:disabled { opacity:.55; box-shadow:none !important; }
 
