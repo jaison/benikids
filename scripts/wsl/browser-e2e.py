@@ -1274,6 +1274,8 @@ def run_accessibility_scenarios(browser, artifacts):
         "button.tagName==='BUTTON' && button.type==='button' && button.getAttribute('aria-label'))",
         "Theme choices are not exposed as labelled buttons",
     )
+    # Ordem: benikids (1º), rosa (tema atual), lila.
+    browser.key_press("Tab")
     browser.key_press("Tab")
     browser.key_press("Enter")
     browser.wait_for(
