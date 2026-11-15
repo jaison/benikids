@@ -41,7 +41,7 @@
   const estilo = document.createElement('style');
   estilo.textContent = 'html.beni-cliente #kids, html.beni-cliente .cornerbar, html.beni-cliente #clockBadge,'
     + ' html.beni-cliente #batteryBadge, html.beni-cliente #timerBadge, html.beni-cliente .nav { visibility:hidden !important; }'
-    + ' html.beni-cliente #timerBlock, html.beni-cliente #timerWarning { display:none !important; }';
+    + ' html.beni-cliente #timerBlock, html.beni-cliente #timerWarning, html.beni-cliente #usageMessage { display:none !important; }';
   document.head.appendChild(estilo);
 
   const fecharAdminOriginal = window.closeAdmin;

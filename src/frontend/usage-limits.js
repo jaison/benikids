@@ -206,6 +206,8 @@ function maybeShowUsageExpiry(){
   usageLastExpiryShown=expiry.at;
   try{ sessionStorage.setItem('cozyUsageExpiryShown',String(expiry.at)); }catch(e){}
   if(!document.getElementById('admin').classList.contains('hidden')) return;
+  // Na aba aberta pelo menu nativo (só PIN e área dos pais) quem avisa é o menu nativo.
+  if(document.documentElement.classList.contains('beni-cliente')) return;
   const [title,body]=usageLimitTexts(expiry.limitedBy==='total'?'daily_limit':'category_limit',expiry.category);
   showUsageMessage(title,body);
 }

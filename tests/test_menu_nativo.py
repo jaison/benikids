@@ -109,7 +109,7 @@ class ClienteNativoWebTests(unittest.TestCase):
         # Com o tempo esgotado, o "Acabou o tempo!" da página (z-index 250) cobria o
         # PIN e a área dos pais, com o tema da criança; o aviso é do menu nativo.
         js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
-        self.assertIn("html.beni-cliente #timerBlock, html.beni-cliente #timerWarning { display:none !important; }", js)
+        self.assertIn("html.beni-cliente #timerBlock, html.beni-cliente #timerWarning, html.beni-cliente #usageMessage { display:none !important; }", js)
 
     def test_pin_aparece_sem_esperar_o_carregamento_e_tela_nao_fica_vazia(self):
         js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
