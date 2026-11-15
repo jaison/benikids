@@ -372,6 +372,7 @@ function shutdownNow(){ if(cfg.pinConfigured){ requestPin(() => { fetch('/shutdo
 function exitKids(){ if(cfg.pinConfigured){ requestPin(() => { fetch('/exit-kids',{method:'POST'}).catch(()=>{}); }); return; } fetch('/exit-kids',{method:'POST'}).catch(()=>{}); }
 
 const ALL_THEMES=[
+  {id:'benikids',type:'world',img:'/themes/benikids.svg'},
   {id:'rosa',type:'color',gradient:'linear-gradient(180deg,#ffd6e8,#ffeef6)'},
   {id:'lila',type:'color',gradient:'linear-gradient(180deg,#e3d6ff,#f4eeff)'},
   {id:'blau',type:'color',gradient:'linear-gradient(180deg,#d7ebff,#eef7ff)'},
@@ -395,9 +396,9 @@ const ALL_THEMES=[
   {id:'custom',type:'color',gradient:'linear-gradient(180deg,#ffd6e8,#ffeef6)'}
 ];
 const THEME_LABELS={
-  de:{rosa:'Rosa',lila:'Lila',blau:'Blau',gruen:'Grün',regenbogen:'Regenbogen',wald:'Wald',weltraum:'Weltraum',ocean:'Ozean',dinosaurier:'Dinosaurier',baustelle:'Baustelle',prinzessin:'Prinzessin',bauernhof:'Bauernhof',katzen:'Katzen',hunde:'Hunde',heroi:'Spinnenheld',blocos:'Bausteine',ninja:'Ninja-Dojo',gelo:'Eisreich',casinha:'Puppenhaus',castelo:'Zauberschloss',custom:'Eigene Farben'},
-  en:{rosa:'Pink',lila:'Purple',blau:'Blue',gruen:'Green',regenbogen:'Rainbow',wald:'Forest',weltraum:'Space',ocean:'Ocean',dinosaurier:'Dinosaurs',baustelle:'Construction',prinzessin:'Princess',bauernhof:'Farm',katzen:'Cats',hunde:'Dogs',heroi:'Herói Aranha',blocos:'Blocos de Montar',ninja:'Dojo Ninja',gelo:'Reino do Gelo',casinha:'Casinha Mágica',castelo:'Castelo Encantado',custom:'Custom'},
-  pt:{rosa:'Rosa',lila:'Lilás',blau:'Azul',gruen:'Verde',regenbogen:'Arco-íris',wald:'Floresta',weltraum:'Espaço',ocean:'Oceano',dinosaurier:'Dinossauros',baustelle:'Construção',prinzessin:'Princesa',bauernhof:'Fazenda',katzen:'Gatinhos',hunde:'Cachorrinhos',heroi:'Herói Aranha',blocos:'Blocos de Montar',ninja:'Dojo Ninja',gelo:'Reino do Gelo',casinha:'Casinha Mágica',castelo:'Castelo Encantado',custom:'Cores próprias'}
+  de:{benikids:'Benikids',rosa:'Rosa',lila:'Lila',blau:'Blau',gruen:'Grün',regenbogen:'Regenbogen',wald:'Wald',weltraum:'Weltraum',ocean:'Ozean',dinosaurier:'Dinosaurier',baustelle:'Baustelle',prinzessin:'Prinzessin',bauernhof:'Bauernhof',katzen:'Katzen',hunde:'Hunde',heroi:'Spinnenheld',blocos:'Bausteine',ninja:'Ninja-Dojo',gelo:'Eisreich',casinha:'Puppenhaus',castelo:'Zauberschloss',custom:'Eigene Farben'},
+  en:{benikids:'Benikids',rosa:'Pink',lila:'Purple',blau:'Blue',gruen:'Green',regenbogen:'Rainbow',wald:'Forest',weltraum:'Space',ocean:'Ocean',dinosaurier:'Dinosaurs',baustelle:'Construction',prinzessin:'Princess',bauernhof:'Farm',katzen:'Cats',hunde:'Dogs',heroi:'Herói Aranha',blocos:'Blocos de Montar',ninja:'Dojo Ninja',gelo:'Reino do Gelo',casinha:'Casinha Mágica',castelo:'Castelo Encantado',custom:'Custom'},
+  pt:{benikids:'Benikids',rosa:'Rosa',lila:'Lilás',blau:'Azul',gruen:'Verde',regenbogen:'Arco-íris',wald:'Floresta',weltraum:'Espaço',ocean:'Oceano',dinosaurier:'Dinossauros',baustelle:'Construção',prinzessin:'Princesa',bauernhof:'Fazenda',katzen:'Gatinhos',hunde:'Cachorrinhos',heroi:'Herói Aranha',blocos:'Blocos de Montar',ninja:'Dojo Ninja',gelo:'Reino do Gelo',casinha:'Casinha Mágica',castelo:'Castelo Encantado',custom:'Cores próprias'}
 };
 function interfaceLanguage(){ const language=(cfg&&cfg.language)||'en'; return language==='de'||language==='pt'?language:'en'; }
 function themeLabel(id){ return THEME_LABELS[interfaceLanguage()][id]||id; }

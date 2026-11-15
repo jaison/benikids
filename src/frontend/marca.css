@@ -1,0 +1,148 @@
+/* Identidade visual do Benikids (a mesma do site benikids.app) nas telas dos pais.
+
+   A tela da criança segue o tema que os pais escolheram (cozy-temas.css, styles.css).
+   A área dos pais, o PIN e as janelas de confirmação usam sempre as cores da marca,
+   para os pais reconhecerem o Benikids em qualquer tema. A prévia do tema
+   (.launcher-preview) continua com as cores do tema escolhido.
+
+   Paleta: azul #2a78b2, azul-escuro #1d5f93, marinho #1e3e64, amarelo #fbb813,
+   laranja #f2622e, laranja-escuro #b8441a (botões com texto branco, contraste AA),
+   céu #acdef9, céu-suave #e8f6fe. Títulos em Fredoka (themes/fonts). */
+
+@font-face { font-family:'Fredoka'; src:url('/themes/fonts/Fredoka.ttf') format('truetype'); font-weight:300 700; font-display:swap; }
+
+:root {
+  --marca-azul:#2a78b2;
+  --marca-azul-escuro:#1d5f93;
+  --marca-marinho:#1e3e64;
+  --marca-amarelo:#fbb813;
+  --marca-laranja:#f2622e;
+  --marca-laranja-escuro:#b8441a;
+  --marca-ceu:#acdef9;
+  --marca-ceu-suave:#e8f6fe;
+  --marca-borda:#bcdcf0;
+  --marca-texto-suave:#46607e;
+  --marca-fonte-titulo:'Fredoka',system-ui,sans-serif;
+}
+
+/* ---------- Tokens da marca no lugar dos do tema ---------- */
+html:not(.access-high-contrast) #admin,
+html:not(.access-high-contrast) .pinoverlay,
+html:not(.access-high-contrast) .install-overlay {
+  --text:var(--marca-marinho);
+  --btn:var(--marca-azul-escuro);
+  --btn-text:#fff;
+  --card:#fff;
+  --smallbtn-bg:#fff;
+  --input-border:var(--marca-borda);
+  --rec-shadow:rgba(30,62,100,.1);
+  --shadow:0 12px 32px rgba(30,62,100,.16);
+  --surface-panel:#fff;
+  --surface-solid:#fff;
+  color:var(--marca-marinho);
+}
+
+/* Fundo de céu atrás da área dos pais (cobre o fundo do tema da criança). */
+html:not(.access-high-contrast) #admin.screen {
+  background:var(--marca-ceu) url('/themes/benikids.svg') center/cover no-repeat;
+}
+
+/* Títulos em Fredoka */
+#admin h2, #admin h3, #admin h4,
+.pinbox h2, .confirm-box h2, .install-box h2, .profile-picker h2, .first-run-box h2 {
+  font-family:var(--marca-fonte-titulo); font-weight:600; letter-spacing:0; color:var(--marca-marinho);
+}
+.admin-header h2 { font-size:1.8rem; }
+.admin-header .admin-marca { display:flex; align-items:center; gap:14px; min-width:0; }
+.admin-header .admin-marca img { height:40px; width:auto; flex:none; }
+
+/* ---------- Botões: sem os enfeites do tema (quadrinhos, blocos, dourado...) ---------- */
+html body #admin .smallbtn,
+html body .pinoverlay .smallbtn,
+html body .install-overlay .smallbtn {
+  font-family:inherit !important; font-weight:700 !important; font-size:.95rem !important;
+  letter-spacing:0 !important; text-transform:none !important;
+  color:var(--marca-marinho) !important; background:#fff !important;
+  border:2px solid var(--marca-borda) !important; border-radius:14px !important;
+  box-shadow:0 3px 0 rgba(30,62,100,.12) !important;
+}
+html body #admin .smallbtn:hover,
+html body .pinoverlay .smallbtn:hover,
+html body .install-overlay .smallbtn:hover { border-color:var(--marca-azul) !important; }
+html body #admin .smallbtn.save,
+html body .pinoverlay .smallbtn.save,
+html body .install-overlay .smallbtn.save {
+  color:#fff !important; background:var(--marca-laranja-escuro) !important;
+  border-color:var(--marca-laranja-escuro) !important; box-shadow:0 4px 0 #8a3313 !important;
+}
+html body #admin .smallbtn.save:hover,
+html body .pinoverlay .smallbtn.save:hover,
+html body .install-overlay .smallbtn.save:hover { background:#a03a15 !important; }
+html body #admin .smallbtn.danger { color:#9b1c31 !important; border-color:#e3a3ad !important; }
+html body #admin .smallbtn:disabled { opacity:.55; box-shadow:none !important; }
+
+/* Foco visível em laranja-escuro (contraste 3:1 no branco e no céu) */
+#admin :is(button,input,select,textarea,summary,a):focus-visible,
+.pinoverlay :is(button,input):focus-visible,
+.install-overlay :is(button,input,select,textarea):focus-visible {
+  outline:3px solid var(--marca-laranja-escuro) !important; outline-offset:3px !important;
+}
+
+/* ---------- Área dos pais ---------- */
+#admin .panel.admin-shell { border-radius:28px; box-shadow:0 18px 48px rgba(30,62,100,.18); }
+#admin .admin-header { border-bottom:2px solid var(--marca-ceu-suave); }
+#admin .admin-tab { color:var(--marca-marinho); border-radius:14px; }
+#admin .admin-tab:hover { background:var(--marca-ceu-suave); }
+#admin .admin-tab.active {
+  background:var(--marca-ceu-suave); border-color:transparent; box-shadow:inset 4px 0 0 var(--marca-azul);
+}
+#admin .overview-card, #admin .activity-panel, #admin .profile-list-panel, #admin .profile-editor,
+#admin .profile-create, #admin .backup-panel, #admin .admin-bulk-toolbar, #admin .schedule-panel,
+#admin .world-theme-options, #admin .ui-state:not(.ui-state-error):not(.ui-state-success) {
+  border:2px solid var(--marca-ceu-suave); background:#fff; border-radius:20px;
+}
+#admin .overview-card { border-top:6px solid var(--marca-azul); }
+#admin .overview-grid .overview-card:nth-child(2) { border-top-color:var(--marca-amarelo); }
+#admin .overview-grid .overview-card:nth-child(3) { border-top-color:var(--marca-laranja); }
+#admin .overview-card:hover { box-shadow:0 10px 24px rgba(30,62,100,.12); }
+#admin .overview-value { font-family:var(--marca-fonte-titulo); font-weight:600; color:var(--marca-marinho); }
+#admin .activity-metric { background:var(--marca-ceu-suave); border-radius:16px; }
+#admin .activity-item, #admin .profile-card { border:2px solid var(--marca-ceu-suave); }
+#admin .profile-card.active { border-color:var(--marca-azul); }
+#admin .profile-badge { background:var(--marca-azul-escuro); color:#fff; }
+#admin input, #admin select, #admin textarea { border:2px solid var(--marca-borda); border-radius:12px; }
+#admin label.chk { border:2px solid var(--marca-ceu-suave); border-radius:12px; }
+#admin input[type=checkbox], #admin input[type=radio],
+.install-overlay input[type=checkbox] { accent-color:var(--marca-azul-escuro); }
+/* #888 em fundo branco não passa no contraste AA */
+#admin .muted, .pinbox .hint, .install-overlay .muted { color:var(--marca-texto-suave); }
+#admin .rec-card { border:2px solid var(--marca-ceu-suave); box-shadow:none; }
+#admin .rec-card .desc { color:var(--marca-texto-suave); }
+
+/* ---------- PIN e janelas ---------- */
+.pinoverlay, .install-overlay { background:rgba(30,62,100,.45); }
+.pinbox, .confirm-box, .install-box, .profile-picker, .first-run-box {
+  border-radius:28px; box-shadow:0 18px 48px rgba(30,62,100,.28);
+}
+.pinbox { border-top:8px solid var(--marca-azul); }
+.pinbox::before {
+  content:''; display:block; width:96px; height:96px; margin:-8px auto 6px;
+  background:url('/marca/icone-192.png') center/contain no-repeat;
+}
+#updating .pinbox::before { display:none; }
+.pinbox input { border:2px solid var(--marca-borda); border-radius:14px; color:var(--marca-marinho); }
+.pinbox .err { color:#b3261e; }
+.theme-thumb.active { border-color:var(--marca-laranja-escuro); }
+
+/* Alto contraste: nada de fundo decorado */
+html.access-high-contrast #admin.screen { background:#fff; }
+html.access-high-contrast .pinbox::before { display:none; }
+@media (forced-colors: active) {
+  #admin.screen { background:Canvas; }
+  .pinbox::before { display:none; }
+}
+@media (max-width:900px), (max-height:700px) {
+  .admin-header h2 { font-size:1.4rem; }
+  .admin-header .admin-marca img { height:30px; }
+  .pinbox::before { width:64px; height:64px; margin-top:-12px; }
+}

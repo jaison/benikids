@@ -1656,6 +1656,10 @@ install -m 0644 "$SRC_DIR/controles.py" "$APP_ROOT/controles.py"
 install -m 0644 "$SRC_DIR/inicio_automatico.py" "$APP_ROOT/inicio_automatico.py"
 install -m 0644 "$SRC_DIR/telemetria.py" "$APP_ROOT/telemetria.py"
 install -m 0644 "$SRC_DIR/configurar.html" "$APP_ROOT/configurar.html"
+# Benikids: logo, mascote e ícones da marca (área dos pais, configuração, favicon)
+install -m 0644 "$SRC_DIR/favicon.ico" "$APP_ROOT/favicon.ico"
+install -d -m 0755 "$APP_ROOT/marca"
+install -m 0644 "$SRC_DIR"/marca/* "$APP_ROOT/marca/"
 install -m 0644 "$SRC_DIR/catalogo_windows.py" "$APP_ROOT/catalogo_windows.py"
 install -d -m 0755 "$APP_ROOT/catalogo"
 install -m 0644 "$SRC_DIR/catalogo/windows.json" "$APP_ROOT/catalogo/windows.json"
@@ -1671,7 +1675,7 @@ install -m 0644 "$SRC_DIR/frontend/locales/de.json" "$FRONTEND_LOCALES_DIR/de.js
 install -m 0644 "$SRC_DIR/frontend/locales/en.json" "$FRONTEND_LOCALES_DIR/en.json"
 install -m 0644 "$SRC_DIR/frontend/locales/pt.json" "$FRONTEND_LOCALES_DIR/pt.json"
 # Beni Launcher: arquivos novos do frontend (temas extras, limites, tela Aprender/Jogar)
-for beni_file in cozy-temas.css usage-limits.css usage-limits.js escolha.css escolha.js site-logins.css site-logins.js controles.css controles.js; do
+for beni_file in marca.css cozy-temas.css usage-limits.css usage-limits.js escolha.css escolha.js site-logins.css site-logins.js controles.css controles.js; do
   install -m 0644 "$SRC_DIR/frontend/$beni_file" "$APP_ROOT/frontend/$beni_file"
 done
 render_template "$SRC_DIR/frontend/icons.js" "$FRONTEND_ICONS_FILE" 0644

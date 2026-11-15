@@ -1,6 +1,6 @@
 const COZY_WORLD_THEME_IDS=Object.freeze([
   'wald','weltraum','ocean','dinosaurier','baustelle','prinzessin','bauernhof','katzen','hunde',
-  'heroi','blocos','ninja','gelo','casinha','castelo'
+  'heroi','blocos','ninja','gelo','casinha','castelo','benikids'
 ]);
 
 let cozyThemeRefreshTimer=null;

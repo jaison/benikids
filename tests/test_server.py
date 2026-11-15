@@ -1579,8 +1579,8 @@ class ServerApiTests(unittest.TestCase):
         self.assertTrue(server_module.verify_pin(stored["pinHash"], "1234"))
         angela, beni = stored["profiles"]
         self.assertEqual(stored["activeProfileId"], angela["id"])
-        self.assertEqual((angela["avatar"], angela["theme"], angela["title"]), ("👧", "gelo", "Oi, Ângela!"))
-        self.assertEqual((beni["avatar"], beni["theme"]), ("👦", "heroi"))
+        self.assertEqual((angela["avatar"], angela["theme"], angela["title"]), ("👧", "benikids", "Oi, Ângela!"))
+        self.assertEqual((beni["avatar"], beni["theme"]), ("👦", "benikids"))
         self.assertNotEqual(angela["id"], beni["id"])
         self.assertEqual(angela["tiles"], beni["tiles"])
         self.assertEqual((angela["birthMonth"], angela["gender"], beni["gender"]), ("2018-05", "menina", "menino"))

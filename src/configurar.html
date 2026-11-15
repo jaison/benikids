@@ -4,47 +4,63 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Benikids: primeira configuração</title>
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" sizes="192x192" href="/marca/icone-192.png">
 <style>
 @font-face{font-family:'Fredoka';src:url('/themes/fonts/Fredoka.ttf') format('truetype');font-weight:300 700;font-display:swap}
-:root{--fundo:#f3f0ff;--cartao:#fff;--texto:#2d2a3e;--suave:#625f78;--borda:#d9d4f0;--cor:#6d4aff;--cor-escura:#5434e0;--cor-clara:#efeaff;--menino:#2f80ed;--menina:#e8478b;--erro:#c62828;--ok:#1f8a4c}
+/* Cores da marca Benikids (as mesmas do site e de frontend/marca.css) */
+:root{--ceu:#acdef9;--ceu-suave:#e8f6fe;--cartao:#fff;--texto:#1e3e64;--suave:#46607e;--borda:#bcdcf0;
+  --cor:#1d5f93;--cor-escura:#1e3e64;--cor-clara:#e8f6fe;--azul:#2a78b2;--amarelo:#fbb813;--laranja:#f2622e;
+  --acao:#b8441a;--acao-escura:#8a3313;--foco:#b8441a;--menino:#2a78b2;--menina:#d63d7e;--erro:#b3261e;--ok:#1b7a43}
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--fundo);color:var(--texto);font-family:"Segoe UI",system-ui,"Noto Sans",sans-serif}
-main{max-width:760px;margin:0 auto;padding:28px 20px 40px}
-h1,h2{font-family:'Fredoka',"Segoe UI",system-ui,sans-serif;font-weight:600}
-h1{font-size:2.1rem;margin:0 0 4px}
-h2{font-size:1.5rem;margin:0 0 6px}
+html,body{margin:0;min-height:100%;color:var(--texto);font-family:"Segoe UI",system-ui,"Noto Sans",sans-serif}
+body{background:var(--ceu) url('/themes/benikids.svg') center top/cover fixed no-repeat}
+main{max-width:780px;margin:0 auto;padding:22px 20px 40px}
+h1,h2{font-family:'Fredoka',"Segoe UI",system-ui,sans-serif;font-weight:600;color:var(--texto)}
+h1{font-size:2.2rem;line-height:1.1;margin:0 0 6px}
+h2{font-size:1.55rem;margin:0 0 6px}
 h2[tabindex]:focus{outline:none}
-.sub{color:var(--suave);font-size:1.1rem;margin:0 0 18px}
+.sub{color:var(--texto);font-size:1.1rem;margin:0}
 [hidden]{display:none!important}
 
-/* passos */
-.passos{display:flex;gap:8px;list-style:none;margin:0 0 18px;padding:0}
-.passos li{flex:1;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:#fff;color:var(--suave);font-weight:600;font-size:.95rem;border:2px solid transparent}
-.passos li b{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--cor-clara);color:var(--cor);font-size:.9rem;flex:none}
-.passos li[aria-current="step"]{border-color:var(--cor);color:var(--texto)}
-.passos li[aria-current="step"] b,.passos li.feito b{background:var(--cor);color:#fff}
+/* topo: mascote acenando e boas-vindas com o logo */
+.ola{display:flex;align-items:flex-end;gap:16px;margin:0 0 16px}
+.ola .mascote{flex:none;width:62px;height:auto;margin-bottom:-4px}
+.ola .balao{flex:1;min-width:0;background:#fff;border-radius:24px;padding:14px 20px;box-shadow:0 10px 26px rgba(30,62,100,.14);position:relative}
+h1 .logo{height:1.15em;width:auto;vertical-align:-.22em;margin:0 .04em}
+.ola .balao::before{content:'';position:absolute;left:-10px;bottom:22px;width:22px;height:22px;background:#fff;transform:rotate(45deg);border-radius:4px}
 
-section.passo{background:var(--cartao);border-radius:22px;padding:24px;box-shadow:0 6px 24px #6d4aff1a}
+/* passos */
+.passos{display:flex;gap:8px;list-style:none;margin:0 0 16px;padding:0}
+.passos li{flex:1;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.75);color:var(--suave);font-weight:600;font-size:.95rem;border:2px solid transparent}
+.passos li b{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--cor-clara);color:var(--cor);font-size:.95rem;flex:none;font-family:'Fredoka',system-ui,sans-serif}
+.passos li[aria-current="step"]{border-color:var(--azul);color:var(--texto);background:#fff}
+.passos li[aria-current="step"] b,.passos li.feito b{background:var(--cor);color:#fff}
+.passos li.feito b{background:var(--azul)}
+
+section.passo{background:var(--cartao);border-radius:24px;padding:24px;box-shadow:0 12px 32px rgba(30,62,100,.14);border-top:8px solid var(--azul)}
+section.passo[data-passo="2"]{border-top-color:var(--amarelo)}
+section.passo[data-passo="3"]{border-top-color:var(--laranja)}
 .explica{color:var(--suave);margin:0 0 18px;font-size:1.02rem}
 
 /* crianças */
-.crianca{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 16px;padding:16px;border:2px solid var(--borda);border-radius:18px;margin-bottom:12px}
+.crianca{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 16px;padding:16px;border:2px solid var(--ceu-suave);background:#fbfdff;border-radius:20px;margin-bottom:12px}
 .crianca .campo-nome{grid-column:1/2}
 .crianca .remover{position:absolute;top:10px;right:10px}
 .campo label,.grupo-rotulo{display:block;font-weight:600;margin-bottom:6px}
 .nasc{display:flex;gap:6px}
-select{font:inherit;font-size:1.05rem;padding:10px 8px;border:2px solid var(--borda);border-radius:12px;background:#fff;color:var(--texto)}
+select{font:inherit;font-size:1.05rem;padding:10px 8px;border:2px solid var(--borda);border-radius:12px;background:#fff;color:var(--texto);min-height:48px}
 input[type=text],input[type=password],input.nome{width:100%;font:inherit;font-size:1.2rem;padding:11px 14px;border:2px solid var(--borda);border-radius:14px;background:#fff;color:var(--texto)}
-input:focus,select:focus{outline:none;border-color:var(--cor);box-shadow:0 0 0 3px #6d4aff33}
+input:focus,select:focus{outline:none;border-color:var(--azul);box-shadow:0 0 0 3px rgba(42,120,178,.3)}
 .invalido{border-color:var(--erro)!important}
 .icones{display:flex;gap:8px}
 .icone{font:inherit;font-size:1rem;font-weight:600;display:flex;align-items:center;gap:8px;padding:8px 14px;border:3px solid var(--borda);border-radius:16px;background:#fff;color:var(--texto);cursor:pointer;min-height:52px}
 .icone span{font-size:1.8rem;line-height:1}
-.icone[aria-pressed="true"].menino{border-color:var(--menino);background:#eaf3ff}
-.icone[aria-pressed="true"].menina{border-color:var(--menina);background:#ffeef5}
+.icone[aria-pressed="true"].menino{border-color:var(--menino);background:#e3f1fb}
+.icone[aria-pressed="true"].menina{border-color:var(--menina);background:#fdebf3}
 .linha2{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:14px 24px;align-items:flex-end}
-.icone:focus-visible,.botao:focus-visible,.remover:focus-visible,.olho:focus-visible{outline:3px solid var(--cor);outline-offset:2px}
-.remover{font:inherit;font-size:1.1rem;width:40px;height:40px;border:0;border-radius:12px;background:#f4f2fa;color:var(--suave);cursor:pointer}
+.icone:focus-visible,.botao:focus-visible,.remover:focus-visible,.olho:focus-visible,summary:focus-visible{outline:3px solid var(--foco);outline-offset:2px}
+.remover{font:inherit;font-size:1.1rem;width:44px;height:44px;border:0;border-radius:12px;background:var(--ceu-suave);color:var(--texto);cursor:pointer}
 
 /* PIN */
 .pins{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -60,29 +76,40 @@ input:focus,select:focus{outline:none;border-color:var(--cor);box-shadow:0 0 0 3
 .opcao{display:flex;gap:12px;align-items:flex-start;font-size:1.08rem;cursor:pointer;margin:0;font-weight:600}
 .opcao input{width:24px;height:24px;margin:1px 0 0;accent-color:var(--cor);flex:none}
 .opcao+.dica,.dica+.opcao{margin-top:8px}
-.bloco{padding:14px 0;border-top:1px solid var(--borda)}
+.bloco{padding:14px 0;border-top:2px solid var(--ceu-suave)}
 .bloco:first-of-type{border-top:0;padding-top:0}
 .bloco .dica{margin:6px 0 0 36px;font-size:.98rem}
-.bloco.destaque{border:2px solid var(--cor);border-radius:16px;padding:14px;background:#faf8ff}
+.bloco.destaque{border:2px solid var(--amarelo);border-radius:18px;padding:14px;background:#fff9e8}
 .bloco.destaque .dica{margin-left:36px}
 details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
 
 /* rodapé */
-.erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:14px 0 0}
+.erro{color:var(--erro);font-weight:600;min-height:1.4em;margin:14px 0 0;background:transparent}
+.erro:not(:empty){background:#fff;border-radius:14px;padding:10px 14px;border-left:6px solid var(--erro)}
 .acoes{display:flex;gap:12px;margin-top:14px}
-.botao{font:inherit;font-weight:700;font-size:1.1rem;border-radius:16px;padding:13px 22px;cursor:pointer;border:2px solid var(--borda);background:#fff;color:var(--texto)}
-.botao.tracejado{border:2px dashed var(--cor);color:var(--cor);margin-top:4px}
-.botao.principal{border:0;background:var(--cor);color:#fff;font-size:1.2rem;padding:14px 30px;margin-left:auto;min-width:200px}
-.botao.principal:hover{background:var(--cor-escura)}
+.botao{font:inherit;font-weight:700;font-size:1.1rem;border-radius:16px;padding:13px 22px;cursor:pointer;border:2px solid var(--borda);background:#fff;color:var(--texto);min-height:52px}
+.botao.tracejado{border:2px dashed var(--azul);color:var(--cor);background:#fff;margin-top:4px}
+.botao.principal{border:0;background:var(--acao);color:#fff;font-size:1.2rem;padding:14px 30px;margin-left:auto;min-width:200px;box-shadow:0 5px 0 var(--acao-escura);font-family:'Fredoka',"Segoe UI",system-ui,sans-serif;font-weight:600}
+.botao.principal:hover{background:#a03a15}
+.botao.principal:active{transform:translateY(3px);box-shadow:0 2px 0 var(--acao-escura)}
 .botao:disabled{opacity:.6;cursor:default}
 
-.pronto{text-align:center;padding:50px 20px}
-.pronto .festa{font-size:4.5rem}
+.pronto{text-align:center;padding:36px 20px}
+.pronto .festa{display:flex;justify-content:center;align-items:flex-end;gap:10px;font-size:3.2rem}
+.pronto .festa img{width:110px;height:auto}
+.pronto h1{font-size:2.4rem;margin-top:10px}
 .pronto ul{list-style:none;padding:0;margin:22px auto 0;max-width:520px;text-align:left}
-.pronto li{background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;box-shadow:0 4px 16px #6d4aff14}
+.pronto li{background:#fff;border-radius:18px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;box-shadow:0 6px 18px rgba(30,62,100,.12)}
 .pronto li span{font-size:1.5rem;line-height:1.2}
 
 @media (max-width:640px){
+  main{padding:16px 14px 32px}
+  h1{font-size:1.7rem}
+  .ola{gap:10px}
+  .ola .mascote{width:50px}
+  .ola .balao{padding:12px 14px}
+  .sub{font-size:1rem}
+  section.passo{padding:18px 16px}
   .passos li span{display:none}
   .pins{grid-template-columns:1fr}
   .genero,.icones{width:100%}
@@ -91,14 +118,35 @@ details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
   .acoes{flex-direction:column-reverse}
   .botao.principal{margin-left:0;width:100%}
 }
-@media (max-height:640px){main{padding-top:14px}h1{font-size:1.7rem}.sub{margin-bottom:10px}.passos{margin-bottom:10px}section.passo{padding:18px}}
+@media (max-height:700px) and (min-width:641px){
+  main{padding-top:8px}
+  .ola{margin-bottom:8px;gap:12px}
+  .ola .mascote{width:38px}
+  .ola .balao{padding:8px 16px;border-radius:18px}
+  .ola .balao::before{bottom:12px}
+  h1{font-size:1.45rem;margin-bottom:2px}
+  .sub{font-size:.98rem}
+  .passos{margin-bottom:8px}
+  .passos li{padding:5px 12px}
+  section.passo{padding:14px 18px;border-top-width:6px}
+  .explica{margin-bottom:10px}
+  .crianca{padding:12px;gap:10px 16px}
+  .acoes{margin-top:8px}
+  .erro{margin-top:8px}
+}
 @media (prefers-reduced-motion:no-preference){section.passo{animation:entra .25s ease-out}@keyframes entra{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:none}}}
+@media (forced-colors:active){body{background:Canvas}.ola .balao::before{display:none}}
 </style>
 </head>
 <body>
 <main id="formulario">
-  <h1>Bem-vindo ao Benikids! 🌈</h1>
-  <p class="sub">Três passos rápidos e o computador fica pronto para as crianças.</p>
+  <div class="ola">
+    <img class="mascote" src="/marca/mascote-acenando.png" alt="" width="121" height="240">
+    <div class="balao">
+      <h1>Bem-vindo ao <img class="logo" src="/marca/logo.svg" alt="Benikids" width="180" height="39">!</h1>
+      <p class="sub">Três passos rápidos e o computador fica pronto para as crianças.</p>
+    </div>
+  </div>
 
   <ol class="passos" aria-label="Etapas">
     <li data-passo="1"><b>1</b><span>Crianças</span></li>
@@ -160,7 +208,7 @@ details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
 </main>
 
 <main id="pronto" class="pronto" hidden>
-  <div class="festa">🎉</div>
+  <div class="festa"><img src="/marca/mascote-acenando.png" alt="" width="121" height="240"><span aria-hidden="true">🎉</span></div>
   <h1 id="prontoTitulo">Tudo pronto!</h1>
   <ul>
     <li><span>🎮</span><div>Os jogos e apps já estão no menu, separados em Aprender, Passatempo e Jogar.</div></li>
