@@ -60,6 +60,7 @@ user32.BringWindowToTop.argtypes = [wintypes.HWND]
 user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.IsIconic.argtypes = [wintypes.HWND]
 user32.IsZoomed.argtypes = [wintypes.HWND]
+user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
 user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.GetWindowLongW.restype = ctypes.c_long
 user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
@@ -359,6 +360,15 @@ def maximizar_processo(pid):
             user32.ShowWindow(h, SW_MAXIMIZE)
         return True
     return False
+
+
+def mover_por_cima(h, x, y):
+    """Põe a janela em x,y, por cima de tudo, sem mudar o tamanho nem roubar o foco.
+    O Tk às vezes deixa uma janela sem moldura em 0,0 (o aviso de 10 s no Windows)."""
+    if not h:
+        return False
+    # HWND_TOPMOST = -1; SWP_NOSIZE | SWP_NOACTIVATE = 0x0001 | 0x0010
+    return bool(user32.SetWindowPos(h, wintypes.HWND(-1), int(x), int(y), 0, 0, 0x0011))
 
 
 def pid_da_janela_ativa():

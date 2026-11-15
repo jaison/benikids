@@ -9,7 +9,6 @@ tipo de instalação (por usuário ou para todos).
 import glob
 import json
 import os
-import re
 
 ARQUIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogo", "windows.json")
 PREFIXO = "catalogo:"
@@ -144,8 +143,6 @@ def comando(cmd, catalogo=None, bases=None):
         preparar_xmoto()
     elif item.get("preparar") == "scratch":
         preparar_scratch()
-    elif item.get("preparar") == "enigma":
-        preparar_enigma(marca=os.path.join(pasta_de_dados_ascii(item), "tela-cheia-ligada"))
     return argv
 
 
@@ -237,45 +234,6 @@ def pasta_no_path(cmd, resolvido):
     if not item or not item.get("path_do_exe") or not resolvido:
         return ""
     return os.path.dirname(resolvido[0])
-
-
-ENIGMA_PADRAO = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
-    "<preferences>\n  <properties>\n"
-    '    <property key="FullScreen" value="1"/>\n'
-    "  </properties>\n</preferences>\n"
-)
-
-
-def preparar_enigma(arquivo=None, marca=None):
-    """Enigma em tela cheia: ele abre numa janela 800x600 e guarda as opções em
-    %APPDATA%\\Enigma\\.enigmarc.xml (FullScreen). Liga uma única vez (a marca fica na
-    pasta de dados do Benikids); se os pais desligarem depois no jogo, fica desligado."""
-    if arquivo is None:
-        appdata = os.environ.get("APPDATA")
-        if not appdata:
-            return False
-        arquivo = os.path.join(appdata, "Enigma", ".enigmarc.xml")
-    if marca and os.path.exists(marca):
-        return False
-    try:
-        if os.path.isfile(arquivo):
-            with open(arquivo, encoding="utf-8") as f:
-                texto = f.read()
-            novo = re.sub(r'(key="FullScreen"\s+value=")0(")', r"\g<1>1\g<2>", texto)
-            if novo == texto and 'key="FullScreen"' not in texto:
-                novo = texto.replace("<properties>", '<properties>\n    <property key="FullScreen" value="1"/>', 1)
-        else:
-            novo = ENIGMA_PADRAO
-            os.makedirs(os.path.dirname(arquivo), exist_ok=True)
-        with open(arquivo, "w", encoding="utf-8") as f:
-            f.write(novo)
-        if marca:
-            os.makedirs(os.path.dirname(marca), exist_ok=True)
-            open(marca, "w").close()
-    except OSError:
-        return False
-    return True
 
 
 def gravar_config_inicial(item, exe=None):

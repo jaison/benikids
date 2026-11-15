@@ -505,7 +505,10 @@ class AppOverlay:
                 if self.countdown_position:
                     window_id = x11_toplevel_id(self.countdown_window)
                     if (self.countdown_window.winfo_rootx(), self.countdown_window.winfo_rooty()) != self.countdown_position:
-                        self.x11_raiser.move_window(window_id, *self.countdown_position)
+                        if WINDOWS:
+                            win.mover_por_cima(int(self.countdown_window.wm_frame(), 16), *self.countdown_position)
+                        else:
+                            self.x11_raiser.move_window(window_id, *self.countdown_position)
                 self.countdown_window.lift()
                 self.countdown_window.attributes("-topmost", True)
                 self.x11_raiser.raise_window(x11_toplevel_id(self.countdown_window))

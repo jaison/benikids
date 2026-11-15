@@ -206,7 +206,7 @@ class LauncherFocusTests(unittest.TestCase):
 class CantoPadraoTests(unittest.TestCase):
     def test_maximized_apps_start_on_the_right_to_keep_menus_free(self):
         self.assertEqual(overlay.canto_padrao("kapman"), "tr")      # maximizado
-        self.assertEqual(overlay.canto_padrao("puzzles-quinze"), "tl")  # janela fixa
+        self.assertEqual(overlay.canto_padrao("puzzles-quinze"), "tr")  # janela pequena em 26,26
         self.assertEqual(overlay.canto_padrao("nao-existe"), "tl")
         self.assertFalse(overlay.maximizar_no_inicio("puzzles-quinze"))
 

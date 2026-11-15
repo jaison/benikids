@@ -116,7 +116,7 @@ body.theme-ninja .smallbtn, body.theme-ninja .nav, body.theme-ninja #clockBadge 
 /* O painel dos pais, o PIN e as janelas usam sempre a marca Benikids (marca.css). */
 
 /* =====================================================================
-   Temas da Bea (5 anos): Reino do Gelo, Casinha Mágica, Castelo Encantado
+   Temas para os pequenos (5 anos): Reino do Gelo, Casinha Mágica, Castelo Encantado
    Fonte bem redonda (Fredoka) e letras grandes.
    ===================================================================== */
 @font-face { font-family:'Fredoka'; src:url('/themes/fonts/Fredoka.ttf') format('truetype'); font-weight:300 700; font-display:swap; }
