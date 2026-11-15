@@ -241,8 +241,15 @@ class BrowserSession:
     def wait_for(self, expression, timeout=None, message=None):
         deadline = time.monotonic() + (self.timeout if timeout is None else timeout)
         while time.monotonic() < deadline:
-            if self.evaluate(expression) is True:
-                return
+            try:
+                if self.evaluate(expression) is True:
+                    return
+            except RuntimeError as erro:
+                # A página pode estar trocando (index.html redireciona para
+                # configurar.html); nesse meio-tempo o DevTools não tem
+                # contexto. Espera a página nova em vez de falhar.
+                if "navigated or closed" not in str(erro) and "context" not in str(erro):
+                    raise
             time.sleep(0.1)
         raise TimeoutError(message or f"Browser condition stayed false: {expression}")
 
