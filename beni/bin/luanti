@@ -1,3 +1,14 @@
 #!/bin/sh
 # Cozy Kids Launcher: Luanti (mundo de blocos parecido com Minecraft).
+# Antes de abrir: sem o aviso de "nova versão disponível" (a criança não tem o que
+# fazer com ele e ele busca na internet), em português e em tela cheia. Só grava a
+# chave que falta: o que os pais mudarem no próprio jogo fica.
+CONF="$HOME/.var/app/org.luanti.luanti/.minetest/minetest.conf"
+mkdir -p "$(dirname "$CONF")" && touch "$CONF"
+garantir() {
+  grep -q "^[[:space:]]*$1[[:space:]]*=" "$CONF" || printf '%s = %s\n' "$1" "$2" >> "$CONF"
+}
+garantir update_information_url ""
+garantir language pt_BR
+garantir fullscreen true
 exec flatpak run org.luanti.luanti

@@ -25,8 +25,10 @@ APAGADO = "#46607e"
 BORDA = "#cfe6f5"
 
 FONTE_CORPO = "Segoe UI" if os.name == "nt" else "Ubuntu"
-# nome da família no GDI (name ID 1) e também no fontconfig
+# Nome da família: no Windows (GDI) é "Fredoka SemiBold"; no Linux o fontconfig lista
+# "Fredoka,Fredoka SemiBold" e o Tk usa só o primeiro, "Fredoka".
 FREDOKA = "Fredoka SemiBold"
+_NOMES_FREDOKA = ("Fredoka SemiBold", "Fredoka")
 _ARQUIVO_FREDOKA = "Fredoka-SemiBold.ttf"
 _carregada = None
 
@@ -63,16 +65,17 @@ def fonte_titulo(raiz):
             try:
                 from tkinter import font as tkfont
 
-                _carregada = FREDOKA in tkfont.families(raiz)
+                familias = set(tkfont.families(raiz))
+                _carregada = next((n for n in _NOMES_FREDOKA if n in familias), False)
             except Exception:  # noqa: BLE001
                 _carregada = False
-    return FREDOKA if _carregada else FONTE_CORPO
+    return _carregada or FONTE_CORPO
 
 
 def titulo(tamanho):
     """Fonte de título já com o peso: Fredoka (que já é SemiBold) ou a do sistema em
     negrito. Use depois de fonte_titulo(raiz)."""
-    return (FREDOKA, tamanho) if _carregada else (FONTE_CORPO, tamanho, "bold")
+    return (_carregada, tamanho) if _carregada else (FONTE_CORPO, tamanho, "bold")
 
 
 def por_icone(raiz):
