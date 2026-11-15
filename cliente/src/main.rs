@@ -18,6 +18,7 @@ mod dados;
 mod demo;
 mod icones;
 mod menu;
+mod navegador;
 mod sons;
 mod tema;
 

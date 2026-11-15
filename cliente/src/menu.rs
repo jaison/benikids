@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Child;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -17,6 +16,7 @@ use serde_json::{Value, json};
 use crate::api::{Api, codificar};
 use crate::dados::{self, Faixa, Tile};
 use crate::icones::icone;
+use crate::navegador::Navegador;
 use crate::sons::{self, Som};
 use crate::tema::{self, Enfeite, Fundo, Tema, hsla, hsla_a, sombras};
 
@@ -96,7 +96,7 @@ pub struct Menu {
     ultimo_expiry: f64,
     ultimos: HashMap<String, String>,
     // navegador (pais, sites embutidos, mídia)
-    web: Option<(Child, u64)>,
+    web: Option<(Navegador, u64)>,
     // diversos
     ativa: bool,
     sujo: bool, // mudou algo com a janela inativa (redesenha ao voltar)
@@ -778,16 +778,17 @@ impl Menu {
             self.agendar_fechar_mensagem(cx);
             return;
         }
-        if let Some((filho, _)) = self.web.as_mut() {
-            if matches!(filho.try_wait(), Ok(None)) {
+        if let Some((nav, _)) = self.web.as_mut() {
+            if nav.aberto() {
                 return; // já tem um aberto
             }
         }
         let url = format!("{}/cliente.html?ir={}", self.api.base(), codificar(caminho));
         let mut cmd = std::process::Command::new(&self.o.web_cmd);
         if self.o.web_familia == "chromium" {
+            // o navegador é fechado à força: sem o "Restaurar páginas?" na abertura seguinte
             cmd.arg(format!("--user-data-dir={}", self.o.web_perfil.display()))
-                .args(["--no-first-run", "--password-store=basic", "--kiosk", &url]);
+                .args(["--no-first-run", "--password-store=basic", "--disable-session-crashed-bubble", "--kiosk", &url]);
         } else {
             cmd.arg("--no-remote")
                 .arg("--profile")
@@ -804,10 +805,10 @@ impl Menu {
             .get_json("/api/cliente/estado")
             .and_then(|v| dados::numero(&v, "voltar"))
             .unwrap_or(0.) as u64;
-        match cmd.spawn() {
-            Ok(filho) => {
-                log::info!("navegador aberto para {caminho} (pid {})", filho.id());
-                self.web = Some((filho, base));
+        match Navegador::abrir(&mut cmd) {
+            Ok(nav) => {
+                log::info!("navegador aberto para {caminho} (pid {})", nav.id());
+                self.web = Some((nav, base));
                 self.inicio = None;
                 ciclo_ate(cx, Duration::from_millis(800), |m, cx| m.vigiar_web(cx));
             }
@@ -817,31 +818,38 @@ impl Menu {
 
     /// Chamado a cada 0,8 s enquanto o navegador está aberto. Devolve false quando acabou.
     fn vigiar_web(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some((filho, base)) = self.web.as_mut() else { return false };
-        match filho.try_wait() {
-            Ok(None) => {
+        let Some((nav, base)) = self.web.as_mut() else { return false };
+        match nav.aberto() {
+            true => {
                 let base = *base;
-                let pid = filho.id();
+                let pid = nav.id();
                 self.tarefa(
                     cx,
                     |api| api.get_json("/api/cliente/estado").and_then(|v| dados::numero(&v, "voltar")),
                     move |m, r, _| {
                         if r.is_some_and(|n| n as u64 > base) {
-                            log::info!("a página pediu para voltar ao menu; fechando o navegador");
-                            fechar_processo(m.web.as_mut().map(|(c, _)| c), pid);
+                            // só o navegador que fez o pedido (outro pode ter sido aberto depois)
+                            if let Some((nav, _)) = m.web.as_mut().filter(|(n, _)| n.id() == pid) {
+                                log::info!("a página pediu para voltar ao menu; fechando o navegador");
+                                nav.fechar();
+                            }
                         }
                     },
                 );
                 true
             }
-            _ => {
+            false => {
+                log::info!("navegador fechado; de volta ao menu");
                 self.web = None;
                 self.api.esquecer_sessao();
                 self.carregar_config(cx);
                 self.atualizar_uso(cx);
                 self.atualizar_disp(cx);
                 self.atualizar_timer(cx);
-                trazer_para_frente();
+                // fora do update (como no main.rs): o SetForegroundWindow entrega na hora
+                // mensagens de ativação e de entrada à janela, que ainda está emprestada
+                // aqui dentro ("RefCell already borrowed", gpui window.rs on_input)
+                cx.spawn(async |_, _| trazer_para_frente()).detach();
                 cx.notify();
                 false
             }
@@ -2338,22 +2346,6 @@ fn ler_bateria() -> Option<(u32, bool)> {
         return Some((pct.min(100), status.trim() == "Charging"));
     }
     None
-}
-
-/// Fecha o navegador aberto pelo menu (TERM no Linux, para ele salvar o perfil).
-fn fechar_processo(filho: Option<&mut Child>, pid: u32) {
-    #[cfg(unix)]
-    {
-        let _ = filho;
-        let _ = std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status();
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        if let Some(c) = filho {
-            let _ = c.kill();
-        }
-    }
 }
 
 /// Traz a janela do menu para a frente (depois que o navegador fecha).
