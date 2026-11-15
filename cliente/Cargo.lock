@@ -558,9 +558,11 @@ name = "beni-menu"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "embed-resource",
  "env_logger",
  "gpui-fast",
  "gpui-fast-platform",
+ "image",
  "log",
  "serde_json",
  "windows-sys 0.61.2",

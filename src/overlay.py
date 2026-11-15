@@ -11,6 +11,7 @@ import tkinter as tk
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+import marca_tk as marca
 from process_state import (
     owned_process,
     owned_process_alive,
@@ -198,11 +199,13 @@ def focus_launcher():
         pass
 
 
-# Faixas de cor do tempo restante (verde -> amarelo -> vermelho).
+# Faixas de cor do tempo restante, nas cores da marca: céu (tranquilo) -> amarelo
+# (metade) -> laranja (acabando). pill_fg é o texto na pílula marinho; os três têm
+# contraste >= 4,8:1 sobre ela e tons bem diferentes entre si.
 USAGE_COLORS = {
-    "ok": {"bg": "#e8f5e9", "fg": "#1b5e20", "bar": "#43a047", "pill_fg": "#86efac"},
-    "warn": {"bg": "#fff8e1", "fg": "#7a5200", "bar": "#f9a825", "pill_fg": "#fde047"},
-    "low": {"bg": "#ffebee", "fg": "#b71c1c", "bar": "#e53935", "pill_fg": "#fca5a5"},
+    "ok": {"bg": "#e8f5e9", "fg": "#1b5e20", "bar": marca.AZUL, "pill_fg": marca.CEU},
+    "warn": {"bg": "#fff8e1", "fg": "#7a5200", "bar": marca.AMARELO, "pill_fg": marca.AMARELO},
+    "low": {"bg": "#ffebee", "fg": "#b71c1c", "bar": marca.LARANJA, "pill_fg": "#ff8f70"},
 }
 COUNTDOWN_SECONDS = 10
 
@@ -237,11 +240,12 @@ def tile_is_blocked(status, tile_id):
     return status.get("profileAllowed") is False or tile_id in blocked
 
 
-# Visual da barrinha (❌ + tempo): pílula escura, meio transparente.
-PILL_BG = "#1f2937"
+# Visual da barrinha (❌ + tempo): pílula marinho da marca, meio transparente.
+PILL_BG = marca.MARINHO
+PILL_TEXT = marca.BG
 PILL_ALPHA_IDLE = 0.6
 PILL_ALPHA_HOVER = 1.0
-PILL_FONT = "Segoe UI" if os.name == "nt" else "Ubuntu"
+PILL_FONT = marca.FONTE_CORPO   # símbolos dos botões (✕ ✥ ‹); os textos usam marca.titulo()
 BUTTON_SIZE = 46
 CORNER_MARGIN = 14
 CORNERS = ("tl", "tr", "br", "bl")  # ordem do toque em ✥ (sentido horário)
@@ -427,6 +431,7 @@ class AppOverlay:
         self.idle_job = None
 
         self.root = tk.Tk()
+        marca.fonte_titulo(self.root)  # carrega a Fredoka (tempo, Voltar, aviso)
         self.root.title("App Overlay")
         self.root.overrideredirect(True)
         self.root.configure(bg=PILL_BG)
@@ -444,14 +449,14 @@ class AppOverlay:
         self.back_window = None
         if mode == "external":
             self.back_window = self.build_back_window()
-        self.close_btn = RoundButton(self.frame, "✕", "#ef4444", "#ffffff", "#f87171",
+        self.close_btn = RoundButton(self.frame, "✕", marca.LARANJA, "#ffffff", marca.LARANJA_ESCURO,
                                      command=self.on_close)
         self.close_btn.pack(side=tk.LEFT, padx=3)
 
-        self.timer_lbl = tk.Label(self.frame, text="", font=(PILL_FONT, 15, "bold"),
-                                  bg=PILL_BG, fg="#f9fafb", padx=6)
+        self.timer_lbl = tk.Label(self.frame, text="", font=marca.titulo(15),
+                                  bg=PILL_BG, fg=PILL_TEXT, padx=6)
 
-        self.move_btn = RoundButton(self.frame, "✥", "#374151", "#d1d5db", "#4b5563",
+        self.move_btn = RoundButton(self.frame, "✥", marca.AZUL, marca.CEU_SUAVE, marca.AZUL_ESCURO,
                                     size=34, font_size=16)
         self.move_btn.pack(side=tk.RIGHT, padx=(3, 1))
 
@@ -537,10 +542,10 @@ class AppOverlay:
             pass
         box = tk.Frame(window, bg=PILL_BG, padx=6, pady=6, cursor="hand2")
         box.pack(fill=tk.BOTH, expand=True)
-        arrow = RoundButton(box, "‹", "#e5e7eb", "#111827", "#ffffff", font_size=26)
+        arrow = RoundButton(box, "‹", marca.CEU, marca.MARINHO, marca.CEU_SUAVE, font_size=26)
         arrow.pack(side=tk.LEFT)
-        text = tk.Label(box, text="Voltar", font=(PILL_FONT, 15, "bold"), bg=PILL_BG,
-                        fg="#f9fafb", padx=8, cursor="hand2")
+        text = tk.Label(box, text="Voltar", font=marca.titulo(15), bg=PILL_BG,
+                        fg=PILL_TEXT, padx=8, cursor="hand2")
         text.pack(side=tk.LEFT)
 
         def release(event):
@@ -586,7 +591,7 @@ class AppOverlay:
             if shape_window_rounded(self.root, width, height, height // 2):
                 self.shape_size = (width, height)
 
-    def set_timer_text(self, text, fg="#f9fafb"):
+    def set_timer_text(self, text, fg=PILL_TEXT):
         if text:
             self.timer_lbl.config(text=text, fg=fg)
             if not self.timer_lbl.winfo_ismapped():
@@ -709,8 +714,8 @@ class AppOverlay:
         self.countdown_geometry = f"{ww}x{wh}+{(sw - ww) // 2}+{(sh - wh) // 2}"
         window.geometry(self.countdown_geometry)
         self.countdown_position = ((sw - ww) // 2, (sh - wh) // 2)
-        border = "#e53935"
-        card = "#fffdf7"
+        border = marca.LARANJA
+        card = marca.BG
         window.configure(bg=border)
         box = tk.Frame(window, bg=card)
         box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -719,9 +724,9 @@ class AppOverlay:
             title = f"⏳ Seu tempo de {label.lower()} está acabando!"
         else:
             title = "⏳ Seu tempo de hoje está acabando!"
-        tk.Label(box, text=title, font=("system-ui", 26, "bold"), bg=card,
-                 fg="#5d4037", wraplength=ww - 60).pack(pady=(26, 0))
-        self.countdown_number = tk.Label(box, text="", font=("system-ui", 120, "bold"),
+        tk.Label(box, text=title, font=marca.titulo(26), bg=card,
+                 fg=marca.MARINHO, wraplength=ww - 60).pack(pady=(26, 0))
+        self.countdown_number = tk.Label(box, text="", font=marca.titulo(120),
                                          bg=card, fg=border)
         self.countdown_number.pack(expand=True)
         alternatives = [
@@ -734,11 +739,11 @@ class AppOverlay:
                 for alt in alternatives
             ]
             hint = "Você ainda pode brincar de " + " ou ".join(parts)
-            hint_color = "#1b5e20"
+            hint_color = marca.AZUL_ESCURO
         else:
             hint = "Por hoje acabou. Amanhã tem mais! 😊"
-            hint_color = "#5d4037"
-        tk.Label(box, text=hint, font=("system-ui", 20, "bold"), bg=card,
+            hint_color = marca.MARINHO
+        tk.Label(box, text=hint, font=(marca.FONTE_CORPO, 20, "bold"), bg=card,
                  fg=hint_color, wraplength=ww - 60).pack(pady=(0, 28))
         self.tick_countdown()
 

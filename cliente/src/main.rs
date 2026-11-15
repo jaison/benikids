@@ -62,6 +62,19 @@ fn opcoes() -> Opcoes {
     o
 }
 
+/// Ícone da marca para a barra de tarefas/Alt+Tab no X11 (_NET_WM_ICON).
+#[cfg(target_os = "linux")]
+fn icone_janela() -> Option<std::sync::Arc<image::RgbaImage>> {
+    const PNG: &[u8] = include_bytes!("../../docs/marca/icones/benikids-128.png");
+    match image::load_from_memory_with_format(PNG, image::ImageFormat::Png) {
+        Ok(img) => Some(std::sync::Arc::new(img.into_rgba8())),
+        Err(e) => {
+            log::warn!("ícone da janela: {e}");
+            None
+        }
+    }
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("beni_menu=info,warn")).init();
     let mut o = opcoes();
@@ -97,6 +110,9 @@ fn main() {
             window_bounds: Some(WindowBounds::Fullscreen(bounds)),
             titlebar: None,
             app_id: Some("beni-menu".into()),
+            // no Windows o ícone vem do recurso embutido no .exe (build.rs)
+            #[cfg(target_os = "linux")]
+            icon: icone_janela(),
             // atrás de um jogo, o menu quase não desenha
             inactive_frame_interval: Some(Duration::from_millis(500)),
             ..Default::default()
