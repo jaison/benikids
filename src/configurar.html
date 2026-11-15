@@ -136,6 +136,8 @@ details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
 }
 @media (prefers-reduced-motion:no-preference){section.passo{animation:entra .25s ease-out}@keyframes entra{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:none}}}
 @media (forced-colors:active){body{background:Canvas}.ola .balao::before{display:none}}
+/* PIN com discos sem type=password (o navegador não oferece salvar o PIN) */
+.campo-pin{-webkit-text-security:disc}.campo-pin.mostrar{-webkit-text-security:none}
 </style>
 </head>
 <body>
@@ -166,10 +168,10 @@ details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
     <p class="explica">O PIN protege a área dos pais, a saída e o desligar. Sem ele, a criança consegue sair do Benikids.</p>
     <div class="pins">
       <div class="campo"><label for="pin">PIN (4 a 6 números)</label>
-        <div class="com-olho"><input id="pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6">
+        <div class="com-olho"><input id="pin" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6">
           <button type="button" class="olho" data-alvo="pin" aria-label="Mostrar o PIN" aria-pressed="false">👁️</button></div></div>
       <div class="campo"><label for="pin2">Repita o PIN</label>
-        <div class="com-olho"><input id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6">
+        <div class="com-olho"><input id="pin2" type="text" class="campo-pin" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="6">
           <button type="button" class="olho" data-alvo="pin2" aria-label="Mostrar o PIN repetido" aria-pressed="false">👁️</button></div></div>
     </div>
     <p class="confere" id="confere" aria-live="polite"></p>
@@ -218,6 +220,9 @@ details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
 </main>
 
 <script>
+// Navegador sem -webkit-text-security (Firefox antigo): o PIN volta a ser password
+// para nunca aparecer às claras.
+if(!(window.CSS&&CSS.supports&&CSS.supports('-webkit-text-security','disc'))){document.querySelectorAll('input.campo-pin').forEach(function(c){c.type='password';});}
 (function () {
   'use strict';
   const MAX = 8;
@@ -341,8 +346,12 @@ details.dica summary{cursor:pointer;color:var(--cor);font-weight:600}
   document.querySelectorAll('.olho').forEach(function (b) {
     b.addEventListener('click', function () {
       const campo = document.getElementById(b.dataset.alvo);
-      const mostrar = campo.type === 'password';
-      campo.type = mostrar ? 'text' : 'password';
+      const mostrar = !campo.classList.contains('mostrar');
+      campo.classList.toggle('mostrar', mostrar);
+      if (campo.dataset.senha === '1' || campo.type === 'password') {
+        campo.dataset.senha = '1'; // navegador sem discos por CSS: alterna o type
+        campo.type = mostrar ? 'text' : 'password';
+      }
       b.setAttribute('aria-pressed', String(mostrar));
       b.textContent = mostrar ? '🙈' : '👁️';
     });

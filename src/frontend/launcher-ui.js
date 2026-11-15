@@ -13,10 +13,18 @@ async function loadConfig(){
   const data=await response.json();
   if(!data||typeof data!=='object'||!Array.isArray(data.tiles)) throw new Error('Invalid config response');
   cfg=data;
-  await loadInterfaceLanguage(cfg.language);
   if(typeof cfg.currentPage!=='number') cfg.currentPage=0;
-  if(typeof escolhaAplicarPaginaRetorno==='function') escolhaAplicarPaginaRetorno();
-  renderAll();
+  // Um erro ao desenhar (ex.: um script da página que não carregou) não apaga a
+  // configuração válida: quem chamou fica sabendo pela etapa 'render'.
+  try{
+    await loadInterfaceLanguage(cfg.language);
+    if(typeof escolhaAplicarPaginaRetorno==='function') escolhaAplicarPaginaRetorno();
+    renderAll();
+  }catch(e){
+    const erro=e instanceof Error?e:new Error(String(e));
+    erro.etapa='render';
+    throw erro;
+  }
 }
 async function loadApps(refreshAdmin=false){
   appCatalogState='loading';
@@ -104,16 +112,26 @@ function showLauncherStartupState(state){
   status.classList.add('launcher-state');
   grid.appendChild(status);
 }
+// Navegador sem -webkit-text-security (Firefox antigo): o PIN volta a ser password
+// para nunca aparecer às claras.
+if(!(window.CSS&&CSS.supports&&CSS.supports('-webkit-text-security','disc'))){document.querySelectorAll('input.campo-pin').forEach(function(c){c.type='password';});}
+// Último erro do carregamento (o menu nativo manda para o diagnóstico).
+let launcherLoadError=null;
 async function bootstrapLauncher(){
   if(bootstrapPromise) return bootstrapPromise;
   showLauncherStartupState('loading');
+  launcherLoadError=null;
   bootstrapPromise=(async()=>{
     try{
       await loadConfig();
     }catch(e){
-      cfg=null;
-      showLauncherStartupState('error');
-      return false;
+      launcherLoadError=e;
+      // só a falha ao buscar a configuração desiste; erro de desenho segue com o cfg
+      if(!cfg||!e||e.etapa!=='render'){
+        cfg=null;
+        showLauncherStartupState('error');
+        return false;
+      }
     }
     await Promise.all([
       loadApps(),

@@ -1675,7 +1675,7 @@ install -m 0644 "$SRC_DIR/frontend/locales/de.json" "$FRONTEND_LOCALES_DIR/de.js
 install -m 0644 "$SRC_DIR/frontend/locales/en.json" "$FRONTEND_LOCALES_DIR/en.json"
 install -m 0644 "$SRC_DIR/frontend/locales/pt.json" "$FRONTEND_LOCALES_DIR/pt.json"
 # Beni Launcher: arquivos novos do frontend (temas extras, limites, tela Aprender/Jogar)
-for beni_file in marca.css cozy-temas.css usage-limits.css usage-limits.js escolha.css escolha.js site-logins.css site-logins.js controles.css controles.js; do
+for beni_file in recursos.js marca.css cozy-temas.css usage-limits.css usage-limits.js escolha.css escolha.js site-logins.css site-logins.js controles.css controles.js; do
   install -m 0644 "$SRC_DIR/frontend/$beni_file" "$APP_ROOT/frontend/$beni_file"
 done
 render_template "$SRC_DIR/frontend/icons.js" "$FRONTEND_ICONS_FILE" 0644

@@ -41,7 +41,7 @@ _SAFE_EVENT_FIELDS = {
     "telemetria.apagar": {"result"},
     "catalogo.sincronizado": set(),
     # área dos pais aberta pelo menu nativo: a página se recuperou de uma tela vazia
-    "cliente.recuperado": {"etapa"},
+    "cliente.recuperado": {"etapa", "erro"},
     "request.rejected": {"statusCode"},
     "server.crashed": {"exceptionType"},
     "site_login.finished": {"result", "exceptionType"},
@@ -74,7 +74,7 @@ _SAFE_EXCEPTION_TYPES = {
 }
 _SAFE_RESULTS = {"already", "blocked", "failure", "missing", "redirect", "success"}
 _SAFE_SOURCES = {"legacy-main", "release"}
-_SAFE_ETAPAS = {"config", "pin", "painel", "voltar"}
+_SAFE_ETAPAS = {"config", "pin", "painel", "render", "recurso", "voltar"}
 _SAFE_LIFECYCLE = STATE_REASONS
 _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.+-]{1,80}$")
 _VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -125,6 +125,12 @@ def _safe_detail(name, value):
         return value
     if name == "etapa" and value in _SAFE_ETAPAS:
         return value
+    if name == "erro" and isinstance(value, str):
+        # mensagem de erro do navegador: sem textos entre aspas (podem trazer dados
+        # da configuração), só caracteres comuns, no máximo 300
+        texto = re.sub(r"\"[^\"]*\"|'[^']*'|`[^`]*`", '"…"', value)
+        texto = re.sub(r"[^\w .,:;/()\[\]@#?=&+<>!|*%…\-]", " ", texto)
+        return re.sub(r"\s+", " ", texto).strip()[:300]
     if name == "source" and value in _SAFE_SOURCES:
         return value
     if name == "statusCode" and not isinstance(value, bool):

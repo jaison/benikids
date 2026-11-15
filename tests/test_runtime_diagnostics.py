@@ -68,6 +68,12 @@ class RuntimeDiagnosticsTests(unittest.TestCase):
         self.assertEqual(event["details"], {"etapa": "pin"})
         with self.assertRaises(ValueError):
             runtime_diagnostics.sanitize_event("cliente.recuperado", details={"etapa": "Ana"})
+        # o erro do navegador entra sem textos entre aspas e com no máximo 300 caracteres
+        event = runtime_diagnostics.sanitize_event("cliente.recuperado", details={
+            "etapa": "render", "erro": 'SyntaxError: Unexpected token, "Ana Maria" is not valid JSON ' + "x" * 400})
+        self.assertNotIn("Ana", event["details"]["erro"])
+        self.assertTrue(event["details"]["erro"].startswith("SyntaxError: Unexpected token"))
+        self.assertLessEqual(len(event["details"]["erro"]), 300)
 
     def test_recovery_attempt_is_bounded_and_privacy_safe(self):
         event = runtime_diagnostics.sanitize_event(
