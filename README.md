@@ -91,6 +91,20 @@ Em [**docs/benikids-tecnico.md**](docs/benikids-tecnico.md):
 O menu nativo (Rust + [gpui-fast](https://github.com/longbridge/gpui-fast)) está em
 [cliente/LEIA-ME.md](cliente/LEIA-ME.md).
 
+## Contribua
+
+<img src="docs/marca/mascote-notebook.png" width="200" align="right" alt="">
+
+O Benikids é livre (licença MIT) e aceita ajuda de quem sabe ou não programar:
+
+- **sugerir jogos** livres e leves, que rodem em notebook antigo;
+- **contar um problema ou uma ideia** nas [Issues](https://github.com/jaison/benikids/issues);
+- **traduzir** as telas e os textos;
+- **testar em notebooks antigos** e contar como foi;
+- **mandar código**: correções e melhorias são bem-vindas.
+
+<br clear="right">
+
 ## Créditos e licença
 
 - Nasceu do **[Cozy Kids Launcher](https://github.com/TrissyGE/cozy-kids-launcher)** 0.6.0, © 2026 Tristan e colaboradores, **licença MIT**.
