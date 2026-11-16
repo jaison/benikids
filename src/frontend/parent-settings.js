@@ -89,6 +89,8 @@ function activateAdminSection(section,focusHeading=false){
   document.querySelectorAll('[data-admin-panel]').forEach(panel=>{
     panel.hidden=panel.dataset.adminPanel!==section;
   });
+  // a situação da atualização é só leitura local: mostra sem precisar do botão
+  if(changed&&section==='system'&&typeof checkUpdate==='function') checkUpdate();
   if(section==='children'&&typeof loadSiteLogins==='function') loadSiteLogins();
   if(section==='system'&&typeof loadControles==='function') loadControles();
   if(section!=='system'&&typeof pararAssistenteControle==='function'&&controleAssistente) pararAssistenteControle();

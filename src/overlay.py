@@ -600,6 +600,7 @@ class AppOverlay:
                 save_corner(back_corner_key(self.tile_id), self.back_corner)
                 self.place_back()
                 self.place()
+                self.devolver_foco_ao_app()
                 return
             widget = event.widget
             if 0 <= event.x <= widget.winfo_width() and 0 <= event.y <= widget.winfo_height():
@@ -696,6 +697,21 @@ class AppOverlay:
         self.dragging = False
         save_corner(self.tile_id, self.corner)
         self.place()
+        self.devolver_foco_ao_app()
+
+    def devolver_foco_ao_app(self):
+        """No Windows, arrastar a pílula ou o ‹ Voltar dá o foco à janela do Tk, e a
+        barra de tarefas aparece por cima do app em tela cheia (o Edge em quiosque)
+        até a criança clicar nele. Devolve o foco ao app logo depois de soltar."""
+        if not WINDOWS:
+            return
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        if not record:
+            return
+        try:
+            win.ativar_processo(record["pid"], com_filhos=True)
+        except OSError:
+            pass
 
     def on_back(self):
         """Volta uma página no navegador do tile (Alt+←)."""
