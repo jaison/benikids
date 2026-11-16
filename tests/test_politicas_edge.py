@@ -1,0 +1,416 @@
+"""Políticas do Edge (uBlock Origin Lite e páginas bloqueadas), sem tocar no registro."""
+
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+RAIZ_REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ_REPO / "src"))
+
+import instalar_apps  # noqa: E402
+import politicas_edge as pe  # noqa: E402
+
+FORCELIST = r"SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist"
+BLOCKLIST = r"SOFTWARE\Policies\Microsoft\Edge\URLBlocklist"
+RAIZ = r"SOFTWARE\Policies\Microsoft\Edge"
+UBOL = rf"SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{pe.UBOL_ID}\policy"
+
+
+class WinregFalso:
+    """Só o que politicas_edge.faltam() usa do winreg, sobre um dicionário."""
+
+    HKEY_LOCAL_MACHINE = "HKLM"
+
+    def __init__(self, chaves):
+        self.chaves = {k.lower(): v for k, v in chaves.items()}
+
+    class _Chave:
+        def __init__(self, valores):
+            self.valores = list(valores.items())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def OpenKey(self, raiz, caminho):  # noqa: N802 — mesmo nome do winreg
+        assert raiz == "HKLM"
+        if caminho.lower() not in self.chaves:
+            raise FileNotFoundError(caminho)
+        return self._Chave(self.chaves[caminho.lower()])
+
+    def EnumValue(self, chave, i):  # noqa: N802
+        if i >= len(chave.valores):
+            raise OSError("fim")
+        nome, valor = chave.valores[i]
+        return nome, valor, 1
+
+    def QueryValueEx(self, chave, nome):  # noqa: N802
+        for n, v in chave.valores:
+            if n == nome:
+                return v, 1
+        raise FileNotFoundError(nome)
+
+
+def registro_completo(**extra):
+    chaves = {
+        FORCELIST: {"1": "outra;https://x", "2": pe.UBOL_FORCELIST},
+        BLOCKLIST: {str(i + 1): url for i, url in enumerate(("exemplo.com",) + pe.URLS_BLOQUEADAS)},
+        UBOL: {"defaultFiltering": "complete", "disableFirstRunPage": 1},
+        UBOL + r"\rulesets": {"1": "+annoyances-cookies"},
+        RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0, "PasswordManagerEnabled": 0},
+    }
+    chaves.update(extra)
+    return chaves
+
+
+class PoliticasTest(unittest.TestCase):
+    def test_paginas_bloqueadas_iguais_as_do_firefox_no_linux(self):
+        firefox = json.loads((RAIZ_REPO / "beni" / "firefox" / "policies.json").read_text())
+        convertidas = {pe.url_do_firefox(p) for p in firefox["policies"]["WebsiteFilter"]["Block"]}
+        self.assertEqual(convertidas, set(pe.URLS_BLOQUEADAS))
+        self.assertEqual(len(pe.URLS_BLOQUEADAS), len(set(pe.URLS_BLOQUEADAS)))
+
+    def test_conversao_do_padrao_do_firefox(self):
+        self.assertEqual(pe.url_do_firefox("*://www.escolagames.com.br/diversao/*"), "escolagames.com.br/diversao/")
+        self.assertEqual(pe.url_do_firefox("*://bestschoolgames.com/*"), "bestschoolgames.com")
+        self.assertEqual(pe.url_do_firefox("*://colorir-online.com/apps*"), "colorir-online.com/apps")
+
+    def test_script_aplicar(self):
+        texto = "\n".join(pe.script_aplicar(sem_filtro=False))
+        self.assertIn(
+            r"Benikids-Por 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist' "
+            "@('cimighlppcgcoapaliogpjjdehbnofhn;https://edge.microsoft.com/extensionwebstorebase/v1/crx') "
+            "'cimighlppcgcoapaliogpjjdehbnofhn;'",
+            texto,
+        )
+        self.assertIn(r"Benikids-Por 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' @('escolagames", texto)
+        chave = rf"'HKLM:\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{pe.UBOL_ID}\policy'"
+        self.assertIn(f"-Path {chave} -Name 'defaultFiltering' -Value 'complete' -PropertyType String", texto)
+        # avisos de cookies: a lista do uBOL ligada com "+" (sem ele o uBOL ignora)
+        self.assertIn(r"policy\rulesets' @('+annoyances-cookies')", texto)
+        self.assertIn(f"-Path {chave} -Name 'disableFirstRunPage' -Value 1 -PropertyType DWord", texto)
+        # sem o "Escola Games sem filtro", a lista some se tiver ficado de antes
+        self.assertIn(r"policy\noFiltering' -Recurse", texto)
+        self.assertNotIn("escolagames.com.br')", texto.split("URLBlocklist")[0])
+        # nada de apagar a chave inteira do Edge ou recriar chaves que já existem
+        self.assertNotIn(r"Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'", texto)
+        self.assertIn("if (-not (Test-Path $k)) { New-Item -Path $k -Force", texto)
+        self.assertEqual(texto.count("New-Item "), 1)
+
+    def test_leitura_nao_manda_a_lista_inteira_como_um_objeto(self):
+        # bug do pacote 12: "return ,$itens" + "Benikids-Ler $k | Where-Object"
+        # fazia o filtro ver o array todo de uma vez (sem pwsh aqui, fica a guarda no texto)
+        self.assertNotIn("return ,", pe._FUNCOES)
+        self.assertNotIn("Benikids-Ler $k |", pe._FUNCOES)
+        self.assertEqual(pe._FUNCOES.count("$lidos = @(Benikids-Ler $k)"), 2)
+
+    def test_traducao_desligada_na_raiz(self):
+        texto = "\n".join(pe.script_aplicar())
+        self.assertIn(
+            r"New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'TranslateEnabled' "
+            "-Value 0 -PropertyType DWord -Force",
+            texto,
+        )
+        # a raiz só é criada se faltar (New-Item -Force recriaria vazia)
+        self.assertIn(r"Benikids-Chave 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'" + "\n", texto)
+        ligada = registro_completo(**{RAIZ: {"TranslateEnabled": 1}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(ligada)))
+        sem_valor = registro_completo(**{RAIZ: {"OutraPolitica": 1}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_valor)))
+
+    def test_gerenciador_de_senhas_desligado(self):
+        texto = "\n".join(pe.script_aplicar())
+        self.assertIn(
+            r"New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'PasswordManagerEnabled' "
+            "-Value 0 -PropertyType DWord -Force",
+            texto,
+        )
+        # máquina com as políticas da versão anterior (sem esta): o próximo lote com senha a aplica
+        anterior = registro_completo(**{RAIZ: {"TranslateEnabled": 0}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(anterior)))
+        # nada apaga as senhas já salvas
+        self.assertNotIn("Login Data", texto + "\n".join(pe.script_desfazer()))
+
+    def test_escola_games_sem_filtro_fica_pronto(self):
+        texto = "\n".join(pe.script_aplicar(sem_filtro=True))
+        self.assertIn(r"policy\noFiltering' @('escolagames.com.br')", texto)
+        self.assertNotIn(r"noFiltering' -Recurse", texto)
+        self.assertTrue(pe.ESCOLA_GAMES_SEM_FILTRO)  # confirmado no Windows: com o uBOL os jogos travavam
+
+    def test_desfazer_tira_so_o_nosso(self):
+        texto = "\n".join(pe.script_desfazer())
+        self.assertIn(r"Benikids-Tirar 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist'", texto)
+        self.assertIn(r"Benikids-Tirar 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist'", texto)
+        self.assertIn(rf"Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{pe.UBOL_ID}'",
+                      texto)
+        removidos = [l for l in texto.splitlines() if l.startswith("Remove-Item ")]
+        self.assertEqual(len(removidos), 1)
+        # da raiz, só o valor da tradução (as outras políticas ficam)
+        valores = [l for l in texto.splitlines() if l.startswith("Remove-ItemProperty")]
+        self.assertEqual(valores, [
+            rf"Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name '{nome}' "
+            "-ErrorAction SilentlyContinue"
+            for nome in ("TranslateEnabled", "PasswordManagerEnabled")
+        ])
+        # a chave da lista só some se ficou vazia e sem subchaves
+        self.assertIn("$outros.Count -eq 0 -and $chave.SubKeyCount -eq 0", texto)
+
+    def test_listas_sao_renumeradas_sem_buracos(self):
+        # o Edge para de ler a lista no primeiro número que falta
+        funcoes = pe.script_aplicar()[0]
+        self.assertIn("Remove-ItemProperty -Path $k -Name $n", funcoes)
+        self.assertIn('$i = 1', funcoes)
+        self.assertIn("Sort-Object { [int]$_ }", funcoes)
+
+    def test_faltam(self):
+        self.assertFalse(pe.faltam(sem_filtro=False, winreg=WinregFalso(registro_completo())))
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso({})))
+        sem_ubol = registro_completo(**{FORCELIST: {"1": "outra;https://x"}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_ubol)))
+        # um buraco na numeração esconde o uBOL do Edge
+        buraco = registro_completo(**{FORCELIST: {"1": "outra;https://x", "3": pe.UBOL_FORCELIST}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(buraco)))
+        falta_url = registro_completo(**{BLOCKLIST: {"1": pe.URLS_BLOQUEADAS[0]}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(falta_url)))
+        outra_config = registro_completo(**{UBOL: {"defaultFiltering": "basic", "disableFirstRunPage": 1}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(outra_config)))
+        # máquina com as políticas da versão anterior (sem a lista de cookies): aplica de novo
+        sem_cookies = registro_completo()
+        del sem_cookies[UBOL + r"\rulesets"]
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_cookies)))
+        # Escola Games sem filtro: a lista tem de bater nos dois sentidos
+        self.assertTrue(pe.faltam(sem_filtro=True, winreg=WinregFalso(registro_completo())))
+        com_lista = registro_completo(**{UBOL + r"\noFiltering": {"1": "escolagames.com.br"}})
+        self.assertFalse(pe.faltam(sem_filtro=True, winreg=WinregFalso(com_lista)))
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(com_lista)))
+
+    def test_fora_do_windows_nao_pede_nada(self):
+        with mock.patch.object(pe.os, "name", "posix"):
+            self.assertFalse(pe.faltam())
+
+
+class AvisosDeCookiesTest(unittest.TestCase):
+    def test_rulesets_do_ubol(self):
+        self.assertEqual(pe.UBOL_RULESETS, ("+annoyances-cookies",))
+        for item in pe.UBOL_RULESETS:
+            self.assertTrue(item.startswith(("+", "-")))
+        self.assertEqual(pe.politica_ubol(False)["rulesets"], ("Lista", ["+annoyances-cookies"]))
+
+    def test_firefox_liga_as_listas_de_cookies_sem_perder_as_padrao(self):
+        politica = json.loads((RAIZ_REPO / "beni" / "firefox" / "policies.json").read_text())
+        ubo = politica["policies"]["3rdparty"]["Extensions"]["uBlock0@raymondhill.net"]["toOverwrite"]
+        listas = ubo["filterLists"]
+        # o filterLists troca a seleção inteira: as padrão do uBlock têm de estar aqui
+        padrao = ["ublock-filters", "ublock-badware", "ublock-privacy", "ublock-unbreak",
+                  "ublock-quick-fixes", "easylist", "easyprivacy", "urlhaus-1", "plowe-0"]
+        for lista in padrao + ["spa-1", "fanboy-cookiemonster", "ublock-cookies-easylist"]:
+            self.assertIn(lista, listas)
+        # sem "user-filters" o uBlock ignora as regras próprias (a do Escola Games)
+        self.assertIn("user-filters", listas)
+        self.assertEqual(len(listas), len(set(listas)))
+        self.assertIn(
+            "||pagead2.googlesyndication.com/pagead/js/adsbygoogle.js$script,domain=assets.escolagames.com.br",
+            ubo["filters"],
+        )
+        # e o resto das políticas continua
+        self.assertIn("WebsiteFilter", politica["policies"])
+        self.assertEqual(politica["policies"]["DNSOverHTTPS"], {"Enabled": False, "Locked": True})
+
+    def test_firefox_recusa_o_opcional_pelo_user_js(self):
+        instalar = (RAIZ_REPO / "instalar.sh").read_text()
+        self.assertIn("""'user_pref("cookiebanners.service.mode", 1);'""", instalar)
+        self.assertIn("""'user_pref("cookiebanners.service.mode.privateBrowsing", 1);'""", instalar)
+        # vai para o perfil base antes da cópia para os perfis de cada criança
+        self.assertLess(instalar.index("cookiebanners.service.mode"), instalar.index('cp "$P/user.js" "$Q/user.js"'))
+
+
+class LoteComSenhaTest(unittest.TestCase):
+    def test_politicas_entram_no_lote_so_quando_faltam(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            sem, _ = instalar_apps.script_admin([], pasta)
+            com, resultados = instalar_apps.script_admin([], pasta, politicas=True)
+        self.assertNotIn("Benikids-Por", sem)
+        self.assertIn("function Benikids-Por", com)
+        self.assertIn("ExtensionInstallForcelist", com)
+        self.assertIn("'edge-politicas|' + $c", com)
+        # um erro nas políticas não para o lote dos apps
+        self.assertIn("catch { $c = 'erro: '", com)
+        self.assertIn("finally { $ErrorActionPreference = 'Continue' }", com)
+        self.assertTrue(com.rstrip().endswith("'fim|0'"))
+        self.assertIn(resultados, com)
+
+    def test_trabalhar_pede_senha_so_para_as_politicas(self):
+        avisos = instalar_apps.queue.Queue()
+        with mock.patch.object(instalar_apps.politicas_edge, "faltam", return_value=True), \
+                mock.patch.object(instalar_apps, "pedem_senha", return_value=set()), \
+                mock.patch.object(instalar_apps, "instalar_como_admin", return_value={"edge-politicas": "0", "fim": "0"}) \
+                as admin, tempfile.TemporaryDirectory() as pasta:
+            instalar_apps.trabalhar([], avisos, pasta=pasta)
+        self.assertEqual(admin.call_args.kwargs["politicas"], True)
+        estados = []
+        while not avisos.empty():
+            estados.append(avisos.get_nowait())
+        self.assertIn((None, "admin", "politicas"), estados)
+        self.assertNotIn((None, "sem_senha", ""), estados)
+        self.assertEqual(estados[-1], (None, "fim", ""))
+
+    def test_trabalhar_sem_nada_faltando_nao_pede_senha(self):
+        avisos = instalar_apps.queue.Queue()
+        with mock.patch.object(instalar_apps.politicas_edge, "faltam", return_value=False), \
+                mock.patch.object(instalar_apps, "pedem_senha", return_value=set()), \
+                mock.patch.object(instalar_apps, "instalar_como_admin") as admin, \
+                tempfile.TemporaryDirectory() as pasta:
+            instalar_apps.trabalhar([], avisos, pasta=pasta)
+        admin.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+# Registro de mentira em PowerShell: as funções abaixo tomam o lugar dos cmdlets
+# (função tem precedência sobre cmdlet), guardando as chaves num hashtable. Assim
+# os scripts de verdade rodam no pwsh de qualquer sistema, com a semântica real
+# do pipeline — o que os testes de texto acima não pegam.
+_REGISTRO_FALSO = r"""
+$ErrorActionPreference = 'Stop'
+$global:REG = @{}
+function Reg-Norm($k) { return ([string]$k).TrimEnd('\').ToLower() }
+function Reg-Filhas($k) {
+  $n = Reg-Norm $k
+  return @($global:REG.Keys | Where-Object { $_.StartsWith($n + '\') -and -not $_.Substring($n.Length + 1).Contains('\') })
+}
+function Test-Path { [CmdletBinding()] param([Parameter(Position = 0)]$Path)
+  return $global:REG.ContainsKey((Reg-Norm $Path)) }
+function New-Item { [CmdletBinding()] param([Parameter(Position = 0)]$Path, [switch]$Force)
+  $partes = ([string]$Path).TrimEnd('\').Split('\')
+  for ($i = 1; $i -le $partes.Count; $i++) {
+    $p = Reg-Norm (($partes[0..($i - 1)]) -join '\')
+    if (-not $global:REG.ContainsKey($p) -or $i -eq $partes.Count) {
+      if ($global:REG.ContainsKey($p) -and $i -eq $partes.Count) {
+        foreach ($f in @(Reg-Filhas $p)) { $global:REG.Remove($f) }
+      }
+      $global:REG[$p] = [ordered]@{}
+    }
+  }
+  return $Path }
+function Get-Item { [CmdletBinding()] param([Parameter(Position = 0)]$Path)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n)) { Write-Error "nao existe: $Path"; return }
+  $vals = $global:REG[$n]
+  $o = [pscustomobject]@{ Property = [string[]]@($vals.Keys); ValueCount = $vals.Count
+                          SubKeyCount = @(Reg-Filhas $n).Count; Vals = $vals }
+  $o | Add-Member -MemberType ScriptMethod -Name GetValue -Value { param($nome) $this.Vals[$nome] }
+  return $o }
+function New-ItemProperty { [CmdletBinding()] param($Path, $Name, $Value, $PropertyType, [switch]$Force)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n)) { Write-Error "nao existe: $Path"; return }
+  if ($Value -is [array]) { Write-Error "valor e uma lista: $Name"; return }
+  $global:REG[$n][[string]$Name] = $Value }
+function Remove-ItemProperty { [CmdletBinding()] param($Path, $Name)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n) -or -not $global:REG[$n].Contains([string]$Name)) {
+    Write-Error "sem o valor $Name em $Path"; return }
+  $global:REG[$n].Remove([string]$Name) }
+function Remove-Item { [CmdletBinding()] param($Path, [switch]$Recurse)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n)) { Write-Error "nao existe: $Path"; return }
+  $abaixo = @($global:REG.Keys | Where-Object { $_.StartsWith($n + '\') })
+  if ($abaixo.Count -and -not $Recurse) { Write-Error "tem subchaves: $Path"; return }
+  foreach ($f in $abaixo) { $global:REG.Remove($f) }
+  $global:REG.Remove($n) }
+"""
+
+
+def _pwsh():
+    import shutil
+
+    return shutil.which("pwsh")
+
+
+@unittest.skipUnless(_pwsh(), "pwsh não instalado (no CI do GitHub, o ubuntu-latest já tem)")
+class PowerShellDeVerdadeTest(unittest.TestCase):
+    """Roda script_aplicar/script_desfazer no pwsh, sobre o registro de mentira."""
+
+    def rodar(self, inicial, *etapas):
+        import subprocess
+
+        carga = [_REGISTRO_FALSO]
+        for chave, valores in inicial.items():
+            carga.append(f"$global:REG[(Reg-Norm {pe._ps('HKLM:' + SEP_PS + chave)})] = [ordered]@{{}}")
+            for nome, valor in valores.items():
+                v = valor if isinstance(valor, int) else pe._ps(valor)
+                carga.append(f"$global:REG[(Reg-Norm {pe._ps('HKLM:' + SEP_PS + chave)})][{pe._ps(nome)}] = {v}")
+        for etapa in etapas:
+            carga.extend(etapa)
+        carga.append(
+            "$saida = @{}; foreach ($k in $global:REG.Keys) { $v = @{}; "
+            "foreach ($e in $global:REG[$k].GetEnumerator()) { $v[[string]$e.Key] = $e.Value }; $saida[$k] = $v }; "
+            "$saida | ConvertTo-Json -Depth 4 -Compress"
+        )
+        with tempfile.TemporaryDirectory() as pasta:
+            arquivo = Path(pasta) / "teste.ps1"
+            arquivo.write_text("\n".join(carga), encoding="utf-8")
+            r = subprocess.run(
+                [_pwsh(), "-NoProfile", "-NonInteractive", "-File", str(arquivo)],
+                capture_output=True, text=True, timeout=120,
+            )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stderr.strip(), "")
+        return {k[len("hklm:\\"):]: v for k, v in json.loads(r.stdout or "{}").items()}
+
+    @staticmethod
+    def lista(reg, chave):
+        valores = reg.get(chave.lower())
+        if valores is None:
+            return None
+        nomes = sorted((n for n in valores if n.isdigit()), key=int)
+        assert nomes == [str(i + 1) for i in range(len(nomes))], f"lista com buraco: {nomes}"
+        return [valores[n] for n in nomes]
+
+    def test_maquina_limpa_aplica_e_desfaz(self):
+        reg = self.rodar({}, pe.script_aplicar())
+        self.assertEqual(self.lista(reg, FORCELIST), [pe.UBOL_FORCELIST])
+        self.assertEqual(self.lista(reg, BLOCKLIST), list(pe.URLS_BLOQUEADAS))
+        self.assertEqual(self.lista(reg, UBOL + r"\rulesets"), list(pe.UBOL_RULESETS))
+        self.assertEqual(reg[RAIZ.lower()]["TranslateEnabled"], 0)
+
+        reg = self.rodar({}, pe.script_aplicar(), pe.script_desfazer())
+        self.assertIsNone(self.lista(reg, FORCELIST))
+        self.assertIsNone(self.lista(reg, BLOCKLIST))
+        self.assertFalse(any(pe.UBOL_ID in k for k in reg))
+        self.assertEqual(reg.get(RAIZ.lower(), {}), {})
+
+    def test_aplicar_duas_vezes_preserva_terceiros(self):
+        inicial = {
+            FORCELIST: {"1": "outra;https://x", "3": "terceira;https://y"},  # com buraco
+            BLOCKLIST: {"1": "exemplo.com"},
+            RAIZ: {"OutraPolitica": 1},
+        }
+        uma = self.rodar(inicial, pe.script_aplicar())
+        duas = self.rodar(inicial, pe.script_aplicar(), pe.script_aplicar())
+        self.assertEqual(uma, duas)
+        self.assertEqual(
+            self.lista(duas, FORCELIST), ["outra;https://x", "terceira;https://y", pe.UBOL_FORCELIST]
+        )
+        self.assertEqual(self.lista(duas, BLOCKLIST), ["exemplo.com"] + list(pe.URLS_BLOQUEADAS))
+        self.assertEqual(duas[RAIZ.lower()]["OutraPolitica"], 1)
+
+        volta = self.rodar(inicial, pe.script_aplicar(), pe.script_aplicar(), pe.script_desfazer())
+        self.assertEqual(self.lista(volta, FORCELIST), ["outra;https://x", "terceira;https://y"])
+        self.assertEqual(self.lista(volta, BLOCKLIST), ["exemplo.com"])
+        self.assertEqual(volta[RAIZ.lower()], {"OutraPolitica": 1})
+        self.assertFalse(any(pe.UBOL_ID in k for k in volta))
+
+    def test_desfazer_sem_nada_aplicado_nao_quebra(self):
+        reg = self.rodar({RAIZ: {"OutraPolitica": 1}}, pe.script_desfazer())
+        self.assertEqual(reg[RAIZ.lower()], {"OutraPolitica": 1})
+
+
+SEP_PS = "\\"

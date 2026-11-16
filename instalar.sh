@@ -152,6 +152,13 @@ grep -q alwaysOpenPanel "$P/user.js" 2>/dev/null || printf '%s\n' \
 grep -q autoDisableScopes "$P/user.js" 2>/dev/null || printf '%s\n' \
   'user_pref("extensions.autoDisableScopes", 0);' \
   'user_pref("extensions.enabledScopes", 15);' >> "$P/user.js"
+# Avisos de cookies: o uBlock (policies.json) esconde a maioria; o Firefox ESR ainda
+# tem o recusador próprio (1 = recusa o opcional; se não dá para recusar, não faz
+# nada; nunca aceita por nós). O Firefox comum tirou o recurso e ignora a pref.
+# Não vai no policies.json: a política Preferences não aceita "cookiebanners.".
+grep -q cookiebanners "$P/user.js" 2>/dev/null || printf '%s\n' \
+  'user_pref("cookiebanners.service.mode", 1);' \
+  'user_pref("cookiebanners.service.mode.privateBrowsing", 1);' >> "$P/user.js"
 # Escola Games conta como "Aprender": esconde o menu "Jogos" (diversão) e bloqueia essas páginas
 mkdir -p "$P/chrome"
 cp "$REPO/beni/firefox/userContent.css" "$P/chrome/"

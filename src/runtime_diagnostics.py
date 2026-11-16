@@ -44,7 +44,7 @@ _SAFE_EVENT_FIELDS = {
     "cliente.recuperado": {"etapa", "erro"},
     "request.rejected": {"statusCode"},
     "server.crashed": {"exceptionType"},
-    "site_login.finished": {"result", "exceptionType"},
+    "site_login.finished": {"result", "exceptionType", "driver"},
     "site_login.saved": set(),
     "server.duplicate": set(),
     "server.started": {"version"},
@@ -122,6 +122,8 @@ def _safe_detail(name, value):
     if name == "exceptionType":
         return value if value in _SAFE_EXCEPTION_TYPES else "OtherError"
     if name == "result" and value in _SAFE_RESULTS:
+        return value
+    if name == "driver" and value in ("marionette", "devtools"):
         return value
     if name == "etapa" and value in _SAFE_ETAPAS:
         return value

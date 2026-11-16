@@ -270,14 +270,33 @@ class LaunchActionTests(unittest.TestCase):
             )
 
     def test_external_chromium_uses_a_dedicated_profile(self):
-        command = server_module.external_browser_command(
-            "google-chrome",
-            "https://example.com/kids",
-        )
+        # o comando grava o Preferences do perfil: num HOME temporário, não no real
+        with tempfile.TemporaryDirectory() as home, mock.patch.object(server_module, "HOME", home):
+            command = server_module.external_browser_command(
+                "google-chrome",
+                "https://example.com/kids",
+            )
         self.assertEqual(command[0], "google-chrome")
         self.assertTrue(any(arg.startswith("--user-data-dir=") for arg in command))
         self.assertIn("--kiosk", command)
         self.assertIn("--app=https://example.com/kids", command)
+
+    def test_site_login_uses_devtools_on_edge_and_marionette_on_firefox(self):
+        self.assertEqual(server_module.site_login_driver("msedge.exe"), "devtools")
+        self.assertEqual(server_module.site_login_driver("google-chrome"), "devtools")
+        self.assertEqual(server_module.site_login_driver("firefox"), "marionette")
+        self.assertIsNone(server_module.site_login_driver(None))
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "site-logins.json")
+            server_module.site_logins.update_login(
+                path, "kid", "teachyourmonster", username="a@example.com", password="x",
+            )
+            url = "https://www.teachyourmonster.org/account/play"
+            with mock.patch.object(server_module, "SITE_LOGINS_FILE", path):
+                site, login = server_module.site_login_for_launch("msedge.exe", url, "kid")
+                self.assertEqual((site, login["username"]), ("teachyourmonster", "a@example.com"))
+                self.assertIsNone(server_module.site_login_for_launch(None, url, "kid"))
+                self.assertIsNone(server_module.site_login_for_launch("msedge.exe", url, "outra"))
 
     def test_vlc_media_command_contains_all_media_locations(self):
         command = server_module.media_player_command(

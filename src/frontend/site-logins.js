@@ -1,5 +1,9 @@
 // Pais → Crianças: e-mail e senha dos sites (Khan Academy) por perfil, para o
 // login automático. A senha só vai para o servidor; ele nunca a devolve.
+// Sem navegador compatível (Firefox, Edge ou Chrome) o servidor manda
+// available=false: a tela avisa e não deixa salvar um login que não faria nada.
+let siteLoginAvailable=true;
+const SITE_LOGIN_UNAVAILABLE='O login automático precisa do Firefox, do Edge ou do Chrome, e nenhum deles foi encontrado neste computador. Instale um deles para usar.';
 async function loadSiteLogins(){
   const list=document.getElementById('siteLoginList');
   if(!list) return;
@@ -8,7 +12,10 @@ async function loadSiteLogins(){
   try{
     const response=await fetch('/api/site-logins',{cache:'no-store'});
     if(!response.ok) throw new Error(String(response.status));
-    renderSiteLogins((await response.json()).sites||[]);
+    const data=await response.json();
+    siteLoginAvailable=data.available!==false;
+    siteLoginMessage(siteLoginAvailable?'':SITE_LOGIN_UNAVAILABLE,!siteLoginAvailable);
+    renderSiteLogins(data.sites||[]);
   }catch(e){
     list.replaceChildren();
     siteLoginMessage('Não consegui carregar os logins salvos.',true);
@@ -58,6 +65,7 @@ function renderSiteLogins(sites){
     const save=document.createElement('button');
     save.type='button'; save.className='smallbtn';
     save.textContent='Salvar login';
+    if(!siteLoginAvailable){ user.disabled=true; pass.disabled=true; save.disabled=true; }
     save.onclick=async()=>{
       if(await siteLoginSend({site:site.id,username:user.value,password:pass.value})){
         siteLoginMessage('Login do '+site.label+' salvo. Na próxima vez que '+((cfg&&cfg.name)||'a criança')+' abrir o site, ele entra sozinho.');
@@ -77,7 +85,9 @@ function renderSiteLogins(sites){
       row.appendChild(remove);
       const saved=document.createElement('span');
       saved.className='muted site-login-saved';
-      saved.textContent='✔ Login automático ligado para '+(site.username||'');
+      saved.textContent=siteLoginAvailable
+        ? '✔ Login automático ligado para '+(site.username||'')
+        : 'Salvo para '+(site.username||'')+', mas sem efeito neste computador';
       row.appendChild(saved);
     }
     list.appendChild(row);

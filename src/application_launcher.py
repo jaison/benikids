@@ -50,6 +50,56 @@ def resolve_tile_action(tile):
 EXTERNAL_PROFILE_SEED = ("extensions", "chrome", "user.js")
 
 
+# Bloqueio no Edge/Chrome dos sites, sem administrador e sem tocar no navegador
+# dos pais: --host-resolver-rules só vale para esta abertura do navegador. Cada
+# domínio (e os subdomínios) passa a resolver para 0.0.0.0, então a conexão
+# falha. Bloqueia o anúncio, não esconde o espaço vazio que ele deixa (isso só um
+# bloqueador como o uBlock faz) e não bloqueia caminhos dentro de um site.
+CHROMIUM_BLOCKED_HOSTS = (
+    # Google Ads / AdSense. No Escola Games o jogo só abre sem anúncio quando o
+    # adsbygoogle.js FALHA ao carregar (onerror): é o mesmo efeito da regra do
+    # uBlock no Linux (beni/firefox/policies.json).
+    "googlesyndication.com",
+    "doubleclick.net",
+    "googleadservices.com",
+    "googletagservices.com",
+    "adservice.google.com",
+    "adservice.google.com.br",
+    # redes de anúncio comuns em sites de jogos infantis
+    "amazon-adsystem.com",
+    "adnxs.com",
+    "criteo.com",
+    "criteo.net",
+    "pubmatic.com",
+    "rubiconproject.com",
+    "openx.net",
+    "taboola.com",
+    "outbrain.com",
+    # redirecionador de anúncio em vídeo que levava ao doubleclick no Escola Games
+    # (tracking.adovid.com/redirectv2?url=…pubads.g.doubleclick.net…)
+    "adovid.com",
+    # site inteiro bloqueado (no Linux: WebsiteFilter do policies.json)
+    "bestschoolgames.com",
+)
+
+
+def chromium_host_resolver_rules(hosts=CHROMIUM_BLOCKED_HOSTS):
+    """Valor do --host-resolver-rules: cada domínio e seus subdomínios em 0.0.0.0.
+
+    "MAP *.x" não pega o próprio "x", por isso as duas regras. O localhost fica de
+    fora para nada atrapalhar o DevTools e o servidor do Benikids em 127.0.0.1.
+    """
+    rules = []
+    for host in hosts:
+        rules += [f"MAP {host} 0.0.0.0", f"MAP *.{host} 0.0.0.0"]
+    return ", ".join(rules + ["EXCLUDE localhost"])
+
+
+def _safe_profile_id(profile_id):
+    """Id do perfil só com letras, números, "-" e "_" (vira nome de pasta)."""
+    return "".join(ch for ch in (profile_id or "") if ch.isalnum() or ch in "-_")[:64]
+
+
 def external_firefox_profile(cache_root, profile_id=""):
     """Perfil do Firefox dos sites de cada criança (cookies e logins separados).
 
@@ -57,7 +107,7 @@ def external_firefox_profile(cache_root, profile_id=""):
     com as extensões, o CSS e as preferências do padrão, mas sem cookies/senhas.
     """
     base = os.path.join(os.fspath(cache_root), "external-firefox-profile")
-    safe = "".join(ch for ch in (profile_id or "") if ch.isalnum() or ch in "-_")[:64]
+    safe = _safe_profile_id(profile_id)
     if not safe or safe == "default":
         return base
     path = f"{base}-{safe}"
@@ -76,19 +126,117 @@ def external_firefox_profile(cache_root, profile_id=""):
     return path
 
 
-def external_browser_command(browser, url, cache_root, profile_id="", marionette_port=None):
-    """Build the isolated kiosk command used for an external web tile."""
+def external_chromium_profile(cache_root, profile_id=""):
+    """Pasta de dados do Edge/Chrome dos sites de cada criança.
+
+    Como no Firefox: o perfil "default" fica na pasta antiga (quem já usava não
+    perde os cookies) e cada outra criança tem a sua, para os logins e cookies
+    de irmãos não se misturarem.
+    """
+    base = os.path.join(os.fspath(cache_root), "external-chromium-profile")
+    safe = _safe_profile_id(profile_id)
+    if not safe or safe == "default":
+        return base
+    return f"{base}-{safe}"
+
+
+# Preferências do perfil do Edge/Chrome dos sites que o Benikids garante a cada
+# abertura (sem administrador; as políticas TranslateEnabled e
+# PasswordManagerEnabled do politicas_edge.py fazem o mesmo para o computador):
+# - translate.enabled=false: sem a barra/ícone "Traduzir esta página" e sem o
+#   oferecimento automático;
+# - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
+#   preenche sozinho um login salvo à mão (quem entra é o login automático, com
+#   o login de cada criança). Logins já salvos não são apagados.
+CHROMIUM_PREFERENCES = {
+    "translate": {"enabled": False},
+    "credentials_enable_service": False,
+    "profile": {"password_manager_enabled": False},
+}
+
+
+def _merge_prefs(current, wanted):
+    """Põe os valores de wanted em current sem tirar nenhuma outra chave."""
+    changed = False
+    for key, value in wanted.items():
+        if isinstance(value, dict):
+            if not isinstance(current.get(key), dict):
+                current[key] = {}
+                changed = True
+            changed = _merge_prefs(current[key], value) or changed
+        elif current.get(key) != value or type(current.get(key)) is not type(value):
+            current[key] = value
+            changed = True
+    return changed
+
+
+def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
+    """Garante as preferências em <perfil>/Default/Preferences antes de abrir o navegador.
+
+    O resto do arquivo fica como está. Sem o arquivo (perfil novo), cria só o
+    mínimo; o navegador completa o resto. Se o arquivo não for um JSON válido
+    (o navegador escrevendo naquela hora), não mexe: na próxima abertura dá. Se
+    o Windows não deixar trocar o arquivo (navegador aberto), segue sem ele.
+    Devolve True se gravou.
+    """
+    path = os.path.join(os.fspath(profile), "Default", "Preferences")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if not _merge_prefs(data, wanted):
+        return False
+    tmp = f"{path}.benikids-tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def external_browser_command(
+    browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
+):
+    """Build the isolated kiosk command used for an external web tile.
+
+    marionette_port (Firefox) e devtools_port (Edge/Chrome) só vêm quando o tile
+    tem login automático salvo: o controle remoto do navegador fica desligado
+    nos outros sites.
+    """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
-        profile = os.path.join(cache_root, "external-chromium-profile")
-        return [
+        profile = external_chromium_profile(cache_root, profile_id)
+        ensure_chromium_preferences(profile)
+        command = [
             browser,
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
-            "--kiosk",
-            f"--app={url}",
+            f"--host-resolver-rules={chromium_host_resolver_rules()}",
+            # reforço da preferência translate.enabled=false (só um --disable-features
+            # vale: some outra função desligada aqui, na mesma lista)
+            "--disable-features=Translate",
         ]
+        if devtools_port:
+            # login automático (site_logins.py, DevTools Protocol): só neste tile,
+            # só em 127.0.0.1
+            command += [
+                f"--remote-debugging-port={int(devtools_port)}",
+                "--remote-debugging-address=127.0.0.1",
+            ]
+        return command + ["--kiosk", f"--app={url}"]
     profile = external_firefox_profile(cache_root, profile_id)
     os.makedirs(profile, exist_ok=True)
     if marionette_port:

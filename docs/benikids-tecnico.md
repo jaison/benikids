@@ -63,6 +63,8 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 - Ao abrir o site, o launcher preenche o login e clica em "Entrar". Se a sessão ainda estiver aberta, não digita nada.
 - **A senha fica só neste computador**, num arquivo separado da configuração e legível só pelo usuário. Depois de salva, ela nunca aparece de novo na tela.
 - **Cada criança tem o seu navegador de sites** (cookies e logins separados): o Khan da Bea não abre com a conta do Beni.
+- O navegador do site com login abre com a porta de controle ligada (Firefox: 28290; Edge: 28291), só em 127.0.0.1. Enquanto esse site está aberto, qualquer programa deste computador (de qualquer conta) alcança a porta, nunca de fora dele; ela fecha quando o site fecha.
+- O gerenciador de senhas do Edge fica desligado nos perfis do Benikids. Logins salvos antes não são apagados: para apagar, com o site fechado, apague os arquivos `Default\Login Data` e `Default\Login Data For Account` da pasta `%USERPROFILE%\.cache\cozy-kids-launcher\external-chromium-profile` (ou `…-<id>` da criança).
 - Para acrescentar outro site, basta descrever a página de login em `src/site_logins.py`.
 
 ### 🛡️ Internet e conteúdo
