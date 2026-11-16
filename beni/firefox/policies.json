@@ -18,6 +18,21 @@
       "Extensions": {
         "uBlock0@raymondhill.net": {
           "toOverwrite": {
+            "filterLists": [
+              "user-filters",
+              "ublock-filters",
+              "ublock-badware",
+              "ublock-privacy",
+              "ublock-unbreak",
+              "ublock-quick-fixes",
+              "easylist",
+              "easyprivacy",
+              "urlhaus-1",
+              "plowe-0",
+              "spa-1",
+              "fanboy-cookiemonster",
+              "ublock-cookies-easylist"
+            ],
             "filters": [
               "! Escola Games: os jogos so rodam sem anuncio quando o script do Google FALHA (onerror).",
               "! O uBlock troca o script por um falso que nunca responde; aqui ele so bloqueia.",
