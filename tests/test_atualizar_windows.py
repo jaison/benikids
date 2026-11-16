@@ -82,6 +82,18 @@ class AtualizarWindowsTests(unittest.TestCase):
         self.assertIsNone(aw.pendente(self.app, self.base))
         self.assertFalse(os.path.exists(os.path.join(self.base, "pronta")))
 
+    def test_parents_see_the_downloaded_version_and_failures(self):
+        vazio = aw.estado_para_os_pais(self.app, self.base)
+        self.assertEqual(vazio, {"baixada": None, "ultimaVerificacao": None, "erro": None})
+        abrir = self.servidor(release("1.0.5"), pacote_zip("1.0.5"))
+        aw.verificar(self.app, self.base, abrir, agora=1000)
+        estado = aw.estado_para_os_pais(self.app, self.base)
+        self.assertEqual(estado["baixada"], "1.0.5")
+        self.assertTrue(estado["ultimaVerificacao"])
+        self.assertIsNone(estado["erro"])
+        aw.marcar_falha("1.0.5", self.base)
+        self.assertIn("1.0.5", aw.estado_para_os_pais(self.app, self.base)["erro"])
+
     def test_wrong_checksum_is_rejected(self):
         abrir = self.servidor(release("1.0.5"), pacote_zip("1.0.5"), soma="0" * 64)
         with self.assertRaises(RuntimeError):
@@ -105,6 +117,17 @@ class AtualizarWindowsTests(unittest.TestCase):
         aw.verificar(self.app, self.base, abrir, agora=1000)
         aw.marcar_falha("1.0.5", self.base)
         self.assertIsNone(aw.pendente(self.app, self.base))
+
+
+
+class HoraDeAtualizarTests(unittest.TestCase):
+    def test_installs_only_when_ready_idle_and_no_app_open(self):
+        pronta = ("1.0.6", "/pacote")
+        vinte = aw.OCIOSO_PARA_ATUALIZAR
+        self.assertTrue(aw.hora_de_atualizar(pronta, None, vinte))
+        self.assertFalse(aw.hora_de_atualizar(None, None, vinte * 10))      # nada baixado
+        self.assertFalse(aw.hora_de_atualizar(pronta, {"pid": 1}, vinte))   # criança num app
+        self.assertFalse(aw.hora_de_atualizar(pronta, None, vinte - 1))     # alguém mexeu há pouco
 
 
 if __name__ == "__main__":

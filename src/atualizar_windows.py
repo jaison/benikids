@@ -188,6 +188,15 @@ def pendente(app_root, base=None):
     return pronta
 
 
+OCIOSO_PARA_ATUALIZAR = 20 * 60  # segundos sem ninguém mexer no computador
+
+
+def hora_de_atualizar(pronta, app_aberto, ocioso):
+    """Instalar já uma versão baixada, sem esperar o Benikids ser reaberto (ele pode
+    ficar dias aberto): só com o menu parado, nenhum app aberto e ninguém mexendo."""
+    return bool(pronta) and not app_aberto and ocioso >= OCIOSO_PARA_ATUALIZAR
+
+
 def aplicar_e_sair(raiz_pacote, log=print):
     """Chama o instalador da versão nova (com o Python dela) e devolve True: o iniciador
     deve sair logo, para o instalador poder trocar os arquivos e abrir o Benikids de novo."""
@@ -200,6 +209,27 @@ def aplicar_e_sair(raiz_pacote, log=print):
         return False
     log(f"atualização: instalador de {raiz_pacote} aberto")
     return True
+
+
+def estado_para_os_pais(app_root, base=None):
+    """O que mostrar na área dos pais: versão já baixada esperando instalar, a última
+    procura e se alguma versão falhou ao instalar."""
+    base = base or pasta()
+    estado = _estado(base)
+    pronta = _pronta(base)
+    nova, atual = (semver(pronta[0]) if pronta else None), semver(versao_instalada(app_root))
+    baixada = pronta[0] if pronta and nova and (not atual or nova > atual) else None
+    ultima = estado.get("verificado_em")
+    try:
+        ultima = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(float(ultima))) if ultima is not None else None
+    except (TypeError, ValueError, OverflowError, OSError):
+        ultima = None
+    falhou = estado.get("falhou")
+    return {
+        "baixada": baixada,
+        "ultimaVerificacao": ultima,
+        "erro": f"A versão {falhou} não conseguiu instalar." if isinstance(falhou, str) and falhou else None,
+    }
 
 
 def marcar_falha(versao, base=None):

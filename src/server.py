@@ -640,7 +640,32 @@ def auto_update_status(state_file=AUTO_UPDATE_STATE, timer_file=AUTO_UPDATE_TIME
     }
 
 
+def windows_update_status():
+    """No Windows o atualizador é o atualizar_windows.py (estado em %LOCALAPPDATA%)."""
+    import atualizar_windows
+
+    estado = atualizar_windows.estado_para_os_pais(APP_ROOT)
+    installed = get_version()
+    return {
+        "installedVersion": installed,
+        "latestVersion": estado["baixada"] or installed,
+        "source": "release",
+        "updateAvailable": False,   # instala sozinho: sem botão "Atualizar agora"
+        "autoUpdate": True,
+        "staged": estado["baixada"],
+        "forced": False,
+        "lastCheck": estado["ultimaVerificacao"],
+        "installedAt": None,
+        "lastError": estado["erro"],
+        "notes": None,
+        "installHint": "Vai ser instalada quando o Benikids abrir de novo, ou quando o computador "
+                       "ficar 20 minutos parado no menu.",
+    }
+
+
 def get_update_status(timeout=5):
+    if os.name == "nt":
+        return windows_update_status()
     return auto_update_status()
 
 
