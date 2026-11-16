@@ -137,6 +137,64 @@ def external_chromium_profile(cache_root, profile_id=""):
     return f"{base}-{safe}"
 
 
+# Preferências do perfil do Edge/Chrome dos sites que o Benikids garante a cada
+# abertura. translate.enabled=false: sem a barra/ícone "Traduzir esta página" e
+# sem o oferecimento automático (sem administrador; a política TranslateEnabled
+# do politicas_edge.py faz o mesmo para o computador inteiro).
+CHROMIUM_PREFERENCES = {"translate": {"enabled": False}}
+
+
+def _merge_prefs(current, wanted):
+    """Põe os valores de wanted em current sem tirar nenhuma outra chave."""
+    changed = False
+    for key, value in wanted.items():
+        if isinstance(value, dict):
+            if not isinstance(current.get(key), dict):
+                current[key] = {}
+                changed = True
+            changed = _merge_prefs(current[key], value) or changed
+        elif current.get(key) != value or type(current.get(key)) is not type(value):
+            current[key] = value
+            changed = True
+    return changed
+
+
+def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
+    """Garante as preferências em <perfil>/Default/Preferences antes de abrir o navegador.
+
+    O resto do arquivo fica como está. Sem o arquivo (perfil novo), cria só o
+    mínimo; o navegador completa o resto. Se o arquivo não for um JSON válido
+    (o navegador escrevendo naquela hora), não mexe: na próxima abertura dá. Se
+    o Windows não deixar trocar o arquivo (navegador aberto), segue sem ele.
+    Devolve True se gravou.
+    """
+    path = os.path.join(os.fspath(profile), "Default", "Preferences")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if not _merge_prefs(data, wanted):
+        return False
+    tmp = f"{path}.benikids-tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    return True
+
+
 def external_browser_command(
     browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
 ):
@@ -149,12 +207,16 @@ def external_browser_command(
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
         profile = external_chromium_profile(cache_root, profile_id)
+        ensure_chromium_preferences(profile)
         command = [
             browser,
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
+            # reforço da preferência translate.enabled=false (só um --disable-features
+            # vale: some outra função desligada aqui, na mesma lista)
+            "--disable-features=Translate",
         ]
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,

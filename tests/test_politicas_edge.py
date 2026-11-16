@@ -16,6 +16,7 @@ import politicas_edge as pe  # noqa: E402
 
 FORCELIST = r"SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist"
 BLOCKLIST = r"SOFTWARE\Policies\Microsoft\Edge\URLBlocklist"
+RAIZ = r"SOFTWARE\Policies\Microsoft\Edge"
 UBOL = rf"SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{pe.UBOL_ID}\policy"
 
 
@@ -61,6 +62,7 @@ def registro_completo(**extra):
         FORCELIST: {"1": "outra;https://x", "2": pe.UBOL_FORCELIST},
         BLOCKLIST: {str(i + 1): url for i, url in enumerate(("exemplo.com",) + pe.URLS_BLOQUEADAS)},
         UBOL: {"defaultFiltering": "optimal", "disableFirstRunPage": 1},
+        RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0},
     }
     chaves.update(extra)
     return chaves
@@ -98,6 +100,20 @@ class PoliticasTest(unittest.TestCase):
         self.assertIn("if (-not (Test-Path $k)) { New-Item -Path $k -Force", texto)
         self.assertEqual(texto.count("New-Item "), 1)
 
+    def test_traducao_desligada_na_raiz(self):
+        texto = "\n".join(pe.script_aplicar())
+        self.assertIn(
+            r"New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'TranslateEnabled' "
+            "-Value 0 -PropertyType DWord -Force",
+            texto,
+        )
+        # a raiz só é criada se faltar (New-Item -Force recriaria vazia)
+        self.assertIn(r"Benikids-Chave 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'" + "\n", texto)
+        ligada = registro_completo(**{RAIZ: {"TranslateEnabled": 1}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(ligada)))
+        sem_valor = registro_completo(**{RAIZ: {"OutraPolitica": 1}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_valor)))
+
     def test_escola_games_sem_filtro_fica_pronto(self):
         texto = "\n".join(pe.script_aplicar(sem_filtro=True))
         self.assertIn(r"policy\noFiltering' @('escolagames.com.br')", texto)
@@ -110,8 +126,14 @@ class PoliticasTest(unittest.TestCase):
         self.assertIn(r"Benikids-Tirar 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist'", texto)
         self.assertIn(rf"Remove-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{pe.UBOL_ID}'",
                       texto)
-        removidos = [l for l in texto.splitlines() if l.startswith("Remove-Item")]
+        removidos = [l for l in texto.splitlines() if l.startswith("Remove-Item ")]
         self.assertEqual(len(removidos), 1)
+        # da raiz, só o valor da tradução (as outras políticas ficam)
+        valores = [l for l in texto.splitlines() if l.startswith("Remove-ItemProperty")]
+        self.assertEqual(valores, [
+            r"Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'TranslateEnabled' "
+            "-ErrorAction SilentlyContinue",
+        ])
         # a chave da lista só some se ficou vazia e sem subchaves
         self.assertIn("$outros.Count -eq 0 -and $chave.SubKeyCount -eq 0", texto)
 

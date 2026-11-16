@@ -270,10 +270,12 @@ class LaunchActionTests(unittest.TestCase):
             )
 
     def test_external_chromium_uses_a_dedicated_profile(self):
-        command = server_module.external_browser_command(
-            "google-chrome",
-            "https://example.com/kids",
-        )
+        # o comando grava o Preferences do perfil: num HOME temporário, não no real
+        with tempfile.TemporaryDirectory() as home, mock.patch.object(server_module, "HOME", home):
+            command = server_module.external_browser_command(
+                "google-chrome",
+                "https://example.com/kids",
+            )
         self.assertEqual(command[0], "google-chrome")
         self.assertTrue(any(arg.startswith("--user-data-dir=") for arg in command))
         self.assertIn("--kiosk", command)

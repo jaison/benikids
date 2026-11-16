@@ -10,12 +10,14 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import site_logins  # noqa: E402
 from application_launcher import (  # noqa: E402
+    ensure_chromium_preferences,
     CHROMIUM_BLOCKED_HOSTS,
     chromium_host_resolver_rules,
     external_browser_command,
@@ -81,11 +83,83 @@ class EdgeCommandTest(unittest.TestCase):
             for allowed in ("escolagames.com.br", "khanacademy.org", "teachyourmonster.org", "127.0.0.1"):
                 self.assertFalse(allowed == host or allowed.endswith("." + host), (allowed, host))
 
+    def test_edge_command_turns_translation_off(self):
+        with tempfile.TemporaryDirectory() as root:
+            for profile_id in ("default", "child-1"):
+                command = external_browser_command("msedge.exe", "https://x.org/", root, profile_id=profile_id)
+                self.assertEqual([a for a in command if a.startswith("--disable-features")],
+                                 ["--disable-features=Translate"])
+                prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
+                self.assertEqual(json.loads(prefs.read_text()), {"translate": {"enabled": False}})
+            # o Firefox não ganha nada disso
+            firefox = external_browser_command("firefox", "https://x.org/", root)
+            self.assertFalse(any("disable-features" in arg for arg in firefox))
+
     def test_firefox_ignores_devtools_port(self):
         with tempfile.TemporaryDirectory() as root:
             command = external_browser_command("firefox", "https://x.org/", root, devtools_port=28291)
             self.assertEqual(command[-2:], ["--kiosk", "https://x.org/"])
             self.assertNotIn("--marionette", command)
+
+
+class EdgePreferencesTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.profile = Path(self.tmp.name) / "external-chromium-profile-child-1"
+        self.prefs = self.profile / "Default" / "Preferences"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, data):
+        self.prefs.parent.mkdir(parents=True, exist_ok=True)
+        self.prefs.write_text(data if isinstance(data, str) else json.dumps(data), encoding="utf-8")
+
+    def test_new_profile_gets_only_the_minimum(self):
+        self.assertTrue(ensure_chromium_preferences(self.profile))
+        self.assertEqual(json.loads(self.prefs.read_text()), {"translate": {"enabled": False}})
+        self.assertEqual(os.listdir(self.prefs.parent), ["Preferences"])  # sem arquivo temporário
+
+    def test_merge_keeps_every_other_key(self):
+        original = {
+            "profile": {"name": "Pessoa 1", "exit_type": "Crashed"},
+            "translate": {"enabled": True, "other": "fica"},
+            "translate_blocked_languages": ["pt"],
+            "intl": {"accept_languages": "pt-BR,pt"},
+            "emoji": "🎈",
+        }
+        self.write(original)
+        self.assertTrue(ensure_chromium_preferences(self.profile))
+        data = json.loads(self.prefs.read_text(encoding="utf-8"))
+        expected = json.loads(json.dumps(original))
+        expected["translate"]["enabled"] = False
+        self.assertEqual(data, expected)
+
+    def test_already_off_is_not_rewritten(self):
+        self.write({"translate": {"enabled": False}, "x": 1})
+        before = self.prefs.stat().st_mtime_ns
+        self.assertFalse(ensure_chromium_preferences(self.profile))
+        self.assertEqual(self.prefs.stat().st_mtime_ns, before)
+
+    def test_translate_not_a_dict_is_replaced(self):
+        self.write({"translate": "estranho", "x": 1})
+        self.assertTrue(ensure_chromium_preferences(self.profile))
+        self.assertEqual(json.loads(self.prefs.read_text()), {"translate": {"enabled": False}, "x": 1})
+
+    def test_broken_file_is_left_alone(self):
+        for broken in ('{"translate": {"enabled": tr', "[1, 2]"):
+            self.write(broken)
+            self.assertFalse(ensure_chromium_preferences(self.profile))
+            self.assertEqual(self.prefs.read_text(), broken)
+
+    def test_write_error_does_not_break_the_launch(self):
+        self.write({"x": 1})
+        with mock.patch("application_launcher.os.replace", side_effect=PermissionError("em uso")):
+            self.assertFalse(ensure_chromium_preferences(self.profile))
+            command = external_browser_command("msedge.exe", "https://x.org/", self.tmp.name, profile_id="child-1")
+        self.assertIn("--disable-features=Translate", command)
+        self.assertEqual(json.loads(self.prefs.read_text()), {"x": 1})
+        self.assertEqual(os.listdir(self.prefs.parent), ["Preferences"])
 
 
 class WebSocketFrameTest(unittest.TestCase):

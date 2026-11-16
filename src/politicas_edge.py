@@ -6,7 +6,8 @@ O que o Firefox dos sites tem no Linux (beni/firefox/policies.json), no Edge:
   (MV2) está sendo desligado no Edge;
 - a configuração do uBOL pela política de extensão ("3rdparty"): filtragem
   "optimal" e sem a página de boas-vindas;
-- URLBlocklist com as mesmas páginas bloqueadas do Linux.
+- URLBlocklist com as mesmas páginas bloqueadas do Linux;
+- TranslateEnabled=0 (sem o "Traduzir esta página").
 
 Fica em HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge: vale para o Edge inteiro do
 computador (o mantenedor confirmou que só o Benikids usa o Edge) e precisa de
@@ -50,6 +51,12 @@ URLS_BLOQUEADAS = (
 # em "Loading…", ligue isto: o uBOL deixa o site em paz e o bloqueio fica com o
 # --host-resolver-rules do comando do Edge (application_launcher.py).
 ESCOLA_GAMES_SEM_FILTRO = False
+
+# Valores simples na raiz das políticas do Edge: {nome: (tipo, valor)}.
+# TranslateEnabled=0: sem a barra/ícone "Traduzir esta página" e sem o
+# oferecimento automático. O perfil de cada criança também leva
+# translate.enabled=false (application_launcher.py), que não pede administrador.
+VALORES_RAIZ = {"TranslateEnabled": ("DWord", 0)}
 SEM_FILTRO = ("escolagames.com.br",)
 
 
@@ -135,6 +142,11 @@ def script_aplicar(sem_filtro=ESCOLA_GAMES_SEM_FILTRO):
         f"{_lista_ps([UBOL_FORCELIST])} {_ps(UBOL_ID + ';')}"
     )
     linhas.append(f"Benikids-Por {_ps(RAIZ + SEP + 'URLBlocklist')} {_lista_ps(URLS_BLOQUEADAS)} ''")
+    linhas.append(f"Benikids-Chave {_ps(RAIZ)}")
+    for nome, (tipo, valor) in VALORES_RAIZ.items():
+        linhas.append(
+            f"New-ItemProperty -Path {_ps(RAIZ)} -Name {_ps(nome)} -Value {valor} -PropertyType {tipo} -Force | Out-Null"
+        )
     chave = _chave_ubol()
     linhas.append(f"Benikids-Chave {_ps(chave)}")
     for nome, (tipo, valor) in politica_ubol(sem_filtro).items():
@@ -159,6 +171,9 @@ def script_desfazer():
         f"Benikids-Tirar {_ps(RAIZ + SEP + 'URLBlocklist')} {_lista_ps(URLS_BLOQUEADAS)} ''",
         # a política do uBOL é toda nossa
         f"Remove-Item -Path {_ps(_chave_extensao())} -Recurse -ErrorAction SilentlyContinue",
+    ] + [
+        f"Remove-ItemProperty -Path {_ps(RAIZ)} -Name {_ps(nome)} -ErrorAction SilentlyContinue"
+        for nome in VALORES_RAIZ
     ]
 
 
@@ -209,6 +224,9 @@ def faltam(sem_filtro=ESCOLA_GAMES_SEM_FILTRO, winreg=None):
         return True
     if not set(URLS_BLOQUEADAS) <= set(_ler_lista(winreg, RAIZ_WINREG + r"\URLBlocklist")):
         return True
+    for nome, (_tipo, valor) in VALORES_RAIZ.items():
+        if _ler_valor(winreg, RAIZ_WINREG, nome) != valor:
+            return True
     chave = rf"{RAIZ_WINREG}\3rdparty\extensions\{UBOL_ID}\policy"
     for nome, (tipo, valor) in politica_ubol(sem_filtro).items():
         if tipo == "Lista":
