@@ -49,10 +49,13 @@ baixar, instalar, a criança usa. Textos para o usuário em **português**, simp
   `gh release create vX.Y.Z --title X.Y.Z --notes "..."`. O CI anexa o menu nativo do Linux
   e o `Benikids-Windows.zip` (+ `.sha256`). `[forcar]` nas notas instala na hora no Linux.
   (`docs/RELEASING.md` é do projeto original e não vale para o Benikids.)
-- **Cloudflare** (Worker, D1, Pages): token em `~/.config/benikids-cloudflare.env`
-  (`CLOUDFLARE_API_TOKEN`, chmod 600) e `CLOUDFLARE_ACCOUNT_ID` exportado (sem ele, erro
-  9106). Comandos em `telemetria/LEIA-ME.md`; site: `npx wrangler@3 pages deploy site
-  --project-name benikids --branch main`. Nunca mostre o token em respostas ou comandos.
+- **Cloudflare** (Worker, D1, Pages): o wrangler do Mac do mantenedor já está logado pelo
+  navegador (OAuth), sem arquivo de token. Esse login vê duas contas; o Benikids está na
+  conta pessoal, então passe sempre `CLOUDFLARE_ACCOUNT_ID=<id da conta pessoal>` no
+  comando (sem ele, erro 9106 ou conta errada; o id está na memória da sessão ou em
+  `npx wrangler@3 whoami`). Comandos em `telemetria/LEIA-ME.md`; site: `npx wrangler@3
+  pages deploy site --project-name benikids --branch main`. Nunca mostre tokens em
+  respostas ou comandos.
 - Problemas da telemetria viram Issues com a etiqueta `telemetria` (cron diário 03:17 UTC).
 
 ## Regras
