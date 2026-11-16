@@ -50,6 +50,11 @@ def resolve_tile_action(tile):
 EXTERNAL_PROFILE_SEED = ("extensions", "chrome", "user.js")
 
 
+def _safe_profile_id(profile_id):
+    """Id do perfil só com letras, números, "-" e "_" (vira nome de pasta)."""
+    return "".join(ch for ch in (profile_id or "") if ch.isalnum() or ch in "-_")[:64]
+
+
 def external_firefox_profile(cache_root, profile_id=""):
     """Perfil do Firefox dos sites de cada criança (cookies e logins separados).
 
@@ -57,7 +62,7 @@ def external_firefox_profile(cache_root, profile_id=""):
     com as extensões, o CSS e as preferências do padrão, mas sem cookies/senhas.
     """
     base = os.path.join(os.fspath(cache_root), "external-firefox-profile")
-    safe = "".join(ch for ch in (profile_id or "") if ch.isalnum() or ch in "-_")[:64]
+    safe = _safe_profile_id(profile_id)
     if not safe or safe == "default":
         return base
     path = f"{base}-{safe}"
@@ -76,19 +81,46 @@ def external_firefox_profile(cache_root, profile_id=""):
     return path
 
 
-def external_browser_command(browser, url, cache_root, profile_id="", marionette_port=None):
-    """Build the isolated kiosk command used for an external web tile."""
+def external_chromium_profile(cache_root, profile_id=""):
+    """Pasta de dados do Edge/Chrome dos sites de cada criança.
+
+    Como no Firefox: o perfil "default" fica na pasta antiga (quem já usava não
+    perde os cookies) e cada outra criança tem a sua, para os logins e cookies
+    de irmãos não se misturarem.
+    """
+    base = os.path.join(os.fspath(cache_root), "external-chromium-profile")
+    safe = _safe_profile_id(profile_id)
+    if not safe or safe == "default":
+        return base
+    return f"{base}-{safe}"
+
+
+def external_browser_command(
+    browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
+):
+    """Build the isolated kiosk command used for an external web tile.
+
+    marionette_port (Firefox) e devtools_port (Edge/Chrome) só vêm quando o tile
+    tem login automático salvo: o controle remoto do navegador fica desligado
+    nos outros sites.
+    """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
-        profile = os.path.join(cache_root, "external-chromium-profile")
-        return [
+        profile = external_chromium_profile(cache_root, profile_id)
+        command = [
             browser,
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
-            "--kiosk",
-            f"--app={url}",
         ]
+        if devtools_port:
+            # login automático (site_logins.py, DevTools Protocol): só neste tile,
+            # só em 127.0.0.1
+            command += [
+                f"--remote-debugging-port={int(devtools_port)}",
+                "--remote-debugging-address=127.0.0.1",
+            ]
+        return command + ["--kiosk", f"--app={url}"]
     profile = external_firefox_profile(cache_root, profile_id)
     os.makedirs(profile, exist_ok=True)
     if marionette_port:

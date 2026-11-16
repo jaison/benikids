@@ -4,20 +4,27 @@ O e-mail e a senha ficam em ~/.config/cozy-kids-launcher/site-logins.json
 (permissão 600), fora do config.json, e a senha nunca volta para a página:
 a área dos pais só vê o e-mail e se há senha salva.
 
-Ao abrir o site, o Firefox sobe com o Marionette (o controle remoto do próprio
-Firefox) só para esse tile; uma thread preenche a página de login do site e
-clica em "Entrar". Se a sessão ainda estiver aberta (cookie), nada é digitado.
+Ao abrir o site, o navegador sobe com o controle remoto ligado só para esse
+tile: o Firefox com o Marionette, o Edge/Chrome com o DevTools Protocol (CDP),
+os dois só em 127.0.0.1. Uma thread preenche a página de login do site e clica
+em "Entrar". Se a sessão ainda estiver aberta (cookie), nada é digitado. A
+senha vai só pelo socket local, nunca para a linha de comando nem para o log.
 """
 
+import base64
+import hashlib
+import http.client
 import json
 import os
 import socket
+import struct
 import tempfile
 import threading
 import time
 from urllib.parse import quote, urlparse
 
 MARIONETTE_PORT = 28290
+DEVTOOLS_PORT = 28291
 
 SITES = {
     "khan": {
@@ -189,11 +196,251 @@ class Marionette:
     def script(self, source, *args):
         return self.cmd("WebDriver:ExecuteScript", {"script": source, "args": list(args)}).get("value")
 
+    def begin(self):
+        self.cmd("WebDriver:NewSession", {"capabilities": {"pageLoadStrategy": "eager"}})
+
+    def navigate(self, url):
+        self.cmd("WebDriver:Navigate", {"url": url})
+
+    def end(self):
+        try:
+            self.cmd("WebDriver:DeleteSession")
+        except Exception:  # noqa: BLE001
+            pass
+
     def close(self):
         try:
             self.sock.close()
         except OSError:
             pass
+
+
+# ------------------------------------------------- WebSocket mínimo (RFC 6455)
+# Só o que o DevTools do Edge/Chrome precisa: handshake, frames de texto com
+# máscara (cliente → servidor), sem extensões nem compressão.
+
+_WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+OP_CONT, OP_TEXT, OP_BINARY, OP_CLOSE, OP_PING, OP_PONG = 0x0, 0x1, 0x2, 0x8, 0x9, 0xA
+
+
+def ws_accept_key(key):
+    return base64.b64encode(hashlib.sha1((key + _WS_GUID).encode()).digest()).decode()
+
+
+def encode_frame(payload, opcode=OP_TEXT, mask_key=None):
+    """Um frame final (FIN), com máscara, como o cliente tem de mandar."""
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    mask_key = os.urandom(4) if mask_key is None else mask_key
+    header = bytes([0x80 | opcode])
+    size = len(payload)
+    if size < 126:
+        header += bytes([0x80 | size])
+    elif size < 1 << 16:
+        header += bytes([0x80 | 126]) + struct.pack("!H", size)
+    else:
+        header += bytes([0x80 | 127]) + struct.pack("!Q", size)
+    masked = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
+    return header + mask_key + masked
+
+
+def decode_frame(buf):
+    """(fin, opcode, payload, bytes usados) do primeiro frame de buf, ou None se incompleto."""
+    if len(buf) < 2:
+        return None
+    fin = bool(buf[0] & 0x80)
+    if buf[0] & 0x70:
+        raise ConnectionError("websocket extension not negotiated")
+    opcode = buf[0] & 0x0F
+    masked = bool(buf[1] & 0x80)
+    size = buf[1] & 0x7F
+    pos = 2
+    if size == 126:
+        if len(buf) < 4:
+            return None
+        size = struct.unpack("!H", buf[2:4])[0]
+        pos = 4
+    elif size == 127:
+        if len(buf) < 10:
+            return None
+        size = struct.unpack("!Q", buf[2:10])[0]
+        pos = 10
+    mask_key = b""
+    if masked:
+        if len(buf) < pos + 4:
+            return None
+        mask_key = buf[pos:pos + 4]
+        pos += 4
+    if len(buf) < pos + size:
+        return None
+    payload = bytes(buf[pos:pos + size])
+    if masked:
+        payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
+    return fin, opcode, payload, pos + size
+
+
+class WebSocket:
+    """Cliente WebSocket só para 127.0.0.1 (o DevTools do navegador)."""
+
+    def __init__(self, port, path, timeout=60):
+        if not path.startswith("/"):
+            raise ValueError("invalid websocket path")
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        key = base64.b64encode(os.urandom(16)).decode()
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: 127.0.0.1:{port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        )
+        self.sock.sendall(request.encode())
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("websocket handshake closed")
+            response += chunk
+            if len(response) > 65536:
+                raise ConnectionError("websocket handshake too long")
+        head, self.buf = response.split(b"\r\n\r\n", 1)
+        lines = head.decode("latin-1").split("\r\n")
+        if len(lines[0].split()) < 2 or lines[0].split()[1] != "101":
+            raise ConnectionError("websocket handshake refused")
+        headers = {}
+        for line in lines[1:]:
+            name, _, value = line.partition(":")
+            headers[name.strip().lower()] = value.strip()
+        if headers.get("sec-websocket-accept") != ws_accept_key(key):
+            raise ConnectionError("websocket handshake mismatch")
+
+    def send_text(self, text):
+        self.sock.sendall(encode_frame(text, OP_TEXT))
+
+    def recv_text(self):
+        """Próxima mensagem de texto (junta fragmentos, responde ping)."""
+        parts = []
+        while True:
+            frame = decode_frame(self.buf)
+            if frame is None:
+                chunk = self.sock.recv(65536)
+                if not chunk:
+                    raise ConnectionError("websocket closed")
+                self.buf += chunk
+                continue
+            fin, opcode, payload, used = frame
+            self.buf = self.buf[used:]
+            if opcode == OP_PING:
+                self.sock.sendall(encode_frame(payload, OP_PONG))
+                continue
+            if opcode == OP_PONG:
+                continue
+            if opcode == OP_CLOSE:
+                raise ConnectionError("websocket closed")
+            parts.append(payload)
+            if fin:
+                return b"".join(parts).decode("utf-8")
+
+    def close(self):
+        try:
+            self.sock.sendall(encode_frame(b"", OP_CLOSE))
+        except OSError:
+            pass
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+# ------------------------------------------------------ DevTools (Edge/Chrome)
+
+def _devtools_targets(port, timeout=5):
+    # http.client direto: o urllib usaria o proxy do sistema no Windows
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    try:
+        conn.request("GET", "/json/list")
+        response = conn.getresponse()
+        if response.status != 200:
+            raise ConnectionError("devtools list failed")
+        return json.loads(response.read())
+    finally:
+        conn.close()
+
+
+def pick_page_target(targets):
+    """O caminho do WebSocket da página do site (não de iframes/workers)."""
+    for target in targets if isinstance(targets, list) else []:
+        if not isinstance(target, dict) or target.get("type") != "page":
+            continue
+        url = target.get("url", "")
+        if url.startswith(("devtools:", "edge:", "chrome:", "chrome-extension:", "extension:")):
+            continue
+        ws = urlparse(target.get("webSocketDebuggerUrl", ""))
+        if ws.scheme == "ws" and ws.hostname in ("127.0.0.1", "localhost") and ws.path:
+            return ws.path
+    return None
+
+
+class DevTools:
+    """Controle da página do Edge/Chrome pelo DevTools Protocol (mesma interface do Marionette)."""
+
+    def __init__(self, port, connect_timeout=40, io_timeout=60):
+        deadline = time.time() + connect_timeout
+        while True:
+            try:
+                path = pick_page_target(_devtools_targets(port))
+                if path:
+                    break
+            except (OSError, ValueError, ConnectionError):
+                pass
+            if time.time() > deadline:
+                raise ConnectionError("devtools page not found")
+            time.sleep(0.4)
+        self.ws = WebSocket(port, path, timeout=io_timeout)
+        self.msg_id = 0
+
+    def cmd(self, method, params=None):
+        self.msg_id += 1
+        self.ws.send_text(json.dumps({"id": self.msg_id, "method": method, "params": params or {}}))
+        while True:
+            msg = json.loads(self.ws.recv_text())
+            if msg.get("id") != self.msg_id:
+                continue  # eventos
+            if "error" in msg:
+                raise RuntimeError(str(msg["error"].get("message", "devtools error")))
+            return msg.get("result", {})
+
+    def script(self, source, *args):
+        """Roda o corpo de função (como no Marionette, com `arguments`). None se a página trocou no meio."""
+        expression = f"(function(){{{source}\n}}).apply(null, {json.dumps(list(args))})"
+        try:
+            result = self.cmd("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+        except RuntimeError:
+            return None  # contexto destruído (navegação em andamento)
+        if result.get("exceptionDetails"):
+            return None
+        return result.get("result", {}).get("value")
+
+    def begin(self):
+        pass
+
+    def navigate(self, url, timeout=30):
+        # O Page.navigate volta antes de a página nova carregar; a marca no
+        # documento atual some quando o novo assume (inclusive em redirect).
+        self.script("window.__beniOld = true;")
+        self.cmd("Page.navigate", {"url": url})
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.script("return !window.__beniOld && document.readyState !== 'loading';"):
+                return
+            time.sleep(0.3)
+
+    def end(self):
+        pass
+
+    def close(self):
+        self.ws.close()
 
 
 _FILL_SCRIPT = """
@@ -213,24 +460,32 @@ return 'sent';
 """
 
 
-def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=None, timeout=60):
-    """Faz o login no Firefox recém-aberto. Devolve 'ok', 'already', 'failed' ou 'error'."""
+def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=None, timeout=60,
+               driver="marionette"):
+    """Faz o login no navegador recém-aberto. Devolve 'ok', 'already', 'failed' ou 'error'.
+
+    driver: "marionette" (Firefox) ou "devtools" (Edge/Chrome).
+    """
     info = SITES[site]
     log = log or (lambda *a, **k: None)
     client = None
     try:
-        client = Marionette(port)
-        client.cmd("WebDriver:NewSession", {"capabilities": {"pageLoadStrategy": "eager"}})
+        client = DevTools(port) if driver == "devtools" else Marionette(port)
+        client.begin()
         login_path = urlparse(info["login_url"]).path
         target_path = urlparse(target_url).path or "/"
         login_url = info["login_url"]
         if info.get("continue_param"):
             login_url += "?" + info["continue_param"] + "=" + quote(target_path, safe="/")
-        client.cmd("WebDriver:Navigate", {"url": login_url})
+        client.navigate(login_url)
         deadline = time.time() + timeout
         sent = False
         while time.time() < deadline:
-            here = urlparse(client.script("return location.href") or "")
+            href = client.script("return location.href")
+            if not href:
+                time.sleep(0.7)  # página trocando (DevTools)
+                continue
+            here = urlparse(href)
             if not here.path.startswith(login_path):
                 result = "ok" if sent else "already"
                 break
@@ -251,26 +506,26 @@ def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=N
         if result in ("ok", "already"):
             # depois do login, vai para a página do tile (se o site não foi sozinho)
             if urlparse(client.script("return location.href") or "").path.rstrip("/") != target_path.rstrip("/"):
-                client.cmd("WebDriver:Navigate", {"url": target_url})
-        log("site_login.finished", result={"ok": "success", "already": "already"}.get(result, "failure"))
+                client.navigate(target_url)
+        log("site_login.finished", driver=driver,
+            result={"ok": "success", "already": "already"}.get(result, "failure"))
         return result
     except Exception as exc:  # noqa: BLE001 — nunca derruba o launcher
-        log("site_login.finished", level="warning", result="failure", exceptionType=type(exc).__name__)
+        log("site_login.finished", level="warning", driver=driver, result="failure",
+            exceptionType=type(exc).__name__)
         return "error"
     finally:
         if client is not None:
-            try:
-                client.cmd("WebDriver:DeleteSession")
-            except Exception:  # noqa: BLE001
-                pass
+            client.end()
             client.close()
 
 
-def start_auto_login(site, username, password, target_url, log=None):
+def start_auto_login(site, username, password, target_url, log=None, driver="marionette"):
+    port = DEVTOOLS_PORT if driver == "devtools" else MARIONETTE_PORT
     thread = threading.Thread(
         target=auto_login,
         args=(site, username, password, target_url),
-        kwargs={"log": log},
+        kwargs={"log": log, "driver": driver, "port": port},
         name=f"site-login-{site}",
         daemon=True,
     )

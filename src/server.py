@@ -735,17 +735,27 @@ def abridor_do_sistema():
     return "xdg-open" if shutil.which("xdg-open") else None
 
 
-def external_browser_command(browser, url, profile_id="", marionette_port=None):
+def external_browser_command(browser, url, profile_id="", marionette_port=None, devtools_port=None):
     cache_root = os.path.join(HOME, ".cache", "cozy-kids-launcher")
     return build_external_browser_command(
-        browser, url, cache_root, profile_id=profile_id, marionette_port=marionette_port,
+        browser, url, cache_root, profile_id=profile_id,
+        marionette_port=marionette_port, devtools_port=devtools_port,
     )
 
 
+def site_login_driver(browser):
+    """Como o login automático controla este navegador: Firefox pelo Marionette,
+    Edge/Chrome pelo DevTools Protocol. None se não há navegador (o site abriria
+    no programa padrão do sistema, sem controle)."""
+    if not browser:
+        return None
+    return "devtools" if browser_family(browser) == "chromium" else "marionette"
+
+
 def site_login_for_launch(browser, url, profile_id):
-    """Login salvo para o site deste tile (só no Firefox), ou None."""
+    """Login salvo para o site deste tile, ou None."""
     site = site_logins.site_for_url(url)
-    if not site or not browser or browser_family(browser) != "firefox":
+    if not site or not site_login_driver(browser):
         return None
     login = site_logins.get_login(SITE_LOGINS_FILE, profile_id, site)
     return (site, login) if login else None
@@ -1364,6 +1374,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             profile_id = data.get("activeProfileId", "")
             return self.json_response({
                 "profileId": profile_id,
+                # sem navegador compatível o login salvo não teria efeito: a tela avisa
+                "available": site_login_driver(find_browser(active_config(data))) is not None,
                 "sites": site_logins.public_logins(SITE_LOGINS_FILE, profile_id),
             })
         if self.path == "/api/export-config":
@@ -2198,10 +2210,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 command = None
                 profile_id = cfg.get("activeProfileId", "")
                 auto_login = site_login_for_launch(browser, url, profile_id)
+                login_driver = site_login_driver(browser) if auto_login else None
                 if browser:
                     command = external_browser_command(
                         browser, url, profile_id=profile_id,
-                        marionette_port=site_logins.MARIONETTE_PORT if auto_login else None,
+                        marionette_port=site_logins.MARIONETTE_PORT if login_driver == "marionette" else None,
+                        devtools_port=site_logins.DEVTOOLS_PORT if login_driver == "devtools" else None,
                     )
                 elif abridor_do_sistema():
                     command = [abridor_do_sistema(), url]
@@ -2236,10 +2250,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         503,
                     )
                     return
-                if auto_login and command and "--marionette" in command:
+                if login_driver and command and (
+                    "--marionette" in command
+                    or any(arg.startswith("--remote-debugging-port=") for arg in command)
+                ):
                     site, login = auto_login
                     site_logins.start_auto_login(
-                        site, login["username"], login["password"], url, log=log_runtime_event,
+                        site, login["username"], login["password"], url,
+                        log=log_runtime_event, driver=login_driver,
                     )
                 self.send_response(204)
                 self.end_headers()
