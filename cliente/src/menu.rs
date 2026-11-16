@@ -272,7 +272,7 @@ impl Menu {
                 }
             }
             m.corrigir_pagina();
-            m.talvez_mostrar_expiracao();
+            m.talvez_mostrar_expiracao(cx);
             m.redesenhar(cx);
         });
     }
@@ -325,7 +325,7 @@ impl Menu {
         });
     }
 
-    fn talvez_mostrar_expiracao(&mut self) {
+    fn talvez_mostrar_expiracao(&mut self, cx: &mut Context<Self>) {
         let Some(exp) = self.uso.get("lastExpiry") else { return };
         let Some(em) = dados::numero(exp, "at") else { return };
         if em <= self.ultimo_expiry {
@@ -339,6 +339,8 @@ impl Menu {
         let motivo = if dados::texto(exp, "limitedBy") == "total" { "daily_limit" } else { "category_limit" };
         let (t, c) = dados::textos_limite(&self.uso, motivo, &dados::texto(exp, "category"));
         self.mostrar_mensagem(t, c);
+        // sem isto o "Fecha sozinho em 30 s" ficava parado e o aviso só saía no OK
+        self.agendar_fechar_mensagem(cx);
     }
 
     // ------------------------------------------------------------ dados derivados
