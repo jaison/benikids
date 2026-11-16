@@ -111,37 +111,53 @@ def _lista_ps(itens):
 # Funções do PowerShell usadas pelos dois scripts. "Get-Item ... .Property" lista
 # os nomes dos valores; New-Item -Force numa chave que já existe a recriaria
 # vazia, por isso só cria quando falta.
+#
+# Cuidado com o pipeline: Benikids-Ler devolve os valores um por um (sem o
+# "return ,$lista", que mandaria a lista inteira como UM objeto e faria o
+# Where-Object comparar o array todo — foi o que juntou o URLBlocklist num valor
+# só e apagou valores de terceiros no teste do Windows). Quem chama sempre
+# embrulha em @(...) para ter um array mesmo com zero ou um valor, e valores
+# vazios são descartados.
 _FUNCOES = r"""
 function Benikids-Chave($k) { if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null } }
+function Benikids-Numerados($k) {
+  $chave = Get-Item -Path $k
+  return @(@($chave.Property) | Where-Object { "$_" -match '^\d+$' } | Sort-Object { [int]$_ })
+}
 function Benikids-Ler($k) {
-  $itens = @()
-  if (Test-Path $k) {
-    $chave = Get-Item -Path $k
-    $nomes = @($chave.Property | Where-Object { $_ -match '^\d+$' } | Sort-Object { [int]$_ })
-    foreach ($n in $nomes) { $itens += [string]$chave.GetValue($n) }
+  if (-not (Test-Path $k)) { return }
+  $chave = Get-Item -Path $k
+  foreach ($n in (Benikids-Numerados $k)) {
+    $v = [string]$chave.GetValue($n)
+    if ($v -ne '') { $v }
   }
-  return ,$itens
 }
 function Benikids-Gravar($k, $itens) {
   Benikids-Chave $k
-  $chave = Get-Item -Path $k
-  foreach ($n in @($chave.Property | Where-Object { $_ -match '^\d+$' })) { Remove-ItemProperty -Path $k -Name $n }
+  foreach ($n in (Benikids-Numerados $k)) { Remove-ItemProperty -Path $k -Name $n }
   $i = 1
-  foreach ($v in $itens) { New-ItemProperty -Path $k -Name "$i" -Value $v -PropertyType String -Force | Out-Null; $i++ }
+  foreach ($v in @($itens)) {
+    if ([string]$v -eq '') { continue }
+    New-ItemProperty -Path $k -Name "$i" -Value ([string]$v) -PropertyType String -Force | Out-Null
+    $i++
+  }
 }
 function Benikids-Nossos($v, $nossos, $prefixo) {
+  $v = [string]$v
   return ($nossos -contains $v) -or ($prefixo -and $v.StartsWith($prefixo))
 }
 function Benikids-Por($k, $nossos, $prefixo) {
-  $outros = @(Benikids-Ler $k | Where-Object { -not (Benikids-Nossos $_ $nossos $prefixo) })
-  Benikids-Gravar $k ($outros + $nossos)
+  $lidos = @(Benikids-Ler $k)
+  $outros = @($lidos | Where-Object { $_ -and -not (Benikids-Nossos $_ $nossos $prefixo) })
+  Benikids-Gravar $k ($outros + @($nossos))
 }
 function Benikids-Tirar($k, $nossos, $prefixo) {
   if (-not (Test-Path $k)) { return }
-  $outros = @(Benikids-Ler $k | Where-Object { -not (Benikids-Nossos $_ $nossos $prefixo) })
+  $lidos = @(Benikids-Ler $k)
+  $outros = @($lidos | Where-Object { $_ -and -not (Benikids-Nossos $_ $nossos $prefixo) })
   Benikids-Gravar $k $outros
   $chave = Get-Item -Path $k
-  if ($outros.Count -eq 0 -and $chave.SubKeyCount -eq 0) { Remove-Item -Path $k }
+  if ($outros.Count -eq 0 -and $chave.SubKeyCount -eq 0 -and $chave.ValueCount -eq 0) { Remove-Item -Path $k }
 }
 """
 

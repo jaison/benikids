@@ -103,6 +103,13 @@ class PoliticasTest(unittest.TestCase):
         self.assertIn("if (-not (Test-Path $k)) { New-Item -Path $k -Force", texto)
         self.assertEqual(texto.count("New-Item "), 1)
 
+    def test_leitura_nao_manda_a_lista_inteira_como_um_objeto(self):
+        # bug do pacote 12: "return ,$itens" + "Benikids-Ler $k | Where-Object"
+        # fazia o filtro ver o array todo de uma vez (sem pwsh aqui, fica a guarda no texto)
+        self.assertNotIn("return ,", pe._FUNCOES)
+        self.assertNotIn("Benikids-Ler $k |", pe._FUNCOES)
+        self.assertEqual(pe._FUNCOES.count("$lidos = @(Benikids-Ler $k)"), 2)
+
     def test_traducao_desligada_na_raiz(self):
         texto = "\n".join(pe.script_aplicar())
         self.assertIn(
@@ -265,3 +272,145 @@ class LoteComSenhaTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Registro de mentira em PowerShell: as funções abaixo tomam o lugar dos cmdlets
+# (função tem precedência sobre cmdlet), guardando as chaves num hashtable. Assim
+# os scripts de verdade rodam no pwsh de qualquer sistema, com a semântica real
+# do pipeline — o que os testes de texto acima não pegam.
+_REGISTRO_FALSO = r"""
+$ErrorActionPreference = 'Stop'
+$global:REG = @{}
+function Reg-Norm($k) { return ([string]$k).TrimEnd('\').ToLower() }
+function Reg-Filhas($k) {
+  $n = Reg-Norm $k
+  return @($global:REG.Keys | Where-Object { $_.StartsWith($n + '\') -and -not $_.Substring($n.Length + 1).Contains('\') })
+}
+function Test-Path { [CmdletBinding()] param([Parameter(Position = 0)]$Path)
+  return $global:REG.ContainsKey((Reg-Norm $Path)) }
+function New-Item { [CmdletBinding()] param([Parameter(Position = 0)]$Path, [switch]$Force)
+  $partes = ([string]$Path).TrimEnd('\').Split('\')
+  for ($i = 1; $i -le $partes.Count; $i++) {
+    $p = Reg-Norm (($partes[0..($i - 1)]) -join '\')
+    if (-not $global:REG.ContainsKey($p) -or $i -eq $partes.Count) {
+      if ($global:REG.ContainsKey($p) -and $i -eq $partes.Count) {
+        foreach ($f in @(Reg-Filhas $p)) { $global:REG.Remove($f) }
+      }
+      $global:REG[$p] = [ordered]@{}
+    }
+  }
+  return $Path }
+function Get-Item { [CmdletBinding()] param([Parameter(Position = 0)]$Path)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n)) { Write-Error "nao existe: $Path"; return }
+  $vals = $global:REG[$n]
+  $o = [pscustomobject]@{ Property = [string[]]@($vals.Keys); ValueCount = $vals.Count
+                          SubKeyCount = @(Reg-Filhas $n).Count; Vals = $vals }
+  $o | Add-Member -MemberType ScriptMethod -Name GetValue -Value { param($nome) $this.Vals[$nome] }
+  return $o }
+function New-ItemProperty { [CmdletBinding()] param($Path, $Name, $Value, $PropertyType, [switch]$Force)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n)) { Write-Error "nao existe: $Path"; return }
+  if ($Value -is [array]) { Write-Error "valor e uma lista: $Name"; return }
+  $global:REG[$n][[string]$Name] = $Value }
+function Remove-ItemProperty { [CmdletBinding()] param($Path, $Name)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n) -or -not $global:REG[$n].Contains([string]$Name)) {
+    Write-Error "sem o valor $Name em $Path"; return }
+  $global:REG[$n].Remove([string]$Name) }
+function Remove-Item { [CmdletBinding()] param($Path, [switch]$Recurse)
+  $n = Reg-Norm $Path
+  if (-not $global:REG.ContainsKey($n)) { Write-Error "nao existe: $Path"; return }
+  $abaixo = @($global:REG.Keys | Where-Object { $_.StartsWith($n + '\') })
+  if ($abaixo.Count -and -not $Recurse) { Write-Error "tem subchaves: $Path"; return }
+  foreach ($f in $abaixo) { $global:REG.Remove($f) }
+  $global:REG.Remove($n) }
+"""
+
+
+def _pwsh():
+    import shutil
+
+    return shutil.which("pwsh")
+
+
+@unittest.skipUnless(_pwsh(), "pwsh não instalado (no CI do GitHub, o ubuntu-latest já tem)")
+class PowerShellDeVerdadeTest(unittest.TestCase):
+    """Roda script_aplicar/script_desfazer no pwsh, sobre o registro de mentira."""
+
+    def rodar(self, inicial, *etapas):
+        import subprocess
+
+        carga = [_REGISTRO_FALSO]
+        for chave, valores in inicial.items():
+            carga.append(f"$global:REG[(Reg-Norm {pe._ps('HKLM:' + SEP_PS + chave)})] = [ordered]@{{}}")
+            for nome, valor in valores.items():
+                v = valor if isinstance(valor, int) else pe._ps(valor)
+                carga.append(f"$global:REG[(Reg-Norm {pe._ps('HKLM:' + SEP_PS + chave)})][{pe._ps(nome)}] = {v}")
+        for etapa in etapas:
+            carga.extend(etapa)
+        carga.append(
+            "$saida = @{}; foreach ($k in $global:REG.Keys) { $v = @{}; "
+            "foreach ($e in $global:REG[$k].GetEnumerator()) { $v[[string]$e.Key] = $e.Value }; $saida[$k] = $v }; "
+            "$saida | ConvertTo-Json -Depth 4 -Compress"
+        )
+        with tempfile.TemporaryDirectory() as pasta:
+            arquivo = Path(pasta) / "teste.ps1"
+            arquivo.write_text("\n".join(carga), encoding="utf-8")
+            r = subprocess.run(
+                [_pwsh(), "-NoProfile", "-NonInteractive", "-File", str(arquivo)],
+                capture_output=True, text=True, timeout=120,
+            )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stderr.strip(), "")
+        return {k[len("hklm:\\"):]: v for k, v in json.loads(r.stdout or "{}").items()}
+
+    @staticmethod
+    def lista(reg, chave):
+        valores = reg.get(chave.lower())
+        if valores is None:
+            return None
+        nomes = sorted((n for n in valores if n.isdigit()), key=int)
+        assert nomes == [str(i + 1) for i in range(len(nomes))], f"lista com buraco: {nomes}"
+        return [valores[n] for n in nomes]
+
+    def test_maquina_limpa_aplica_e_desfaz(self):
+        reg = self.rodar({}, pe.script_aplicar())
+        self.assertEqual(self.lista(reg, FORCELIST), [pe.UBOL_FORCELIST])
+        self.assertEqual(self.lista(reg, BLOCKLIST), list(pe.URLS_BLOQUEADAS))
+        self.assertEqual(self.lista(reg, UBOL + r"\rulesets"), list(pe.UBOL_RULESETS))
+        self.assertEqual(reg[RAIZ.lower()]["TranslateEnabled"], 0)
+
+        reg = self.rodar({}, pe.script_aplicar(), pe.script_desfazer())
+        self.assertIsNone(self.lista(reg, FORCELIST))
+        self.assertIsNone(self.lista(reg, BLOCKLIST))
+        self.assertFalse(any(pe.UBOL_ID in k for k in reg))
+        self.assertEqual(reg.get(RAIZ.lower(), {}), {})
+
+    def test_aplicar_duas_vezes_preserva_terceiros(self):
+        inicial = {
+            FORCELIST: {"1": "outra;https://x", "3": "terceira;https://y"},  # com buraco
+            BLOCKLIST: {"1": "exemplo.com"},
+            RAIZ: {"OutraPolitica": 1},
+        }
+        uma = self.rodar(inicial, pe.script_aplicar())
+        duas = self.rodar(inicial, pe.script_aplicar(), pe.script_aplicar())
+        self.assertEqual(uma, duas)
+        self.assertEqual(
+            self.lista(duas, FORCELIST), ["outra;https://x", "terceira;https://y", pe.UBOL_FORCELIST]
+        )
+        self.assertEqual(self.lista(duas, BLOCKLIST), ["exemplo.com"] + list(pe.URLS_BLOQUEADAS))
+        self.assertEqual(duas[RAIZ.lower()]["OutraPolitica"], 1)
+
+        volta = self.rodar(inicial, pe.script_aplicar(), pe.script_aplicar(), pe.script_desfazer())
+        self.assertEqual(self.lista(volta, FORCELIST), ["outra;https://x", "terceira;https://y"])
+        self.assertEqual(self.lista(volta, BLOCKLIST), ["exemplo.com"])
+        self.assertEqual(volta[RAIZ.lower()], {"OutraPolitica": 1})
+        self.assertFalse(any(pe.UBOL_ID in k for k in volta))
+
+    def test_desfazer_sem_nada_aplicado_nao_quebra(self):
+        reg = self.rodar({RAIZ: {"OutraPolitica": 1}}, pe.script_desfazer())
+        self.assertEqual(reg[RAIZ.lower()], {"OutraPolitica": 1})
+
+
+SEP_PS = "\\"
