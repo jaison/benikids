@@ -134,7 +134,7 @@ class PoliticasTest(unittest.TestCase):
         texto = "\n".join(pe.script_aplicar(sem_filtro=True))
         self.assertIn(r"policy\noFiltering' @('escolagames.com.br')", texto)
         self.assertNotIn(r"noFiltering' -Recurse", texto)
-        self.assertFalse(pe.ESCOLA_GAMES_SEM_FILTRO)  # o claude-win confirma antes de ligar
+        self.assertTrue(pe.ESCOLA_GAMES_SEM_FILTRO)  # confirmado no Windows: com o uBOL os jogos travavam
 
     def test_desfazer_tira_so_o_nosso(self):
         texto = "\n".join(pe.script_desfazer())

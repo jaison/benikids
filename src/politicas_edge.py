@@ -51,7 +51,9 @@ URLS_BLOQUEADAS = (
 # o uBOL o trocar por um falso (como o uBlock fazia no Linux) e o jogo travar
 # em "Loading…", ligue isto: o uBOL deixa o site em paz e o bloqueio fica com o
 # --host-resolver-rules do comando do Edge (application_launcher.py).
-ESCOLA_GAMES_SEM_FILTRO = False
+# Ligado: no Windows real (Edge 157) o uBOL travava os jogos e a home ficava só com
+# o esqueleto; sem filtro, os jogos rodam e os anúncios continuam barrados.
+ESCOLA_GAMES_SEM_FILTRO = True
 
 # Valores simples na raiz das políticas do Edge: {nome: (tipo, valor)}.
 # TranslateEnabled=0: sem a barra/ícone "Traduzir esta página" e sem o
