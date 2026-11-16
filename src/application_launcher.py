@@ -50,6 +50,48 @@ def resolve_tile_action(tile):
 EXTERNAL_PROFILE_SEED = ("extensions", "chrome", "user.js")
 
 
+# Bloqueio no Edge/Chrome dos sites, sem administrador e sem tocar no navegador
+# dos pais: --host-resolver-rules só vale para esta abertura do navegador. Cada
+# domínio (e os subdomínios) passa a resolver para 0.0.0.0, então a conexão
+# falha. Bloqueia o anúncio, não esconde o espaço vazio que ele deixa (isso só um
+# bloqueador como o uBlock faz) e não bloqueia caminhos dentro de um site.
+CHROMIUM_BLOCKED_HOSTS = (
+    # Google Ads / AdSense. No Escola Games o jogo só abre sem anúncio quando o
+    # adsbygoogle.js FALHA ao carregar (onerror): é o mesmo efeito da regra do
+    # uBlock no Linux (beni/firefox/policies.json).
+    "googlesyndication.com",
+    "doubleclick.net",
+    "googleadservices.com",
+    "googletagservices.com",
+    "adservice.google.com",
+    "adservice.google.com.br",
+    # redes de anúncio comuns em sites de jogos infantis
+    "amazon-adsystem.com",
+    "adnxs.com",
+    "criteo.com",
+    "criteo.net",
+    "pubmatic.com",
+    "rubiconproject.com",
+    "openx.net",
+    "taboola.com",
+    "outbrain.com",
+    # site inteiro bloqueado (no Linux: WebsiteFilter do policies.json)
+    "bestschoolgames.com",
+)
+
+
+def chromium_host_resolver_rules(hosts=CHROMIUM_BLOCKED_HOSTS):
+    """Valor do --host-resolver-rules: cada domínio e seus subdomínios em 0.0.0.0.
+
+    "MAP *.x" não pega o próprio "x", por isso as duas regras. O localhost fica de
+    fora para nada atrapalhar o DevTools e o servidor do Benikids em 127.0.0.1.
+    """
+    rules = []
+    for host in hosts:
+        rules += [f"MAP {host} 0.0.0.0", f"MAP *.{host} 0.0.0.0"]
+    return ", ".join(rules + ["EXCLUDE localhost"])
+
+
 def _safe_profile_id(profile_id):
     """Id do perfil só com letras, números, "-" e "_" (vira nome de pasta)."""
     return "".join(ch for ch in (profile_id or "") if ch.isalnum() or ch in "-_")[:64]
@@ -112,6 +154,7 @@ def external_browser_command(
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
+            f"--host-resolver-rules={chromium_host_resolver_rules()}",
         ]
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,

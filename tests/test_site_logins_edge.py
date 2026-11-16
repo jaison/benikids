@@ -15,7 +15,12 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import site_logins  # noqa: E402
-from application_launcher import external_browser_command, external_chromium_profile  # noqa: E402
+from application_launcher import (  # noqa: E402
+    CHROMIUM_BLOCKED_HOSTS,
+    chromium_host_resolver_rules,
+    external_browser_command,
+    external_chromium_profile,
+)
 
 
 class EdgeCommandTest(unittest.TestCase):
@@ -52,6 +57,29 @@ class EdgeCommandTest(unittest.TestCase):
             # a porta do Marionette não liga nada no Edge
             plain = external_browser_command("msedge.exe", "https://x.org/", root, marionette_port=28290)
             self.assertFalse(any("remote-debugging" in arg or "marionette" in arg for arg in plain))
+
+    def test_edge_blocks_ad_hosts_without_touching_localhost(self):
+        with tempfile.TemporaryDirectory() as root:
+            for kwargs in ({}, {"devtools_port": 28291}):
+                command = external_browser_command("msedge.exe", "https://x.org/", root, **kwargs)
+                rules = [a for a in command if a.startswith("--host-resolver-rules=")]
+                self.assertEqual(rules, [f"--host-resolver-rules={chromium_host_resolver_rules()}"])
+            firefox = external_browser_command("firefox", "https://x.org/", root)
+            self.assertFalse(any("host-resolver" in arg for arg in firefox))
+        value = chromium_host_resolver_rules()
+        parts = value.split(", ")
+        for host in ("googlesyndication.com", "doubleclick.net", "adservice.google.com", "bestschoolgames.com"):
+            self.assertIn(host, CHROMIUM_BLOCKED_HOSTS)
+            self.assertIn(f"MAP {host} 0.0.0.0", parts)
+            self.assertIn(f"MAP *.{host} 0.0.0.0", parts)
+        self.assertEqual(parts[-1], "EXCLUDE localhost")
+        self.assertEqual(len(parts), 2 * len(CHROMIUM_BLOCKED_HOSTS) + 1)
+        # o Escola Games e os sites dos tiles não podem cair na lista
+        for host in CHROMIUM_BLOCKED_HOSTS:
+            self.assertEqual(host, host.strip().lower())
+            self.assertNotIn(" ", host)
+            for allowed in ("escolagames.com.br", "khanacademy.org", "teachyourmonster.org", "127.0.0.1"):
+                self.assertFalse(allowed == host or allowed.endswith("." + host), (allowed, host))
 
     def test_firefox_ignores_devtools_port(self):
         with tempfile.TemporaryDirectory() as root:
