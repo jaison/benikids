@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import catalogo_windows  # noqa: E402
+import politicas_edge  # noqa: E402
 import marca_tk as marca  # noqa: E402
 
 SEM_CONSOLE = 0x08000000
@@ -293,12 +294,26 @@ def _linha_firewall(item):
             f"-Program $exe.FullName | Out-Null; break }}")
 
 
-def script_admin(pares, pasta):
-    """O PowerShell do lote: dependências primeiro, depois cada app, anotando os códigos."""
+def _linhas_politicas_edge(resultados):
+    """Políticas do Edge (uBlock Origin Lite, páginas bloqueadas): politicas_edge.py.
+    Anota "edge-politicas|0" ou o erro, sem parar o lote dos apps."""
+    funcoes, *passos = politicas_edge.script_aplicar()
+    return [funcoes,
+            "try { $ErrorActionPreference = 'Stop'; " + "; ".join(passos) + "; $c = 0 } "
+            "catch { $c = 'erro: ' + $_.Exception.Message } "
+            "finally { $ErrorActionPreference = 'Continue' }; "
+            f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ('edge-politicas|' + $c)"]
+
+
+def script_admin(pares, pasta, politicas=False):
+    """O PowerShell do lote: as políticas do Edge (se faltam), as dependências e
+    cada app, anotando os códigos."""
     logs = os.path.join(pasta, "logs")
     resultados = os.path.join(pasta, "resultados.txt")
     linhas = ["$ErrorActionPreference = 'Continue'",
               f"New-Item -ItemType Directory -Force -Path {_ps(logs)} | Out-Null"]
+    if politicas:
+        linhas += _linhas_politicas_edge(resultados)
     for item, arquivo in pares:
         for n, dep in enumerate(dependencias(arquivo)):
             linhas.append(_linha_instalar(f"{item['id']}-dependencia{n + 1}", dep, "", logs, resultados))
@@ -326,11 +341,11 @@ def ler_resultados(caminho):
 CODIGOS_OK = {"0", "1641", "3010"}  # 1641/3010: instalou e pede para reiniciar
 
 
-def instalar_como_admin(pares, pasta, ao_terminar_app=None):
+def instalar_como_admin(pares, pasta, ao_terminar_app=None, politicas=False):
     """Roda todos os instaladores "para todos" de uma vez, com um só pedido do UAC
     (a conta da criança não é administradora: o Windows pede a senha de um adulto).
     Enquanto o lote roda, avisa ao_terminar_app(id, código) a cada app que termina."""
-    texto, resultados = script_admin(pares, pasta)
+    texto, resultados = script_admin(pares, pasta, politicas=politicas)
     try:
         os.remove(resultados)
     except OSError:
@@ -477,10 +492,13 @@ def trabalhar(itens, avisos, pasta=None):
             arquivo = None
         if arquivo:
             pares.append((item, arquivo))
-    if pares:
+    # bloqueador de anúncios e páginas bloqueadas no Edge: vão no mesmo pedido de
+    # senha; numa reinstalação que já as tem, não pedem senha de novo
+    politicas = politicas_edge.faltam()
+    if pares or politicas:
         for item, _arquivo in pares:
             avisos.put((item["id"], "instalando", "instala depois da senha"))
-        avisos.put((None, "admin", ""))
+        avisos.put((None, "admin", "politicas" if politicas else ""))
         por_id = {item["id"]: item for item, _ in pares}
 
         def terminou(item_id, codigo):
@@ -500,7 +518,7 @@ def trabalhar(itens, avisos, pasta=None):
                 avisos.put((item_id, "erro", f"não instalou (código {codigo})"))
                 relatar_falha(por_id[item_id], codigo, pasta)
 
-        codigos = instalar_como_admin(pares, pasta, terminou)
+        codigos = instalar_como_admin(pares, pasta, terminou, politicas=politicas)
         if "fim" not in codigos and not any(i in codigos for i in por_id):
             avisos.put((None, "sem_senha", ""))  # o adulto não digitou a senha (ou cancelou)
         for item, _arquivo in pares:
@@ -575,7 +593,8 @@ def janela(itens):
                 item_id, estado, texto = avisos.get_nowait()
                 if item_id is None and estado == "admin":
                     rodape.config(text="Agora o Windows pede a senha de um administrador do computador,\n"
-                                       "uma vez só, para instalar os que faltam.")
+                                       "uma vez só, para instalar os que faltam"
+                                       + (" e o bloqueador de anúncios." if texto == "politicas" else "."))
                     raiz.lift()
                     continue
                 if item_id is None and estado == "sem_senha":
