@@ -90,6 +90,20 @@ What parents set up, in the PIN-protected **parents' area**:
 The native menu (Rust + [gpui-fast](https://github.com/longbridge/gpui-fast)) is described in
 [cliente/LEIA-ME.md](cliente/LEIA-ME.md) (in Portuguese).
 
+## Contributing
+
+<img src="docs/marca/mascote-notebook.png" width="200" align="right" alt="">
+
+Benikids is free software (MIT license), and help is welcome whether or not you code:
+
+- **suggest games** that are free and light enough for old laptops;
+- **report a problem or an idea** in the [Issues](https://github.com/jaison/benikids/issues);
+- **translate** the screens and texts;
+- **test on old laptops** and tell us how it went;
+- **send code**: fixes and improvements are welcome.
+
+<br clear="right">
+
 ## Credits and license
 
 - Started from **[Cozy Kids Launcher](https://github.com/TrissyGE/cozy-kids-launcher)** 0.6.0, © 2026 Tristan and contributors, **MIT license**.
