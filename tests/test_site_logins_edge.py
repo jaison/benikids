@@ -70,7 +70,8 @@ class EdgeCommandTest(unittest.TestCase):
             self.assertFalse(any("host-resolver" in arg for arg in firefox))
         value = chromium_host_resolver_rules()
         parts = value.split(", ")
-        for host in ("googlesyndication.com", "doubleclick.net", "adservice.google.com", "bestschoolgames.com"):
+        for host in ("googlesyndication.com", "doubleclick.net", "adservice.google.com", "bestschoolgames.com",
+                     "adovid.com"):
             self.assertIn(host, CHROMIUM_BLOCKED_HOSTS)
             self.assertIn(f"MAP {host} 0.0.0.0", parts)
             self.assertIn(f"MAP *.{host} 0.0.0.0", parts)

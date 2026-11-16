@@ -75,6 +75,9 @@ CHROMIUM_BLOCKED_HOSTS = (
     "openx.net",
     "taboola.com",
     "outbrain.com",
+    # redirecionador de anúncio em vídeo que levava ao doubleclick no Escola Games
+    # (tracking.adovid.com/redirectv2?url=…pubads.g.doubleclick.net…)
+    "adovid.com",
     # site inteiro bloqueado (no Linux: WebsiteFilter do policies.json)
     "bestschoolgames.com",
 )
