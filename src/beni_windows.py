@@ -23,6 +23,7 @@ import plataforma_windows as win  # noqa: E402
 import telemetria  # noqa: E402
 from app_detection import browser_family, find_browser  # noqa: E402
 from process_state import (  # noqa: E402
+    owned_process,
     remove_process_record,
     terminate_owned_process,
     write_process_record,
@@ -197,6 +198,22 @@ def atualizacao_pendente():
         return False
 
 
+def atualizar_se_parado():
+    """True se começou a instalar uma versão pronta (o iniciador deve sair)."""
+    try:
+        import atualizar_windows
+
+        pronta = atualizar_windows.pendente(APP_ROOT)
+        if not atualizar_windows.hora_de_atualizar(pronta, owned_process(TILE_PIDFILE, "tile-process"),
+                                 win.segundos_sem_uso()):
+            return False
+        log(f"atualização: computador parado; instalando a versão {pronta[0]} agora")
+        return atualizar_windows.aplicar_e_sair(pronta[1], log)
+    except Exception as erro:  # noqa: BLE001 — nunca derruba o menu
+        log(f"atualização: {erro}")
+        return False
+
+
 def procurar_atualizacao_depois(espera=120):
     """Em segundo plano, alguns minutos depois de abrir: procura e baixa uma versão nova
     (no máximo uma vez por dia). Ela é instalada na próxima vez que o Benikids abrir."""
@@ -256,8 +273,13 @@ def main():
             except (OSError, ValueError) as e:
                 log(f"não registrei o menu: {e}")
             log(f"menu {tipo} aberto (pid {menu.pid})")
+            proxima_olhada = time.monotonic() + 300
             while True:
                 time.sleep(1)
+                if time.monotonic() >= proxima_olhada:
+                    proxima_olhada = time.monotonic() + 300
+                    if atualizar_se_parado():
+                        return 0  # o instalador abre o Benikids de novo quando terminar
                 if os.path.exists(EXIT_FLAG):
                     log("saída pedida (exit-kids)")
                     try:

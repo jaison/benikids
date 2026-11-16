@@ -371,6 +371,20 @@ def mover_por_cima(h, x, y):
     return bool(user32.SetWindowPos(h, wintypes.HWND(-1), int(x), int(y), 0, 0, 0x0011))
 
 
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+def segundos_sem_uso():
+    """Há quanto tempo ninguém mexe no teclado, mouse ou toque (GetLastInputInfo)."""
+    info = _LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(info)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    agora = kernel32.GetTickCount() & 0xFFFFFFFF
+    return ((agora - info.dwTime) & 0xFFFFFFFF) / 1000.0
+
+
 def pid_da_janela_ativa():
     h = user32.GetForegroundWindow()
     if not h:

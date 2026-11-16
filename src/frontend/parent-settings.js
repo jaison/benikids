@@ -37,7 +37,7 @@ async function checkUpdate(){
     if(!st.autoUpdate){
       texto='Atualizações automáticas desligadas neste computador (rode ./instalar.sh para ligar).'; tipo='error';
     }else if(st.staged){
-      texto='Versão '+st.staged+' baixada. '+(st.forced
+      texto='Versão '+st.staged+' baixada. '+(st.installHint ? st.installHint : st.forced
         ?'Vai ser instalada assim que nenhum app estiver aberto.'
         :'Vai ser instalada quando o notebook for ligado de novo (ou de madrugada, se ficar ligado).');
     }else{
