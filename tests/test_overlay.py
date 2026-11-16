@@ -211,5 +211,32 @@ class CantoPadraoTests(unittest.TestCase):
         self.assertFalse(overlay.maximizar_no_inicio("puzzles-quinze"))
 
 
+class CantoDoVoltarTests(unittest.TestCase):
+    def test_back_button_corner_is_saved_per_site_apart_from_the_pill(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as pasta:
+            arquivo = str(Path(pasta) / "overlay-corner.json")
+            with mock.patch.object(overlay, "CORNER_FILE", arquivo):
+                self.assertEqual(overlay.load_back_corner("khan"), "bl")  # padrão
+                overlay.save_corner("khan", "tr")
+                overlay.save_corner(overlay.back_corner_key("khan"), "br")
+                self.assertEqual(overlay.load_corner("khan"), "tr")
+                self.assertEqual(overlay.load_back_corner("khan"), "br")
+                self.assertEqual(overlay.load_back_corner("outro"), "bl")
+                with open(arquivo, encoding="utf-8") as handle:
+                    self.assertEqual(json.load(handle), {"khan": "tr", "khan#voltar": "br"})
+                with open(arquivo, "w", encoding="utf-8") as handle:
+                    json.dump({"khan#voltar": "meio"}, handle)
+                self.assertEqual(overlay.load_back_corner("khan"), "bl")  # valor inválido
+
+    def test_pill_sharing_a_corner_moves_away_from_the_back_button(self):
+        self.assertEqual(overlay.stacked_offset("bl", 50), -60)  # embaixo: pílula acima
+        self.assertEqual(overlay.stacked_offset("br", 50), -60)
+        self.assertEqual(overlay.stacked_offset("tl", 50), 60)   # em cima: pílula abaixo
+        self.assertEqual(overlay.stacked_offset("tr", 50), 60)
+
+
 if __name__ == "__main__":
     unittest.main()
