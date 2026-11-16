@@ -138,10 +138,18 @@ def external_chromium_profile(cache_root, profile_id=""):
 
 
 # Preferências do perfil do Edge/Chrome dos sites que o Benikids garante a cada
-# abertura. translate.enabled=false: sem a barra/ícone "Traduzir esta página" e
-# sem o oferecimento automático (sem administrador; a política TranslateEnabled
-# do politicas_edge.py faz o mesmo para o computador inteiro).
-CHROMIUM_PREFERENCES = {"translate": {"enabled": False}}
+# abertura (sem administrador; as políticas TranslateEnabled e
+# PasswordManagerEnabled do politicas_edge.py fazem o mesmo para o computador):
+# - translate.enabled=false: sem a barra/ícone "Traduzir esta página" e sem o
+#   oferecimento automático;
+# - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
+#   preenche sozinho um login salvo à mão (quem entra é o login automático, com
+#   o login de cada criança). Logins já salvos não são apagados.
+CHROMIUM_PREFERENCES = {
+    "translate": {"enabled": False},
+    "credentials_enable_service": False,
+    "profile": {"password_manager_enabled": False},
+}
 
 
 def _merge_prefs(current, wanted):

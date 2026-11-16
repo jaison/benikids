@@ -9,6 +9,15 @@ tile: o Firefox com o Marionette, o Edge/Chrome com o DevTools Protocol (CDP),
 os dois só em 127.0.0.1. Uma thread preenche a página de login do site e clica
 em "Entrar". Se a sessão ainda estiver aberta (cookie), nada é digitado. A
 senha vai só pelo socket local, nunca para a linha de comando nem para o log.
+
+Risco conhecido: enquanto o navegador de um tile com login está aberto, a porta
+de controle (28290/28291) aceita qualquer programa deste computador, de qualquer
+conta, e nunca de fora dele. Ela não fecha sem fechar o navegador: no DevTools,
+Target.closeTarget/Browser.close fecham o próprio Edge, e não há comando para
+parar de escutar. O --remote-debugging-pipe evitaria a porta, mas exige passar
+os pipes ao Edge como descritores 3 e 4, o que o subprocess do Python não faz no
+Windows (e o tile passa pelo supervisor e pelo Job Object). O perfil exposto é
+só o dos sites da criança, nunca o Edge dos pais.
 """
 
 import base64
@@ -48,6 +57,11 @@ SITES = {
         "password_selector": "form.user.home input[name='oog_user[password]']",
         "submit_selector": "form.user.home button[type=submit]",
         "dismiss_selectors": (),
+        # A página do tile (/account/play) só abre logada; sem sessão o site manda
+        # para a página de login. Então dá para olhar primeiro a página que abriu:
+        # ir para o sign_in com a sessão aberta mostra um aviso vermelho "You're
+        # already logged in as <e-mail>" em cima do jogo.
+        "check_tile_first": True,
     },
 }
 
@@ -449,6 +463,16 @@ for (const sel of dismiss) { const b = document.querySelector(sel); if (b && b.o
 for (const sel of preClick) { const b = document.querySelector(sel); if (b) b.click(); }
 const u = document.querySelector(userSel), p = document.querySelector(passSel), s = document.querySelector(submitSel);
 if (!u || !p || !s) return 'wait';
+// cobre a página enquanto entra: a criança não vê o e-mail no campo (some
+// sozinho quando a página seguinte carrega)
+if (!document.getElementById('benikids-entrando')) {
+  const c = document.createElement('div');
+  c.id = 'benikids-entrando';
+  c.textContent = 'Entrando…';
+  c.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#fff;color:#334;' +
+    'display:flex;align-items:center;justify-content:center;font:600 32px sans-serif';
+  document.documentElement.appendChild(c);
+}
 const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 for (const [el, v] of [[u, user], [p, pass]]) {
   setter.call(el, v);
@@ -458,6 +482,53 @@ for (const [el, v] of [[u, user], [p, pass]]) {
 s.click();
 return 'sent';
 """
+
+
+# a página está logada? (sem o formulário de login) — corpo de função, como o _FILL_SCRIPT
+_STATE_SCRIPT = """
+const [userSel] = arguments;
+if (document.readyState !== 'complete') return 'loading';
+return document.querySelector(userSel) ? 'form' : 'page';
+"""
+
+_UNCOVER_SCRIPT = "const c = document.getElementById('benikids-entrando'); if (c) c.remove();"
+
+
+def _try_script(client, source, *args):
+    """Script que pode cair no meio de uma troca de página: None em vez de erro."""
+    try:
+        return client.script(source, *args)
+    except RuntimeError:
+        return None
+
+
+def tile_state(client, info, target_url, timeout=20, settle=1.5):
+    """Olha a página que o navegador abriu para o tile.
+
+    'login'  — o site mandou para a página de login (ou mostra o formulário): entrar ali mesmo;
+    'logged' — a página do tile abriu sem formulário de login: sessão aberta, não mexer;
+    None     — não deu para saber a tempo (aí segue o caminho antigo, pela página de login).
+    """
+    login_path = urlparse(info["login_url"]).path
+    target_path = (urlparse(target_url).path or "/").rstrip("/")
+    deadline = time.time() + timeout
+    stable_since, last = None, None
+    while time.time() < deadline:
+        href = _try_script(client, "return location.href")
+        state = _try_script(client, _STATE_SCRIPT, info["user_selector"]) if href else None
+        path = urlparse(href or "").path
+        if href and path.startswith(login_path) or state == "form":
+            return "login"
+        current = (path.rstrip("/"), state)
+        if state == "page" and path.rstrip("/") == target_path:
+            # redirecionamento feito por script chega depois do "complete": espera firmar
+            if current != last:
+                stable_since = time.time()
+            elif time.time() - stable_since >= settle:
+                return "logged"
+        last = current
+        time.sleep(0.3)
+    return None
 
 
 def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=None, timeout=60,
@@ -477,7 +548,12 @@ def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=N
         login_url = info["login_url"]
         if info.get("continue_param"):
             login_url += "?" + info["continue_param"] + "=" + quote(target_path, safe="/")
-        client.navigate(login_url)
+        state = tile_state(client, info, target_url) if info.get("check_tile_first") else None
+        if state == "logged":
+            log("site_login.finished", driver=driver, result="already")
+            return "already"
+        if state != "login":
+            client.navigate(login_url)
         deadline = time.time() + timeout
         sent = False
         while time.time() < deadline:
@@ -499,6 +575,7 @@ def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=N
                     sent_at = time.time()
             elif time.time() - sent_at > 15:
                 result = "failed"   # continua na página de login (senha errada?)
+                _try_script(client, _UNCOVER_SCRIPT)  # a criança/os pais veem o erro do site
                 break
             time.sleep(0.7)
         else:

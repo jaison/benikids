@@ -63,7 +63,7 @@ def registro_completo(**extra):
         BLOCKLIST: {str(i + 1): url for i, url in enumerate(("exemplo.com",) + pe.URLS_BLOQUEADAS)},
         UBOL: {"defaultFiltering": "complete", "disableFirstRunPage": 1},
         UBOL + r"\rulesets": {"1": "+annoyances-cookies"},
-        RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0},
+        RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0, "PasswordManagerEnabled": 0},
     }
     chaves.update(extra)
     return chaves
@@ -117,6 +117,19 @@ class PoliticasTest(unittest.TestCase):
         sem_valor = registro_completo(**{RAIZ: {"OutraPolitica": 1}})
         self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_valor)))
 
+    def test_gerenciador_de_senhas_desligado(self):
+        texto = "\n".join(pe.script_aplicar())
+        self.assertIn(
+            r"New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'PasswordManagerEnabled' "
+            "-Value 0 -PropertyType DWord -Force",
+            texto,
+        )
+        # máquina com as políticas da versão anterior (sem esta): o próximo lote com senha a aplica
+        anterior = registro_completo(**{RAIZ: {"TranslateEnabled": 0}})
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(anterior)))
+        # nada apaga as senhas já salvas
+        self.assertNotIn("Login Data", texto + "\n".join(pe.script_desfazer()))
+
     def test_escola_games_sem_filtro_fica_pronto(self):
         texto = "\n".join(pe.script_aplicar(sem_filtro=True))
         self.assertIn(r"policy\noFiltering' @('escolagames.com.br')", texto)
@@ -134,8 +147,9 @@ class PoliticasTest(unittest.TestCase):
         # da raiz, só o valor da tradução (as outras políticas ficam)
         valores = [l for l in texto.splitlines() if l.startswith("Remove-ItemProperty")]
         self.assertEqual(valores, [
-            r"Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'TranslateEnabled' "
-            "-ErrorAction SilentlyContinue",
+            rf"Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name '{nome}' "
+            "-ErrorAction SilentlyContinue"
+            for nome in ("TranslateEnabled", "PasswordManagerEnabled")
         ])
         # a chave da lista só some se ficou vazia e sem subchaves
         self.assertIn("$outros.Count -eq 0 -and $chave.SubKeyCount -eq 0", texto)

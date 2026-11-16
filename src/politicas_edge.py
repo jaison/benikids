@@ -7,7 +7,8 @@ O que o Firefox dos sites tem no Linux (beni/firefox/policies.json), no Edge:
 - a configuração do uBOL pela política de extensão ("3rdparty"): filtragem
   "complete", a lista de avisos de cookies e sem a página de boas-vindas;
 - URLBlocklist com as mesmas páginas bloqueadas do Linux;
-- TranslateEnabled=0 (sem o "Traduzir esta página").
+- TranslateEnabled=0 (sem o "Traduzir esta página");
+- PasswordManagerEnabled=0 (sem salvar nem preencher senhas).
 
 Fica em HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge: vale para o Edge inteiro do
 computador (o mantenedor confirmou que só o Benikids usa o Edge) e precisa de
@@ -56,7 +57,9 @@ ESCOLA_GAMES_SEM_FILTRO = False
 # TranslateEnabled=0: sem a barra/ícone "Traduzir esta página" e sem o
 # oferecimento automático. O perfil de cada criança também leva
 # translate.enabled=false (application_launcher.py), que não pede administrador.
-VALORES_RAIZ = {"TranslateEnabled": ("DWord", 0)}
+# PasswordManagerEnabled=0: o Edge não salva nem preenche senhas (o login dos
+# sites é o automático, por criança). Não apaga as senhas já salvas.
+VALORES_RAIZ = {"TranslateEnabled": ("DWord", 0), "PasswordManagerEnabled": ("DWord", 0)}
 SEM_FILTRO = ("escolagames.com.br",)
 
 

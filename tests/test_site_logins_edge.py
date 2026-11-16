@@ -90,7 +90,7 @@ class EdgeCommandTest(unittest.TestCase):
                 self.assertEqual([a for a in command if a.startswith("--disable-features")],
                                  ["--disable-features=Translate"])
                 prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
-                self.assertEqual(json.loads(prefs.read_text()), {"translate": {"enabled": False}})
+                self.assertEqual(json.loads(prefs.read_text()), MINIMO)
             # o Firefox não ganha nada disso
             firefox = external_browser_command("firefox", "https://x.org/", root)
             self.assertFalse(any("disable-features" in arg for arg in firefox))
@@ -100,6 +100,13 @@ class EdgeCommandTest(unittest.TestCase):
             command = external_browser_command("firefox", "https://x.org/", root, devtools_port=28291)
             self.assertEqual(command[-2:], ["--kiosk", "https://x.org/"])
             self.assertNotIn("--marionette", command)
+
+
+MINIMO = {
+    "translate": {"enabled": False},
+    "credentials_enable_service": False,
+    "profile": {"password_manager_enabled": False},
+}
 
 
 class EdgePreferencesTest(unittest.TestCase):
@@ -117,7 +124,7 @@ class EdgePreferencesTest(unittest.TestCase):
 
     def test_new_profile_gets_only_the_minimum(self):
         self.assertTrue(ensure_chromium_preferences(self.profile))
-        self.assertEqual(json.loads(self.prefs.read_text()), {"translate": {"enabled": False}})
+        self.assertEqual(json.loads(self.prefs.read_text()), MINIMO)
         self.assertEqual(os.listdir(self.prefs.parent), ["Preferences"])  # sem arquivo temporário
 
     def test_merge_keeps_every_other_key(self):
@@ -133,10 +140,23 @@ class EdgePreferencesTest(unittest.TestCase):
         data = json.loads(self.prefs.read_text(encoding="utf-8"))
         expected = json.loads(json.dumps(original))
         expected["translate"]["enabled"] = False
+        expected["credentials_enable_service"] = False
+        expected["profile"]["password_manager_enabled"] = False  # name e exit_type ficam
         self.assertEqual(data, expected)
 
+    def test_password_manager_is_turned_off_without_touching_saved_logins(self):
+        self.write({"credentials_enable_service": True, "profile": {"password_manager_enabled": True, "name": "P"}})
+        login_data = self.prefs.parent / "Login Data"
+        login_data.write_bytes(b"logins salvos")
+        self.assertTrue(ensure_chromium_preferences(self.profile))
+        data = json.loads(self.prefs.read_text())
+        self.assertIs(data["credentials_enable_service"], False)
+        self.assertEqual(data["profile"], {"password_manager_enabled": False, "name": "P"})
+        # o mantenedor decidiu não apagar o que o Edge já salvou
+        self.assertEqual(login_data.read_bytes(), b"logins salvos")
+
     def test_already_off_is_not_rewritten(self):
-        self.write({"translate": {"enabled": False}, "x": 1})
+        self.write(dict(MINIMO, x=1))
         before = self.prefs.stat().st_mtime_ns
         self.assertFalse(ensure_chromium_preferences(self.profile))
         self.assertEqual(self.prefs.stat().st_mtime_ns, before)
@@ -144,7 +164,7 @@ class EdgePreferencesTest(unittest.TestCase):
     def test_translate_not_a_dict_is_replaced(self):
         self.write({"translate": "estranho", "x": 1})
         self.assertTrue(ensure_chromium_preferences(self.profile))
-        self.assertEqual(json.loads(self.prefs.read_text()), {"translate": {"enabled": False}, "x": 1})
+        self.assertEqual(json.loads(self.prefs.read_text()), dict(MINIMO, x=1))
 
     def test_broken_file_is_left_alone(self):
         for broken in ('{"translate": {"enabled": tr', "[1, 2]"):
@@ -231,6 +251,9 @@ class FakeDevTools(socketserver.ThreadingTCPServer):
         self.after_login_url = after_login_url
         self.fragment_replies = fragment_replies
         self.fill_args = None
+        self.state_checks = 0
+        self.redirect_after_checks = 0
+        self.uncovered = False
         self.messages = []
         self.navigations = []
         super().__init__(("127.0.0.1", 0), FakeDevToolsHandler)
@@ -311,7 +334,17 @@ class FakeDevToolsHandler(socketserver.BaseRequestHandler):
             return {"result": {"type": "undefined"}}
         if "!window.__beniOld" in expression:
             return {"result": {"type": "boolean", "value": True}}
+        if "return 'loading'" in expression:  # _STATE_SCRIPT
+            server.state_checks += 1
+            if server.redirect_after_checks and server.state_checks == server.redirect_after_checks:
+                server.href = server.login_url  # o site manda para o login por script, depois do "complete"
+            on_login = urlparse(server.href).path.startswith(urlparse(server.login_url).path)
+            return {"result": {"type": "string", "value": "form" if on_login else "page"}}
+        if "benikids-entrando" in expression and "remove()" in expression:
+            server.uncovered = True
+            return {"result": {"type": "undefined"}}
         if "querySelector(userSel)" in expression:
+            assert "benikids-entrando" in expression  # a capa vem antes de preencher
             args = json.loads(expression[expression.rindex(".apply(null, ") + 13:-1])
             server.fill_args = args
             server.href = server.after_login_url
@@ -322,9 +355,10 @@ class FakeDevToolsHandler(socketserver.BaseRequestHandler):
 
 
 class DevToolsLoginTest(unittest.TestCase):
-    def run_login(self, site, target, after, fragment=False):
+    def run_login(self, site, target, after, fragment=False, start=None, redirect_after_checks=0):
         info = site_logins.SITES[site]
-        server = FakeDevTools(info["login_url"], after, target, fragment_replies=fragment)
+        server = FakeDevTools(info["login_url"], after, start or target, fragment_replies=fragment)
+        server.redirect_after_checks = redirect_after_checks
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         events = []
@@ -341,8 +375,11 @@ class DevToolsLoginTest(unittest.TestCase):
 
     def test_fills_the_login_page_and_returns_to_the_tile(self):
         target = "https://www.teachyourmonster.org/account/play"
+        info = site_logins.SITES["teachyourmonster"]
+        # sem sessão o TYM manda o tile para o sign_in: preenche ali mesmo
         result, server, events = self.run_login(
             "teachyourmonster", target, "https://www.teachyourmonster.org/account/dashboard", fragment=True,
+            start=info["login_url"],
         )
         self.assertEqual(result, "ok")
         info = site_logins.SITES["teachyourmonster"]
@@ -351,10 +388,31 @@ class DevToolsLoginTest(unittest.TestCase):
             info["password_selector"], info["submit_selector"],
         ])
         self.assertEqual(server.fill_args[6], ["#tab_home"])
-        self.assertEqual(server.navigations, [info["login_url"], target])
+        # não precisou navegar para o login; depois volta para a página do tile
+        self.assertEqual(server.navigations, [target])
+        self.assertFalse(server.uncovered)
         self.assertEqual(events, [("site_login.finished", {"driver": "devtools", "result": "success"})])
         # a senha não vai para o log
         self.assertNotIn("s3nh", json.dumps(events))
+
+    def test_tym_with_open_session_never_visits_the_login_page(self):
+        # ir ao sign_in logado mostra "You're already logged in as <e-mail>" em cima do jogo
+        target = "https://www.teachyourmonster.org/account/play"
+        result, server, events = self.run_login("teachyourmonster", target, target)
+        self.assertEqual(result, "already")
+        self.assertEqual(server.navigations, [])
+        self.assertIsNone(server.fill_args)
+        self.assertEqual(events, [("site_login.finished", {"driver": "devtools", "result": "already"})])
+
+    def test_tym_redirect_by_script_after_load_still_logs_in(self):
+        target = "https://www.teachyourmonster.org/account/play"
+        result, server, _ = self.run_login(
+            "teachyourmonster", target, "https://www.teachyourmonster.org/account/dashboard",
+            redirect_after_checks=3,
+        )
+        self.assertEqual(result, "ok")
+        self.assertIsNotNone(server.fill_args)
+        self.assertEqual(server.navigations, [target])
 
     def test_already_logged_in_does_not_type(self):
         target = "https://pt.khanacademy.org/math"
@@ -397,3 +455,37 @@ class DevToolsLoginTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TileStateTest(unittest.TestCase):
+    """tile_state com um cliente de mentira, como o Marionette (erros viram RuntimeError)."""
+
+    INFO = site_logins.SITES["teachyourmonster"]
+    TARGET = "https://www.teachyourmonster.org/account/play"
+
+    class Client:
+        def __init__(self, steps):
+            self.steps = list(steps)  # (href, estado) por consulta; "erro" = página trocando
+
+        def script(self, source, *args):
+            # cada "location.href" avança um passo (o último se repete); o estado é o do passo atual
+            if "location.href" in source:
+                self.current = self.steps.pop(0) if len(self.steps) > 1 else self.steps[0]
+            href, state = self.current
+            if href == "erro":
+                raise RuntimeError("Document was unloaded")
+            return href if "location.href" in source else state
+
+    def state(self, steps, timeout=3):
+        return site_logins.tile_state(self.Client(steps), self.INFO, self.TARGET, timeout=timeout, settle=0.5)
+
+    def test_logged_page_waits_to_settle(self):
+        self.assertEqual(self.state([("erro", None), (self.TARGET, "loading"), (self.TARGET, "page")]), "logged")
+
+    def test_login_redirect_or_form_means_login(self):
+        self.assertEqual(self.state([(self.TARGET, "loading"), (self.INFO["login_url"], "form")]), "login")
+        self.assertEqual(self.state([(self.TARGET + "/", "form")]), "login")
+
+    def test_unknown_page_falls_back(self):
+        self.assertIsNone(self.state([("https://www.teachyourmonster.org/outra", "page")], timeout=1))
+        self.assertIsNone(self.state([("erro", None)], timeout=1))
