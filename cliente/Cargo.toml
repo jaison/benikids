@@ -7,10 +7,11 @@ license = "MIT"
 publish = false
 
 [dependencies]
-# gpui-fast fixado na versão testada no notebook (Intel HD 2000). O pacote
-# gpui-fast-wgpu vem de vendor/ com o patch para GL sem compute (ver vendor/LEIA-ME.md).
-gpui = { package = "gpui-fast", version = "=0.1.14" }
-gpui_platform = { package = "gpui-fast-platform", version = "=0.1.14", features = ["x11"] }
+# gpui-fast fixado na versão testada no notebook (Intel HD 2000). A 0.1.16 já traz o
+# suporte a GL sem compute (nosso PR #141); o gpui-fast-wgpu ainda vem de vendor/ só para
+# recusar o llvmpipe (ver vendor/LEIA-ME.md).
+gpui = { package = "gpui-fast", version = "=0.1.16" }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.16", features = ["x11"] }
 env_logger = "0.11"
 log = "0.4"
 serde_json = "1"

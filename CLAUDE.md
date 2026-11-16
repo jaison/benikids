@@ -21,8 +21,8 @@ baixar, instalar, a criança usa. Textos para o usuário em **português**, simp
 - `src/server.py` — servidor local (Python, sem dependências), API `/api/*`, o mesmo nos
   dois sistemas. `src/index.html` + `src/frontend/` — menu web. `src/configurar.html` —
   configuração inicial em 3 passos.
-- `cliente/` — menu nativo `beni-menu` (Rust + gpui-fast; `cliente/vendor/` tem o patch GL
-  para Intel HD 2000 até sair o PR longbridge/gpui-fast#141).
+- `cliente/` — menu nativo `beni-menu` (Rust + gpui-fast; o suporte a Intel HD 2000
+  veio do nosso PR longbridge/gpui-fast#141, na 0.1.16; `cliente/vendor/` só recusa o llvmpipe).
 - Windows: `src/beni_windows.py` (iniciador), `src/catalogo/windows.json` +
   `src/catalogo_windows.py` (catálogo, uma entrada por linha — edite com cuidado para não
   reformatar), `src/instalar_apps.py` (winget, download direto, pasta do KDE),

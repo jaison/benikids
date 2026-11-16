@@ -1,0 +1,15 @@
+diff -ru gpui-fast-wgpu-0.1.16/src/wgpu_context.rs gpui-fast-wgpu/src/wgpu_context.rs
+--- gpui-fast-wgpu-0.1.16/src/wgpu_context.rs	2006-07-23 22:21:28
++++ gpui-fast-wgpu/src/wgpu_context.rs	2026-11-16 09:54:17
+@@ -139,7 +139,10 @@
+         config: &WgpuSurfaceConfig,
+         compositor_gpu: Option<CompositorGpuHint>,
+     ) -> anyhow::Result<Self> {
+-        Self::new_with_options(instance, surface, config, compositor_gpu, false)
++        // Beni: com GPUI_RECUSAR_SOFTWARE=1 o renderizador por CPU (llvmpipe) é recusado,
++        // para quem chama poder voltar para outra interface.
++        let recusar = std::env::var_os("GPUI_RECUSAR_SOFTWARE").is_some_and(|v| v == "1");
++        Self::new_with_options(instance, surface, config, compositor_gpu, recusar)
+     }
+ 
+     #[cfg(not(target_family = "wasm"))]

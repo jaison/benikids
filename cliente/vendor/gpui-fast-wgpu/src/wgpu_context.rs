@@ -458,16 +458,8 @@ impl WgpuContext {
                 .using_resolution(adapter.limits())
                 .using_alignment(adapter.limits())
         };
-        // Beni: GL nativo sem compute (ex.: Intel HD 2000, GLES 3.0) não alcança os
-        // limites "downlevel" (exigem compute); usa os limites que o adaptador tem.
         #[cfg(not(target_family = "wasm"))]
-        let required_limits = if adapter.get_info().backend == wgpu::Backend::Gl {
-            adapter.limits()
-        } else {
-            wgpu::Limits::downlevel_defaults()
-                .using_resolution(adapter.limits())
-                .using_alignment(adapter.limits())
-        };
+        let required_limits = crate::fast::native_gl::required_limits(adapter);
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -740,8 +732,8 @@ impl WgpuContext {
     }
 
     pub fn uses_webgl_instance_data(&self) -> bool {
-        // Beni: GL nativo também não tem storage buffers no vertex shader.
-        matches!(self.backend, WgpuBackend::Gl | WgpuBackend::Native(wgpu::Backend::Gl))
+        matches!(self.backend, WgpuBackend::Gl) && cfg!(target_family = "wasm")
+            || crate::fast::native_gl::uses_texture_instance_data(&self.adapter)
     }
 
     pub fn supports_dual_source_blending(&self) -> bool {
