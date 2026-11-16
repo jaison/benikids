@@ -290,6 +290,28 @@ def load_corner(tile_id):
     return corner if corner in CORNERS else "tl"
 
 
+def back_corner_key(tile_id):
+    """Chave do canto do ‹ Voltar no mesmo arquivo dos cantos da pílula."""
+    return (tile_id or "_") + "#voltar"
+
+
+def load_back_corner(tile_id):
+    """Canto do ‹ Voltar deste site; o padrão é o inferior esquerdo."""
+    try:
+        with open(CORNER_FILE, encoding="utf-8") as handle:
+            corner = json.load(handle).get(back_corner_key(tile_id)) or "bl"
+    except (OSError, ValueError, AttributeError):
+        corner = "bl"
+    return corner if corner in CORNERS else "bl"
+
+
+def stacked_offset(corner, other_height, gap=10):
+    """Deslocamento vertical da pílula quando divide o canto com o ‹ Voltar: em cima
+    ela fica logo abaixo dele; embaixo, logo acima."""
+    step = other_height + gap
+    return step if corner in ("tl", "tr") else -step
+
+
 def save_corner(tile_id, corner):
     try:
         with open(CORNER_FILE, encoding="utf-8") as handle:
@@ -445,8 +467,11 @@ class AppOverlay:
         self.frame = tk.Frame(self.root, bg=PILL_BG, bd=0, padx=6, pady=6)
         self.frame.pack(fill=tk.BOTH, expand=True)
 
-        # ‹ Voltar: só em sites (é o Alt+← do navegador), sempre no canto inferior esquerdo
+        # ‹ Voltar: só em sites (é o Alt+← do navegador). Começa no canto inferior
+        # esquerdo e, como a pílula, pode ser arrastado para outro canto.
         self.back_window = None
+        self.back_corner = load_back_corner(tile_id)
+        self.back_drag = None
         if mode == "external":
             self.back_window = self.build_back_window()
         self.close_btn = RoundButton(self.frame, "✕", marca.LARANJA, "#ffffff", marca.LARANJA_ESCURO,
@@ -551,7 +576,31 @@ class AppOverlay:
                         fg=PILL_TEXT, padx=8, cursor="hand2")
         text.pack(side=tk.LEFT)
 
+        def press(event):
+            self.back_drag = (event.x_root, event.y_root, window.winfo_rootx(), window.winfo_rooty(), False)
+
+        def motion(event):
+            if not self.back_drag:
+                return
+            sx, sy, wx, wy, moving = self.back_drag
+            dx, dy = event.x_root - sx, event.y_root - sy
+            if not moving and abs(dx) + abs(dy) < 10:
+                return
+            self.back_drag = (sx, sy, wx, wy, True)
+            window.geometry(f"+{wx + dx}+{wy + dy}")
+
         def release(event):
+            drag, self.back_drag = self.back_drag, None
+            if drag and drag[4]:
+                # arrastou: vai para o canto mais perto e guarda para este site
+                self.back_corner = nearest_corner(window.winfo_rootx() + self.back_width / 2,
+                                                  window.winfo_rooty() + self.back_height / 2,
+                                                  window.winfo_screenwidth(),
+                                                  window.winfo_screenheight())
+                save_corner(back_corner_key(self.tile_id), self.back_corner)
+                self.place_back()
+                self.place()
+                return
             widget = event.widget
             if 0 <= event.x <= widget.winfo_width() and 0 <= event.y <= widget.winfo_height():
                 self.on_back()
@@ -563,17 +612,27 @@ class AppOverlay:
                 pass
 
         for widget in (box, arrow, text):
+            widget.bind("<ButtonPress-1>", press, add="+")
+            widget.bind("<B1-Motion>", motion, add="+")
             widget.bind("<ButtonRelease-1>", release, add="+")
         window.bind("<Enter>", lambda _e: alpha(PILL_ALPHA_HOVER), add="+")
         window.bind("<Leave>", lambda _e: window.after(1200, lambda: alpha(PILL_ALPHA_IDLE)), add="+")
         window.update_idletasks()
         width, height = box.winfo_reqwidth(), box.winfo_reqheight()
-        x, y = corner_position("bl", width, height, window.winfo_screenwidth(), window.winfo_screenheight())
+        self.back_width, self.back_height = width, height
+        x, y = corner_position(self.back_corner, width, height,
+                               window.winfo_screenwidth(), window.winfo_screenheight())
         window.geometry(f"{width}x{height}+{x}+{y}")
-        self.back_height = height
         window.update_idletasks()
         shape_window_rounded(window, width, height, height // 2)
         return window
+
+    def place_back(self):
+        if self.back_window is None:
+            return
+        x, y = corner_position(self.back_corner, self.back_width, self.back_height,
+                               self.back_window.winfo_screenwidth(), self.back_window.winfo_screenheight())
+        self.back_window.geometry(f"{self.back_width}x{self.back_height}+{x}+{y}")
 
     def size(self):
         try:
@@ -586,8 +645,8 @@ class AppOverlay:
         width, height = self.size()
         x, y = corner_position(self.corner, width, height,
                                self.root.winfo_screenwidth(), self.root.winfo_screenheight())
-        if self.corner == "bl" and self.back_window is not None:
-            y -= self.back_height + 10  # fica logo acima do ‹ Voltar
+        if self.back_window is not None and self.corner == self.back_corner:
+            y += stacked_offset(self.corner, self.back_height)  # junto do ‹ Voltar, sem cobrir
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         if self.shape_size != (width, height):
             self.root.update_idletasks()
