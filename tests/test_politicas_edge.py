@@ -61,7 +61,8 @@ def registro_completo(**extra):
     chaves = {
         FORCELIST: {"1": "outra;https://x", "2": pe.UBOL_FORCELIST},
         BLOCKLIST: {str(i + 1): url for i, url in enumerate(("exemplo.com",) + pe.URLS_BLOQUEADAS)},
-        UBOL: {"defaultFiltering": "optimal", "disableFirstRunPage": 1},
+        UBOL: {"defaultFiltering": "complete", "disableFirstRunPage": 1},
+        UBOL + r"\rulesets": {"1": "+annoyances-cookies"},
         RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0},
     }
     chaves.update(extra)
@@ -90,7 +91,9 @@ class PoliticasTest(unittest.TestCase):
         )
         self.assertIn(r"Benikids-Por 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist' @('escolagames", texto)
         chave = rf"'HKLM:\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{pe.UBOL_ID}\policy'"
-        self.assertIn(f"-Path {chave} -Name 'defaultFiltering' -Value 'optimal' -PropertyType String", texto)
+        self.assertIn(f"-Path {chave} -Name 'defaultFiltering' -Value 'complete' -PropertyType String", texto)
+        # avisos de cookies: a lista do uBOL ligada com "+" (sem ele o uBOL ignora)
+        self.assertIn(r"policy\rulesets' @('+annoyances-cookies')", texto)
         self.assertIn(f"-Path {chave} -Name 'disableFirstRunPage' -Value 1 -PropertyType DWord", texto)
         # sem o "Escola Games sem filtro", a lista some se tiver ficado de antes
         self.assertIn(r"policy\noFiltering' -Recurse", texto)
@@ -156,6 +159,10 @@ class PoliticasTest(unittest.TestCase):
         self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(falta_url)))
         outra_config = registro_completo(**{UBOL: {"defaultFiltering": "basic", "disableFirstRunPage": 1}})
         self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(outra_config)))
+        # máquina com as políticas da versão anterior (sem a lista de cookies): aplica de novo
+        sem_cookies = registro_completo()
+        del sem_cookies[UBOL + r"\rulesets"]
+        self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_cookies)))
         # Escola Games sem filtro: a lista tem de bater nos dois sentidos
         self.assertTrue(pe.faltam(sem_filtro=True, winreg=WinregFalso(registro_completo())))
         com_lista = registro_completo(**{UBOL + r"\noFiltering": {"1": "escolagames.com.br"}})
@@ -165,6 +172,41 @@ class PoliticasTest(unittest.TestCase):
     def test_fora_do_windows_nao_pede_nada(self):
         with mock.patch.object(pe.os, "name", "posix"):
             self.assertFalse(pe.faltam())
+
+
+class AvisosDeCookiesTest(unittest.TestCase):
+    def test_rulesets_do_ubol(self):
+        self.assertEqual(pe.UBOL_RULESETS, ("+annoyances-cookies",))
+        for item in pe.UBOL_RULESETS:
+            self.assertTrue(item.startswith(("+", "-")))
+        self.assertEqual(pe.politica_ubol(False)["rulesets"], ("Lista", ["+annoyances-cookies"]))
+
+    def test_firefox_liga_as_listas_de_cookies_sem_perder_as_padrao(self):
+        politica = json.loads((RAIZ_REPO / "beni" / "firefox" / "policies.json").read_text())
+        ubo = politica["policies"]["3rdparty"]["Extensions"]["uBlock0@raymondhill.net"]["toOverwrite"]
+        listas = ubo["filterLists"]
+        # o filterLists troca a seleção inteira: as padrão do uBlock têm de estar aqui
+        padrao = ["ublock-filters", "ublock-badware", "ublock-privacy", "ublock-unbreak",
+                  "ublock-quick-fixes", "easylist", "easyprivacy", "urlhaus-1", "plowe-0"]
+        for lista in padrao + ["spa-1", "fanboy-cookiemonster", "ublock-cookies-easylist"]:
+            self.assertIn(lista, listas)
+        # sem "user-filters" o uBlock ignora as regras próprias (a do Escola Games)
+        self.assertIn("user-filters", listas)
+        self.assertEqual(len(listas), len(set(listas)))
+        self.assertIn(
+            "||pagead2.googlesyndication.com/pagead/js/adsbygoogle.js$script,domain=assets.escolagames.com.br",
+            ubo["filters"],
+        )
+        # e o resto das políticas continua
+        self.assertIn("WebsiteFilter", politica["policies"])
+        self.assertEqual(politica["policies"]["DNSOverHTTPS"], {"Enabled": False, "Locked": True})
+
+    def test_firefox_recusa_o_opcional_pelo_user_js(self):
+        instalar = (RAIZ_REPO / "instalar.sh").read_text()
+        self.assertIn("""'user_pref("cookiebanners.service.mode", 1);'""", instalar)
+        self.assertIn("""'user_pref("cookiebanners.service.mode.privateBrowsing", 1);'""", instalar)
+        # vai para o perfil base antes da cópia para os perfis de cada criança
+        self.assertLess(instalar.index("cookiebanners.service.mode"), instalar.index('cp "$P/user.js" "$Q/user.js"'))
 
 
 class LoteComSenhaTest(unittest.TestCase):

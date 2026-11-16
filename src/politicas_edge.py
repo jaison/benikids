@@ -5,7 +5,7 @@ O que o Firefox dos sites tem no Linux (beni/firefox/policies.json), no Edge:
   de domínio a instalação forçada só aceita a loja do Edge, e o uBlock Origin
   (MV2) está sendo desligado no Edge;
 - a configuração do uBOL pela política de extensão ("3rdparty"): filtragem
-  "optimal" e sem a página de boas-vindas;
+  "complete", a lista de avisos de cookies e sem a página de boas-vindas;
 - URLBlocklist com as mesmas páginas bloqueadas do Linux;
 - TranslateEnabled=0 (sem o "Traduzir esta página").
 
@@ -69,11 +69,26 @@ def url_do_firefox(padrao):
     return url[:-1] if url.endswith("/") and url.count("/") == 1 else url
 
 
+# Avisos de cookies ("Aceitar cookies"): a lista "EasyList/uBO – Cookie Notices"
+# do uBOL (desligada de fábrica) esconde o aviso ou recusa o opcional; não aceita
+# cookies por nós. No uBOL cada item precisa do "+" (sem ele é ignorado) e soma
+# às listas padrão, que continuam ligadas.
+UBOL_RULESETS = ("+annoyances-cookies",)
+
+# "complete": as regras gerais de aparência (esconder o aviso em qualquer site)
+# só valem nesse modo; no "optimal" ficam só as regras de cada site, e os sites
+# infantis brasileiros quase nunca têm regra própria. Se pesar no notebook
+# antigo ou quebrar um jogo, volte para "optimal" (os avisos de sites grandes
+# continuam sumindo).
+UBOL_MODO = "complete"
+
+
 def politica_ubol(sem_filtro=ESCOLA_GAMES_SEM_FILTRO):
     """Valores da política do uBOL (managed storage): {nome: (tipo, valor)}."""
     valores = {
-        "defaultFiltering": ("String", "optimal"),
+        "defaultFiltering": ("String", UBOL_MODO),
         "disableFirstRunPage": ("DWord", 1),
+        "rulesets": ("Lista", list(UBOL_RULESETS)),
     }
     if sem_filtro:
         valores["noFiltering"] = ("Lista", list(SEM_FILTRO))
