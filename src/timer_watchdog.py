@@ -138,14 +138,19 @@ def janela_na_frente(janela, campo, plataforma=None):
         campo.focus_force()
 
 
-def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente):
+# Logo depois de a vigia abrir (o Benikids acabou de abrir), o menu ainda não
+# está registrado nem na frente: a tela de tempo esgotado espera por ele.
+PARTIDA_SEGUNDOS = 12
+
+
+def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente, partida=False):
     """O que a vigia faz a cada volta. `menu_na_frente` é chamado só quando
-    importa (pergunta ao servidor). Devolve uma lista de ações: "bloquear",
-    "fechar_bloqueio", "aviso", "fechar_aviso"."""
+    importa (pergunta ao servidor); `partida` = a vigia abriu há pouco. Devolve
+    uma lista de ações: "bloquear", "fechar_bloqueio", "aviso", "fechar_aviso"."""
     acoes = []
     if status.get("expired"):
         # com o menu na frente e sem app aberto, a tela é a do próprio menu
-        if bloqueio_aberto or not menu_na_frente():
+        if bloqueio_aberto or not (partida or menu_na_frente()):
             acoes.append("bloquear")
         if aviso_aberto:
             acoes.append("fechar_aviso")
@@ -154,8 +159,13 @@ def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente):
         # tempo estendido por outra tela (menu, área dos pais, API) ou timer parado
         acoes.append("fechar_bloqueio")
     if status.get("warning"):
-        if not aviso_aberto and not menu_na_frente():
+        menu = partida or menu_na_frente()
+        if not aviso_aberto and not menu:
             acoes.append("aviso")
+        elif aviso_aberto and menu:
+            # roteiro 19: o aviso foi decidido com a área dos pais na frente e
+            # continuou depois do "Voltar", junto com o do menu
+            acoes.append("fechar_aviso")
     elif aviso_aberto:
         acoes.append("fechar_aviso")
     return acoes
@@ -171,6 +181,7 @@ class WatchdogApp:
         self.polling = True
         self.poll_interval = 5000  # ms
         self.status = {}
+        self.aberto_em = time.monotonic()
 
     def show_warning(self, remaining):
         if self.warn_window is not None:
@@ -448,6 +459,7 @@ class WatchdogApp:
                 self.block_window is not None,
                 self.warn_window is not None,
                 lambda: bool(api("/api/timer/tela").get("menuNaFrente")),
+                partida=time.monotonic() - self.aberto_em < PARTIDA_SEGUNDOS,
             )
             if "fechar_bloqueio" in acoes:
                 self._destroy_block()

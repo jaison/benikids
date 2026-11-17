@@ -1834,6 +1834,34 @@ class ServerApiTests(unittest.TestCase):
                 status, data, _ = self.request("/api/timer/tela")
             self.assertEqual((status, data), (200, {"menuNaFrente": esperado}), (registro, frente, app, uso))
 
+    def test_timer_tela_area_dos_pais_e_menu_abrindo_contam_como_menu(self):
+        registro = {"pid": 10}
+        with mock.patch.object(server_module, "owned_process", return_value=registro), \
+                mock.patch.object(server_module, "owned_process_alive", return_value=False), \
+                mock.patch.object(server_module, "usage_status", return_value={"active": False}):
+            # navegador filho do menu (área dos pais) na frente
+            with mock.patch.object(server_module, "pid_da_janela_ativa", return_value=99), \
+                    mock.patch.object(server_module, "pais_dos_processos", return_value={99: 10, 10: 1}):
+                self.assertTrue(server_module.menu_cobre_a_tela(agora=1e12))
+            # outro programa na frente
+            with mock.patch.object(server_module, "pid_da_janela_ativa", return_value=55), \
+                    mock.patch.object(server_module, "pais_dos_processos", return_value={55: 1, 99: 10}):
+                self.assertFalse(server_module.menu_cobre_a_tela(agora=1e12))
+                # ...mas o menu acabou de ser registrado: ainda está abrindo
+                Path(server_module.BROWSER_PIDFILE).parent.mkdir(parents=True, exist_ok=True)
+                Path(server_module.BROWSER_PIDFILE).write_text("{}", encoding="utf-8")
+                self.assertTrue(server_module.menu_cobre_a_tela())
+                self.assertFalse(server_module.menu_cobre_a_tela(
+                    agora=time.time() + server_module.MENU_PARTIDA_SEGUNDOS + 1))
+
+    def test_processo_descende_de(self):
+        pais = {5: 4, 4: 3, 3: 1, 7: 7}
+        self.assertTrue(server_module.processo_descende_de(5, 3, pais))
+        self.assertTrue(server_module.processo_descende_de(3, 3, pais))
+        self.assertFalse(server_module.processo_descende_de(3, 5, pais))
+        self.assertFalse(server_module.processo_descende_de(7, 3, pais))  # ciclo
+        self.assertFalse(server_module.processo_descende_de(None, 3, pais))
+
     def controles_de_teste(self):
         import controles
         home = Path(self.temp_dir.name) / "home"

@@ -928,20 +928,78 @@ def pid_da_janela_ativa():
     return controles.janela_ativa_pid()
 
 
-def menu_cobre_a_tela():
-    """O menu (nativo ou web) está na frente e nenhum app/site está aberto: aí a
-    tela "Acabou o tempo!" é a do próprio menu, e o timer_watchdog não mostra a
-    dele (eram duas telas ao mesmo tempo, com o teclado indo para a de baixo).
-    Com um app ou jogo na frente, quem cobre é o watchdog."""
+def pais_dos_processos():
+    """{pid: pid do pai}."""
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return plataforma_windows.processos()
+        except Exception:  # noqa: BLE001
+            return {}
+    tabela = {}
+    try:
+        nomes = os.listdir("/proc")
+    except OSError:
+        return tabela
+    for nome in nomes:
+        if not nome.isdigit():
+            continue
+        try:
+            with open(f"/proc/{nome}/stat", encoding="utf-8", errors="replace") as f:
+                campos = f.read().rsplit(")", 1)[1].split()
+            tabela[int(nome)] = int(campos[1])
+        except (OSError, IndexError, ValueError):
+            continue
+    return tabela
+
+
+def processo_descende_de(pid, ancestral, pais=None):
+    """pid é o próprio ancestral ou um descendente dele (ex.: o navegador que o
+    menu nativo abre para a área dos pais)."""
+    if not pid or not ancestral:
+        return False
+    if pid == ancestral:
+        return True
+    pais = pais_dos_processos() if pais is None else pais
+    vistos = set()
+    while pid and pid not in vistos and len(vistos) < 64:
+        vistos.add(pid)
+        pid = pais.get(pid)
+        if pid == ancestral:
+            return True
+    return False
+
+
+# Menu registrado há pouco (abrindo): ainda sem janela na frente, conta como menu.
+MENU_PARTIDA_SEGUNDOS = 15
+
+
+def menu_cobre_a_tela(agora=None):
+    """O menu está na frente e nenhum app/site está aberto: aí as telas do timer
+    ("Acabou o tempo!", "Faltam N minutos") são as do próprio menu, e o
+    timer_watchdog não mostra as dele (eram duas ao mesmo tempo, com o teclado
+    indo para a de baixo). Com um app ou jogo na frente, quem cobre é o watchdog.
+    - A área dos pais no navegador aberto pelo menu nativo conta como menu (o
+      navegador é processo filho dele e não é um app; o adulto está lá).
+    - Menu abrindo (registrado há menos de MENU_PARTIDA_SEGUNDOS) conta como
+      menu: ao reabrir com o tempo esgotado, a rosa aparecia antes do menu."""
     browser = owned_process(BROWSER_PIDFILE, "browser")
-    if not browser or pid_da_janela_ativa() != browser.get("pid"):
+    if not browser:
         return False
     if owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
         return False
     try:
-        return not usage_status(load_cfg()).get("active")
+        if usage_status(load_cfg()).get("active"):
+            return False
     except Exception:  # noqa: BLE001
         return False
+    agora = time.time() if agora is None else agora
+    try:
+        if agora - os.path.getmtime(BROWSER_PIDFILE) < MENU_PARTIDA_SEGUNDOS:
+            return True
+    except OSError:
+        pass
+    return processo_descende_de(pid_da_janela_ativa(), browser.get("pid"))
 
 
 def fechar_app_pelo_controle():
