@@ -39,7 +39,13 @@ enum AcaoPin {
     Sair,
     Desligar,
     Perfil(String),
+    /// Área dos pais: o navegador já abre escondido com esta "espera" (None até o
+    /// servidor responder); o PIN certo o libera e o traz para a frente.
+    Pais(Option<String>),
 }
+
+/// A área dos pais dentro do navegador.
+const PAGINA_PAIS: &str = "/index.html?pais=1";
 
 /// Quanto tempo a mensagem fica na tela se ninguém tocar em OK.
 const MENSAGEM_SEGUNDOS: u32 = 30;
@@ -771,6 +777,11 @@ impl Menu {
     /// Abre uma página do servidor no navegador (área dos pais, site embutido,
     /// biblioteca de mídia). Quando a página volta para o menu, o navegador fecha.
     pub fn abrir_web(&mut self, caminho: &str, cx: &mut Context<Self>) {
+        self.abrir_navegador(caminho, None, cx);
+    }
+
+    /// `espera`: abre escondido, esperando o PIN digitado no menu (área dos pais).
+    fn abrir_navegador(&mut self, caminho: &str, espera: Option<&str>, cx: &mut Context<Self>) {
         if self.o.demo {
             self.inicio = None;
             self.mostrar_mensagem(
@@ -785,7 +796,7 @@ impl Menu {
                 return; // já tem um aberto
             }
         }
-        let url = format!("{}/cliente.html?ir={}", self.api.base(), codificar(caminho));
+        let url = url_cliente(&self.api.base(), caminho, espera);
         let mut cmd = std::process::Command::new(&self.o.web_cmd);
         if self.o.web_familia == "chromium" {
             // o navegador é fechado à força: sem o "Restaurar páginas?" na abertura seguinte
@@ -807,9 +818,11 @@ impl Menu {
             .get_json("/api/cliente/estado")
             .and_then(|v| dados::numero(&v, "voltar"))
             .unwrap_or(0.) as u64;
-        match Navegador::abrir(&mut cmd) {
+        let aberto = if espera.is_some() { Navegador::abrir_escondido(&mut cmd) } else { Navegador::abrir(&mut cmd) };
+        match aberto {
             Ok(nav) => {
-                log::info!("navegador aberto para {caminho} (pid {})", nav.id());
+                let jeito = if nav.escondido() { " (escondido, esperando o PIN)" } else { "" };
+                log::info!("navegador aberto para {caminho}{jeito} (pid {})", nav.id());
                 self.web = Some((nav, base));
                 self.inicio = None;
                 ciclo_ate(cx, Duration::from_millis(800), |m, cx| m.vigiar_web(cx));
@@ -820,7 +833,13 @@ impl Menu {
 
     /// Chamado a cada 0,8 s enquanto o navegador está aberto. Devolve false quando acabou.
     fn vigiar_web(&mut self, cx: &mut Context<Self>) -> bool {
+        let pin_dos_pais = matches!(self.janela, Some(Janela::Pin { acao: AcaoPin::Pais(_), .. }));
         let Some((nav, base)) = self.web.as_mut() else { return false };
+        if nav.escondido() && !pin_dos_pais {
+            // o PIN dos pais saiu da tela sem ser aceito (cancelado, tempo esgotado...)
+            log::info!("PIN dos pais fora da tela: fechando o navegador escondido");
+            nav.fechar();
+        }
         match nav.aberto() {
             true => {
                 let base = *base;
@@ -868,9 +887,14 @@ impl Menu {
 
     fn conferir_pin(&mut self, cx: &mut Context<Self>) {
         let Some(Janela::Pin { pin, acao, .. }) = self.janela.clone() else { return };
+        let pedido = match &acao {
+            // mesma validação e mesmo bloqueio de tentativas do verify-pin
+            AcaoPin::Pais(espera) => ("/api/pais/liberar", json!({"pin": pin, "espera": espera})),
+            _ => ("/api/verify-pin", json!({"pin": pin})),
+        };
         self.tarefa(
             cx,
-            move |api| api.post("/api/verify-pin", Some(&json!({"pin": pin}))),
+            move |api| api.post(pedido.0, Some(&pedido.1)),
             move |m, r, cx| {
                 let valido = r.as_ref().ok().and_then(|r| r.json()).is_some_and(|v| dados::verdade(&v, "valid"));
                 if valido {
@@ -891,6 +915,18 @@ impl Menu {
 
     fn executar(&mut self, acao: AcaoPin, cx: &mut Context<Self>) {
         match acao {
+            AcaoPin::Pais(espera) => {
+                if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.escondido()) {
+                    log::info!("PIN dos pais aceito: trazendo o navegador para a frente");
+                    nav.revelar();
+                } else {
+                    // o navegador escondido não abriu ou fechou: abre agora, visível
+                    // (com a espera liberada, a página entra direto)
+                    self.web = None;
+                    self.abrir_navegador(PAGINA_PAIS, None, cx);
+                    let _ = espera;
+                }
+            }
             AcaoPin::Sair => self.tarefa(cx, |api| api.post("/exit-kids", None), |m, _, _| m.api.esquecer_sessao()),
             AcaoPin::Desligar => self.tarefa(cx, |api| api.post("/shutdown", None), |m, _, _| m.api.esquecer_sessao()),
             AcaoPin::Perfil(id) => self.tarefa(
@@ -936,8 +972,53 @@ impl Menu {
         );
     }
 
+    /// "Pais": com PIN, a tela de PIN do menu aparece na hora e o navegador abre
+    /// escondido atrás dele, já carregando a área dos pais; o PIN certo o libera
+    /// (ver /api/pais/* no servidor). Sem PIN, abre direto como antes.
     fn abrir_pais(&mut self, cx: &mut Context<Self>) {
-        self.abrir_web("/index.html?pais=1", cx);
+        if self.o.demo || !self.pin_configurado() {
+            self.abrir_web(PAGINA_PAIS, cx);
+            return;
+        }
+        if self.web.as_mut().is_some_and(|(n, _)| n.aberto()) {
+            return;
+        }
+        log::info!("pais: PIN na tela do menu; abrindo o navegador escondido");
+        self.janela = Some(Janela::Pin { pin: String::new(), erro: String::new(), acao: AcaoPin::Pais(None) });
+        self.tarefa(
+            cx,
+            |api| api.post("/api/pais/preparar", Some(&json!({}))),
+            |m, r, cx| {
+                let espera = r
+                    .ok()
+                    .filter(|r| r.ok())
+                    .and_then(|r| r.json())
+                    .map(|v| dados::texto(&v, "espera"))
+                    .filter(|e| !e.is_empty());
+                let no_pin = matches!(m.janela, Some(Janela::Pin { acao: AcaoPin::Pais(None), .. }));
+                match (espera, no_pin) {
+                    (Some(e), true) => {
+                        if let Some(Janela::Pin { acao, .. }) = m.janela.as_mut() {
+                            *acao = AcaoPin::Pais(Some(e.clone()));
+                        }
+                        m.abrir_navegador(PAGINA_PAIS, Some(&e), cx);
+                    }
+                    (Some(e), false) => m.cancelar_espera(e, cx), // desistiram antes
+                    (None, true) => {
+                        // servidor sem a novidade ou sem PIN: o caminho de sempre
+                        log::warn!("pais: sem espera do servidor; abrindo a página com o PIN dela");
+                        m.janela = None;
+                        m.abrir_web(PAGINA_PAIS, cx);
+                    }
+                    (None, false) => {}
+                }
+                cx.notify();
+            },
+        );
+    }
+
+    fn cancelar_espera(&mut self, espera: String, cx: &mut Context<Self>) {
+        self.tarefa(cx, move |api| api.post("/api/pais/cancelar", Some(&json!({"espera": espera}))), |_, _, _| {});
     }
 
     // ------------------------------------------------------------ teclado
@@ -1057,7 +1138,7 @@ impl Menu {
                         pin.pop();
                         self.janela = Some(Janela::Pin { pin, erro, acao });
                     }
-                    "escape" => self.fechar_pin(),
+                    "escape" => self.fechar_pin(cx),
                     "enter" | "kp_enter" => self.conferir_pin(cx),
                     _ => {}
                 }
@@ -1075,7 +1156,17 @@ impl Menu {
         }
     }
 
-    fn fechar_pin(&mut self) {
+    fn fechar_pin(&mut self, cx: &mut Context<Self>) {
+        if let Some(Janela::Pin { acao: AcaoPin::Pais(espera), .. }) = self.janela.take() {
+            // desistiram: fecha o navegador escondido (o job inteiro no Windows)
+            if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.escondido()) {
+                log::info!("PIN dos pais cancelado: fechando o navegador escondido");
+                nav.fechar();
+            }
+            if let Some(e) = espera {
+                self.cancelar_espera(e, cx);
+            }
+        }
         // se o PIN veio do bloqueio de horário, volta para ele
         self.janela = None;
         if !dados::verdade(&self.disp, "profileAllowed") {
@@ -2043,7 +2134,7 @@ impl Menu {
                         )))
                         .child(self.botao_janela(p, "pin-cancelar", "Cancelar".into(), false).on_click(cx.listener(
                             |m, _: &ClickEvent, _, cx| {
-                                m.fechar_pin();
+                                m.fechar_pin(cx);
                                 cx.notify();
                             },
                         ))),
@@ -2350,17 +2441,39 @@ fn ler_bateria() -> Option<(u32, bool)> {
     None
 }
 
-/// Traz a janela do menu para a frente (depois que o navegador fecha).
+/// Endereço que o navegador abre: cliente.html leva à página. A "espera" da área
+/// dos pais vai depois do "#", que não chega ao servidor (nem ao log dele).
+fn url_cliente(base: &str, caminho: &str, espera: Option<&str>) -> String {
+    let mut url = format!("{base}/cliente.html?ir={}", codificar(caminho));
+    if let Some(e) = espera {
+        url.push_str("#espera=");
+        url.push_str(e);
+    }
+    url
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn url_da_area_dos_pais_leva_a_espera_depois_do_hash() {
+        let base = "http://127.0.0.1:38431";
+        assert_eq!(
+            url_cliente(base, PAGINA_PAIS, None),
+            "http://127.0.0.1:38431/cliente.html?ir=%2Findex.html%3Fpais%3D1"
+        );
+        let url = url_cliente(base, PAGINA_PAIS, Some("abc_DEF-123"));
+        assert!(url.ends_with("?ir=%2Findex.html%3Fpais%3D1#espera=abc_DEF-123"), "{url}");
+    }
+
+}
+
+/// A janela do menu (a primeira janela visível deste processo).
 #[cfg(windows)]
-pub(crate) fn trazer_para_frente() {
-    // O Windows não deixa um processo de fundo roubar o foco: anexar a entrada à
-    // janela que está na frente libera o SetForegroundWindow.
+pub(crate) fn janela_do_menu() -> windows_sys::Win32::Foundation::HWND {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
-    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
-        SetForegroundWindow, ShowWindow, SW_SHOW,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible};
     unsafe extern "system" fn achar(h: HWND, alvo: LPARAM) -> i32 {
         unsafe {
             let mut pid = 0u32;
@@ -2372,9 +2485,27 @@ pub(crate) fn trazer_para_frente() {
         }
         1
     }
+    let mut h: HWND = std::ptr::null_mut();
+    unsafe { EnumWindows(Some(achar), &mut h as *mut HWND as LPARAM) };
+    h
+}
+
+/// Traz a janela do menu para a frente (depois que o navegador fecha).
+#[cfg(windows)]
+pub(crate) fn trazer_para_frente() {
+    trazer_janela_para_frente(janela_do_menu());
+}
+
+/// Põe uma janela na frente com o foco. O Windows não deixa um processo de fundo
+/// roubar o foco: anexar a entrada à janela que está na frente libera o
+/// SetForegroundWindow.
+#[cfg(windows)]
+pub(crate) fn trazer_janela_para_frente(h: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SW_SHOW, SetForegroundWindow, ShowWindow,
+    };
     unsafe {
-        let mut h: HWND = std::ptr::null_mut();
-        EnumWindows(Some(achar), &mut h as *mut HWND as LPARAM);
         if h.is_null() || GetForegroundWindow() == h {
             return;
         }
