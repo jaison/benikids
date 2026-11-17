@@ -63,9 +63,40 @@ fn passo_do_timer(ativo: bool, esgotado: bool, aviso: bool, tela_aberta: bool, a
     PassoTimer::Nada
 }
 
+/// Título do aviso de minutos (o mesmo número no título e no texto).
+fn texto_do_aviso(minutos: i64) -> String {
+    if minutos <= 1 { "Falta 1 minuto!".into() } else { format!("Faltam {minutos} minutos!") }
+}
+
+/// Quando o tempo acaba antes da próxima consulta (10 s), quanto esperar para
+/// consultar no fim exato.
+fn consulta_no_fim(ativo: bool, esgotado: bool, restante: f64) -> Option<Duration> {
+    if !ativo || esgotado || !(0. ..=10.).contains(&restante) {
+        return None;
+    }
+    Some(Duration::from_millis((restante * 1000.) as u64 + 300))
+}
+
 #[cfg(test)]
 mod testes_timer {
     use super::*;
+
+    #[test]
+    fn aviso_com_o_mesmo_numero_no_titulo() {
+        // roteiro 19: "Faltam 5 minutos!" com "Falta 1 minuto."
+        assert_eq!(texto_do_aviso(1), "Falta 1 minuto!");
+        assert_eq!(texto_do_aviso(0), "Falta 1 minuto!");
+        assert_eq!(texto_do_aviso(5), "Faltam 5 minutos!");
+    }
+
+    #[test]
+    fn consulta_extra_no_fim_do_tempo() {
+        assert_eq!(consulta_no_fim(true, false, 4.), Some(Duration::from_millis(4300)));
+        assert_eq!(consulta_no_fim(true, false, 0.), Some(Duration::from_millis(300)));
+        assert_eq!(consulta_no_fim(true, false, 30.), None);
+        assert_eq!(consulta_no_fim(true, true, 0.), None);
+        assert_eq!(consulta_no_fim(false, false, 3.), None);
+    }
 
     #[test]
     fn tela_de_tempo_esgotado_fecha_quando_o_tempo_e_estendido() {
@@ -106,8 +137,6 @@ enum Janela {
     Mensagem { icone: &'static str, titulo: String, corpo: String, geracao: u64, restante: u32 },
     /// Fora do horário (perfil) ou app bloqueado no horário.
     Bloqueio { perfil: bool, foco: usize },
-    /// "Faltam 5 minutos!" (6 s).
-    AvisoTimer { texto: String, geracao: u64 },
     /// Timer acabou: PIN + mais tempo.
     TimerEsgotado { pin: String, erro: String, foco: usize },
     /// PIN dos pais para sair / desligar / trocar de perfil.
@@ -148,6 +177,11 @@ pub struct Menu {
     janela_fechada_em: Option<Instant>,
     geracao: u64,
     aviso_timer_mostrado: bool,
+    /// Aviso "Faltam N minutos!": um balão no alto que some em 6 s e NÃO bloqueia
+    /// (antes era uma janela modal que escurecia a tela e engolia o 1º clique).
+    aviso_timer: Option<(i64, u64)>,
+    /// Consulta extra marcada para o fim exato do tempo (geração).
+    fim_do_timer: u64,
     ultimo_expiry: f64,
     ultimos: HashMap<String, String>,
     // navegador (pais, sites embutidos, mídia)
@@ -191,6 +225,8 @@ impl Menu {
             janela_fechada_em: None,
             geracao: 0,
             aviso_timer_mostrado: false,
+            aviso_timer: None,
+            fim_do_timer: 0,
             ultimo_expiry: 0.,
             ultimos,
             web: None,
@@ -341,6 +377,7 @@ impl Menu {
             let tela = matches!(m.janela, Some(Janela::TimerEsgotado { .. }));
             match passo_do_timer(ativo, esgotado, aviso, tela, m.aviso_timer_mostrado) {
                 PassoTimer::Esgotado => {
+                    m.aviso_timer = None;
                     m.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
                 }
                 PassoTimer::FecharEsgotado => {
@@ -356,11 +393,26 @@ impl Menu {
                 }
                 PassoTimer::Desligado => {
                     m.aviso_timer_mostrado = false;
-                    if matches!(m.janela, Some(Janela::AvisoTimer { .. })) {
-                        m.janela = None;
-                    }
+                    m.aviso_timer = None;
                 }
                 PassoTimer::Nada => {}
+            }
+            // O menu consulta o timer a cada 10 s: perto do fim, marca uma consulta
+            // para o instante em que o tempo acaba (roteiro 19: reagia ~6 s depois,
+            // e nesse meio tempo as teclas iam para o PIN dos pais).
+            let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
+            if let Some(espera) = consulta_no_fim(ativo, esgotado, restante) {
+                m.fim_do_timer += 1;
+                let g = m.fim_do_timer;
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(espera).await;
+                    let _ = this.update(cx, |m, cx| {
+                        if m.fim_do_timer == g {
+                            m.atualizar_timer(cx);
+                        }
+                    });
+                })
+                .detach();
             }
             if v != m.timer {
                 m.timer = v;
@@ -574,23 +626,48 @@ impl Menu {
     }
 
     fn mostrar_aviso_timer(&mut self, minutos: i64, cx: &mut Context<Self>) {
-        if matches!(self.janela, Some(_)) {
-            return;
-        }
         self.geracao += 1;
         let g = self.geracao;
-        let texto = if minutos <= 1 { "Falta 1 minuto.".to_string() } else { format!("Faltam {minutos} minutos.") };
-        self.janela = Some(Janela::AvisoTimer { texto, geracao: g });
+        self.aviso_timer = Some((minutos, g));
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(6)).await;
             let _ = this.update(cx, |m, cx| {
-                if matches!(&m.janela, Some(Janela::AvisoTimer { geracao, .. }) if *geracao == g) {
-                    m.janela = None;
+                if m.aviso_timer.is_some_and(|(_, ger)| ger == g) {
+                    m.aviso_timer = None;
                     cx.notify();
                 }
             });
         })
         .detach();
+    }
+
+    /// O balão do aviso de minutos: no alto, sem fundo escuro e sem pegar cliques.
+    fn aviso_timer_el(&self, p: &Pincel, minutos: i64) -> AnyElement {
+        div()
+            .absolute()
+            .top(p.z(24.))
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(p.z(12.))
+                    .px(p.z(28.))
+                    .py(p.z(16.))
+                    .rounded(p.z(24.))
+                    .bg(hsla(0xfff3e0))
+                    .border(p.z(4.))
+                    .border_color(hsla(0xff9800))
+                    .text_color(hsla(0x5f2148))
+                    .child(p.icone("timer", 0xe65100, 36.))
+                    .child(
+                        div().text_size(p.f(26.)).font_weight(FontWeight(800.)).child(texto_do_aviso(minutos)),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn mostrar_bloqueio(&mut self, motivo: &str, tile_id: &str, cx: &mut Context<Self>) {
@@ -1058,7 +1135,7 @@ impl Menu {
 
     fn tecla_janela(&mut self, j: Janela, k: &str, digito: Option<String>, cx: &mut Context<Self>) {
         match j {
-            Janela::Mensagem { .. } | Janela::AvisoTimer { .. } => {
+            Janela::Mensagem { .. } => {
                 if matches!(k, "enter" | "escape" | "space") {
                     self.janela = None;
                     self.foco_visivel = true;
@@ -1291,6 +1368,9 @@ impl Render for Menu {
         raiz = raiz.child(self.selos(&p));
         if let Some(j) = self.janela.clone() {
             raiz = raiz.child(self.janela_el(&p, j, cx));
+        }
+        if let Some((minutos, _)) = self.aviso_timer {
+            raiz = raiz.child(self.aviso_timer_el(&p, minutos));
         }
         if let Some(i) = &self.inicio {
             raiz = raiz.child(self.inicio_el(&p, i));
@@ -2021,11 +2101,6 @@ impl Menu {
                     cx.notify();
                 })))
                 .child(div().text_size(p.f(14.)).opacity(0.7).text_center().child(format!("Fecha sozinho em {restante} s"))),
-            Janela::AvisoTimer { texto, .. } => self
-                .caixa_janela(p)
-                .child(p.icone("timer", 0xe65100, 48.))
-                .child(titulo("Faltam 5 minutos!".into()))
-                .child(corpo(texto)),
             Janela::Bloqueio { perfil, foco } => {
                 let mut c = self
                     .caixa_janela(p)
