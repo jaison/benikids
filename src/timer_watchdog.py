@@ -111,7 +111,7 @@ class WatchdogApp:
 
         lbl = tk.Label(
             frame,
-            text=f"⏰ {remaining} minutes!",
+            text=(f"⏰ Falta {remaining} minuto!" if remaining == 1 else f"⏰ Faltam {remaining} minutos!"),
             font=("system-ui", 22, "bold"),
             bg=THEME["card"],
             fg=THEME["text"],
