@@ -2610,7 +2610,8 @@ pub(crate) fn trazer_para_frente() {
 pub(crate) fn trazer_janela_para_frente(h: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SW_SHOW, SetForegroundWindow, ShowWindow,
+        GetForegroundWindow, GetWindowThreadProcessId, HWND_TOP, SW_SHOW, SWP_ASYNCWINDOWPOS, SWP_NOMOVE, SWP_NOSIZE,
+        SetForegroundWindow, SetWindowPos, ShowWindowAsync,
     };
     unsafe {
         if h.is_null() || GetForegroundWindow() == h {
@@ -2619,8 +2620,10 @@ pub(crate) fn trazer_janela_para_frente(h: windows_sys::Win32::Foundation::HWND)
         let frente = GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
         let eu = GetCurrentThreadId();
         let ligou = frente != 0 && frente != eu && AttachThreadInput(eu, frente, 1) != 0;
-        ShowWindow(h, SW_SHOW);
-        BringWindowToTop(h);
+        // assíncronos: chamada síncrona espera a thread dona da janela (o menu
+        // inativo, ou o Edge ocupado), e quem chama pode ser a vigia, que não pode parar
+        ShowWindowAsync(h, SW_SHOW);
+        SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
         SetForegroundWindow(h);
         if ligou {
             AttachThreadInput(eu, frente, 0);
