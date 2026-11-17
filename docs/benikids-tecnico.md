@@ -219,13 +219,18 @@ de janelas de mentira).
   navegador já aberto o traz para a frente.
 - **Windows:** `WS_EX_TOOLWINDOW` sem `WS_EX_APPWINDOW` (fora do Alt+Tab; refeito se o
   Chromium mudar o estilo), `ITaskbarList::DeleteTab`/`AddTab` (barra de tarefas),
-  `HWND_BOTTOM`, menu `HWND_TOPMOST` (conferido a cada volta) e `LockSetForegroundWindow`.
+  `HWND_BOTTOM` e menu `HWND_TOPMOST` (conferido a cada volta). Ao devolver, a barra de
+  tarefas é avisada de que a janela é de tela cheia (`ITaskbarList2::MarkFullscreenWindow`);
+  sem isso ela ficava por cima da área dos pais. **Não** usa `LockSetForegroundWindow`: a
+  trava vale para todos os programas e só sai se quem destrava estiver na frente — no
+  roteiro 17 a tela "Acabou o tempo!" ficou sem teclado. Em qualquer fim da espera (PIN
+  aceito, cancelado, timer, navegador que fechou, erro) o menu deixa de ficar por cima.
   O Edge abre com `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
   --disable-features=CalculateNativeWinOcclusion`, para continuar desenhando coberto.
 - **Linux (X11):** `wmctrl` põe a janela do Firefox `below`, `skip_taskbar` e `skip_pager`, e
   o menu `above`; o `xdotool` devolve o foco ao menu e, depois do PIN, ativa o Firefox.
-- **Risco:** a janela nasce tentando pegar o foco; o Windows recusa por causa da trava, e, se
-  pegar, a vigia devolve ao menu em até 10 ms (80 ms no Linux). Uma tecla digitada bem nesse
+- **Risco:** a janela nasce tentando pegar o foco; se pegar, a vigia devolve ao menu em até
+  10 ms (80 ms no Linux). Uma tecla digitada bem nesse
   instante pode ir para o navegador. O Gerenciador de Tarefas do Windows lista o Edge e
   permite "Alternar para" — vale para qualquer programa e não muda com isto. No Linux, o
   Alt+Tab do xfwm4 pular janelas `skip_taskbar` precisa ser conferido no notebook.

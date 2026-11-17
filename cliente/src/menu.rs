@@ -48,6 +48,9 @@ enum AcaoPin {
 const PAGINA_PAIS: &str = "/index.html?pais=1";
 /// Aviso do menu entre o PIN aceito e o navegador vir para a frente.
 const ABRINDO_PAIS: &str = "Abrindo a área dos pais...";
+/// Mostrado no lugar do erro enquanto o servidor confere o PIN (num notebook
+/// antigo leva uns décimos de segundo; sem isto o PIN parecia parado).
+const CONFERINDO: &str = "Conferindo...";
 
 /// Quanto tempo a mensagem fica na tela se ninguém tocar em OK.
 const MENSAGEM_SEGUNDOS: u32 = 30;
@@ -903,7 +906,13 @@ impl Menu {
     }
 
     fn conferir_pin(&mut self, cx: &mut Context<Self>) {
-        let Some(Janela::Pin { pin, acao, .. }) = self.janela.clone() else { return };
+        let Some(Janela::Pin { pin, acao, erro }) = self.janela.clone() else { return };
+        if erro == CONFERINDO {
+            return; // já conferindo (Enter repetido)
+        }
+        if let Some(Janela::Pin { erro, .. }) = self.janela.as_mut() {
+            *erro = CONFERINDO.into();
+        }
         let pedido = match &acao {
             // mesma validação e mesmo bloqueio de tentativas do verify-pin
             AcaoPin::Pais(espera) => ("/api/pais/liberar", json!({"pin": pin, "espera": espera})),
@@ -2149,7 +2158,12 @@ impl Menu {
                 .child(p.icone("lock", 0x333333, 44.))
                 .child(titulo("Digite o PIN".into()))
                 .child(self.campo_pin(p, &pin))
-                .child(div().text_color(hsla(0xd32f2f)).text_size(p.f(16.)).child(erro))
+                .child(
+                    div()
+                        .text_color(hsla(if erro == CONFERINDO { 0x555555 } else { 0xd32f2f }))
+                        .text_size(p.f(16.))
+                        .child(erro),
+                )
                 .child(
                     div()
                         .flex()

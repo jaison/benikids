@@ -22,7 +22,7 @@
 //!   ainda não nasceu, vem para a frente quando nascer;
 //! - desistiram: o menu deixa de ficar por cima e o navegador é fechado.
 //! Windows: estilo WS_EX_TOOLWINDOW (fora do Alt+Tab) + ITaskbarList (barra) +
-//! LockSetForegroundWindow. Linux: wmctrl (below, skip_taskbar, skip_pager; o
+//! a vigia devolvendo o foco ao menu. Linux: wmctrl (below, skip_taskbar, skip_pager; o
 //! menu "above") + xdotool para o foco.
 
 use std::process::{Child, Command};
@@ -64,7 +64,7 @@ pub(crate) trait Janelas {
     fn listar(&mut self) -> Vec<Self::Id>;
     /// O navegador ainda tem processo?
     fn vivo(&mut self) -> bool;
-    /// Começo: o menu fica por cima e os outros não tomam o foco.
+    /// Começo: o menu fica por cima.
     fn segurar_menu(&mut self);
     /// Enquanto espera: confere se o menu continua por cima e com o foco.
     fn manter_menu(&mut self, guardadas: &[Self::Id]);
@@ -97,9 +97,33 @@ pub(crate) fn vigiar<J: Janelas>(
     apareceu: &AtomicBool,
     pausa: &dyn Fn(Instant) -> Duration,
 ) -> bool {
+    // Em QUALQUER fim (PIN aceito, cancelado, timer, navegador que morreu, erro,
+    // até pânico) o menu deixa de ficar por cima. No roteiro 17 a tela "Acabou o
+    // tempo!" do timer_watchdog ficou sem teclado depois deste caminho.
+    let mut menu_solto = false;
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| laco(s, estado, &mut menu_solto, pausa)));
+    if !menu_solto {
+        s.soltar_menu();
+    }
+    match r {
+        Ok(veio) => {
+            if veio {
+                apareceu.store(true, Ordering::SeqCst);
+            }
+            veio
+        }
+        Err(e) => std::panic::resume_unwind(e),
+    }
+}
+
+fn laco<J: Janelas>(
+    s: &mut J,
+    estado: &AtomicU8,
+    menu_solto: &mut bool,
+    pausa: &dyn Fn(Instant) -> Duration,
+) -> bool {
     let desde = Instant::now();
     s.segurar_menu();
-    let mut menu_solto = false;
     let mut guardadas: Vec<J::Id> = Vec::new();
     let mut liberado_em: Option<Instant> = None;
     let veio = 'vigia: loop {
@@ -110,7 +134,7 @@ pub(crate) fn vigiar<J: Janelas>(
         if agora == LIBERADO && liberado_em.is_none() {
             liberado_em = Some(Instant::now());
             s.soltar_menu();
-            menu_solto = true;
+            *menu_solto = true;
             for j in &guardadas {
                 s.devolver(*j);
             }
@@ -146,12 +170,6 @@ pub(crate) fn vigiar<J: Janelas>(
         }
         std::thread::sleep(pausa(desde));
     };
-    if !menu_solto {
-        s.soltar_menu();
-    }
-    if veio {
-        apareceu.store(true, Ordering::SeqCst);
-    }
     veio
 }
 
@@ -282,8 +300,7 @@ mod plataforma {
     use windows_sys::Win32::System::Com::{CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GWL_EXSTYLE, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, HWND_BOTTOM,
-        HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsWindow, IsWindowVisible, LSFW_LOCK, LSFW_UNLOCK,
-        LockSetForegroundWindow, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW,
+        HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsWindow, IsWindowVisible, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW,
         SetWindowPos, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     };
     use windows_sys::core::GUID;
@@ -309,11 +326,14 @@ mod plataforma {
 
     /// ITaskbarList (shobjidl.h), pela tabela de funções: tira e põe o botão da
     /// janela na barra de tarefas sem esconder a janela.
-    struct Barra(*mut *const [usize; 8]);
+    /// ITaskbarList2 (com MarkFullscreenWindow), ou ITaskbarList se não houver.
+    struct Barra(*mut *const [usize; 9], bool);
 
     const CLSID_TASKBAR_LIST: GUID = GUID::from_u128(0x56fdf344_fd6d_11d0_958a_006097c9a090);
     const IID_ITASKBAR_LIST: GUID = GUID::from_u128(0x56fdf342_fd6d_11d0_958a_006097c9a090);
+    const IID_ITASKBAR_LIST2: GUID = GUID::from_u128(0x602d4995_b13a_429b_a66e_1935e44f4317);
     type Metodo = unsafe extern "system" fn(*mut core::ffi::c_void, HWND) -> i32;
+    type Marcar = unsafe extern "system" fn(*mut core::ffi::c_void, HWND, i32) -> i32;
     type HrInit = unsafe extern "system" fn(*mut core::ffi::c_void) -> i32;
     type Release = unsafe extern "system" fn(*mut core::ffi::c_void) -> u32;
 
@@ -321,18 +341,17 @@ mod plataforma {
         fn nova() -> Option<Self> {
             unsafe {
                 CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
-                let mut p: *mut core::ffi::c_void = std::ptr::null_mut();
-                let hr = CoCreateInstance(
-                    &CLSID_TASKBAR_LIST,
-                    std::ptr::null_mut(),
-                    CLSCTX_INPROC_SERVER,
-                    &IID_ITASKBAR_LIST,
-                    &mut p,
-                );
-                if hr < 0 || p.is_null() {
-                    return None;
+                let mut barra = None;
+                for (iid, v2) in [(&IID_ITASKBAR_LIST2, true), (&IID_ITASKBAR_LIST, false)] {
+                    let mut p: *mut core::ffi::c_void = std::ptr::null_mut();
+                    let hr = CoCreateInstance(&CLSID_TASKBAR_LIST, std::ptr::null_mut(), CLSCTX_INPROC_SERVER, iid, &mut p);
+                    if hr >= 0 && !p.is_null() {
+                        barra = Some(Barra(p as *mut *const [usize; 9], v2));
+                        break;
+                    }
                 }
-                let barra = Barra(p as *mut *const [usize; 8]);
+                let barra = barra?;
+                let p = barra.0 as *mut core::ffi::c_void;
                 let init: HrInit = std::mem::transmute(barra.vtable(3));
                 init(p);
                 Some(barra)
@@ -352,6 +371,15 @@ mod plataforma {
         }
         fn por(&self, h: HWND) {
             self.chamar(4, h); // AddTab
+        }
+        /// Diz à barra de tarefas que a janela é de tela cheia (fica por baixo dela).
+        fn tela_cheia(&self, h: HWND) {
+            if self.1 {
+                unsafe {
+                    let f: Marcar = std::mem::transmute(self.vtable(8)); // MarkFullscreenWindow
+                    f(self.0 as *mut core::ffi::c_void, h, 1);
+                }
+            }
         }
     }
 
@@ -412,8 +440,11 @@ mod plataforma {
             !self.pids().is_empty()
         }
 
+        // Sem LockSetForegroundWindow: a trava vale para todos os programas e só
+        // sai se quem destrava estiver na frente. No roteiro 17 a tela "Acabou o
+        // tempo!" (outro processo) ficou sem teclado. Se o navegador pegar o foco,
+        // `manter_menu` devolve ao menu em até 10 ms.
         fn segurar_menu(&mut self) {
-            unsafe { LockSetForegroundWindow(LSFW_LOCK) };
             self.menu_por_cima(true);
             let menu = crate::menu::janela_do_menu();
             log::info!("menu por cima (exstyle {:#x})", estilo(menu));
@@ -446,8 +477,8 @@ mod plataforma {
         }
 
         fn soltar_menu(&mut self) {
-            unsafe { LockSetForegroundWindow(LSFW_UNLOCK) };
             self.menu_por_cima(false);
+            log::info!("menu deixou de ficar por cima");
         }
 
         fn guardar(&mut self, j: isize) {
@@ -483,6 +514,9 @@ mod plataforma {
             }
             if let Some(b) = &self.barra {
                 b.por(h);
+                // o Edge entrou no quiosque enquanto guardado; sem isto a barra de
+                // tarefas ficava por cima da área dos pais (roteiro 17)
+                b.tela_cheia(h);
             }
         }
 
@@ -595,6 +629,7 @@ mod testes {
         liberar_em: Option<usize>,
         fechar_em: Option<usize>,
         roubar_foco_em: Option<usize>,
+        quebrar_em: Option<usize>,
         estado: &'a AtomicU8,
         log: RefCell<Vec<String>>,
     }
@@ -603,6 +638,9 @@ mod testes {
         type Id = u32;
         fn listar(&mut self) -> Vec<u32> {
             self.volta += 1;
+            if Some(self.volta) == self.quebrar_em {
+                panic!("erro de teste");
+            }
             if Some(self.volta) == self.liberar_em {
                 self.estado.store(LIBERADO, Ordering::SeqCst);
             }
@@ -639,7 +677,7 @@ mod testes {
     fn rodar(nascer: Option<usize>, liberar_em: Option<usize>, fechar_em: Option<usize>, roubar: Option<usize>) -> (bool, Vec<String>) {
         let estado = AtomicU8::new(ESPERANDO);
         let apareceu = AtomicBool::new(false);
-        let mut f = Falso { volta: 0, nascer, liberar_em, fechar_em, roubar_foco_em: roubar, estado: &estado, log: RefCell::new(vec![]) };
+        let mut f = Falso { volta: 0, nascer, liberar_em, fechar_em, roubar_foco_em: roubar, quebrar_em: None, estado: &estado, log: RefCell::new(vec![]) };
         let veio = vigiar(&mut f, &estado, &apareceu, &|_| Duration::from_millis(0));
         assert_eq!(veio, apareceu.load(Ordering::SeqCst));
         (veio, f.log.into_inner())
@@ -665,6 +703,37 @@ mod testes {
         let (veio, log) = rodar(Some(2), None, Some(4), None);
         assert!(!veio);
         assert_eq!(log, ["segurar", "guardar 7", "soltar"]);
+    }
+
+    #[test]
+    fn erro_no_meio_tambem_solta_o_menu() {
+        // roteiro 17: a tela "Acabou o tempo!" ficou sem teclado; o menu tem de
+        // sair do "por cima" em qualquer fim, até num pânico
+        let estado = AtomicU8::new(ESPERANDO);
+        let apareceu = AtomicBool::new(false);
+        let mut f = Falso {
+            volta: 0,
+            nascer: Some(1),
+            liberar_em: None,
+            fechar_em: None,
+            roubar_foco_em: None,
+            quebrar_em: Some(3),
+            estado: &estado,
+            log: RefCell::new(vec![]),
+        };
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            vigiar(&mut f, &estado, &apareceu, &|_| Duration::from_millis(0))
+        }));
+        assert!(r.is_err());
+        assert_eq!(f.log.into_inner(), ["segurar", "guardar 7", "soltar"]);
+    }
+
+    #[test]
+    fn soltar_o_menu_acontece_uma_vez_so() {
+        for (nascer, liberar, fechar) in [(Some(2), Some(5), None), (Some(5), Some(1), None), (Some(2), None, Some(4))] {
+            let (_, log) = rodar(nascer, liberar, fechar, None);
+            assert_eq!(log.iter().filter(|l| *l == "soltar").count(), 1, "{log:?}");
+        }
     }
 
     #[test]
