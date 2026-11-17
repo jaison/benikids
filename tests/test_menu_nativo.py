@@ -127,6 +127,13 @@ class ClienteNativoWebTests(unittest.TestCase):
         self.assertIn("sessionStorage.setItem('beniCliente', '1')", html)
         self.assertIn("location.replace(ir)", html)
 
+    def test_instalador_antigo_copia_as_paginas_do_menu_nativo(self):
+        # scripts/install.sh (usado pelo teste de navegador) lista os arquivos um a
+        # um; sem estes dois, /cliente.html dá 404 e a área dos pais não abre.
+        script = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+        self.assertIn('install -m 0644 "$SRC_DIR/cliente.html" "$APP_ROOT/cliente.html"', script)
+        self.assertRegex(script, r"for beni_file in [^;]*\bcliente-nativo\.js\b[^;]*; do")
+
     def test_cliente_html_guarda_a_espera_do_pin_do_menu(self):
         html = (ROOT / "src" / "cliente.html").read_text(encoding="utf-8")
         # o id vem depois do "#" (não vai ao servidor) e só com caracteres seguros
