@@ -102,6 +102,17 @@ class ClienteNativoServidorTests(unittest.TestCase):
             self.assertFalse(server_module.load_recommendations()[0]["installed"])
         self.assertTrue(which.called)
 
+    def test_windows_nao_procura_comandos_de_linux_no_path(self):
+        Path(server_module.RECOMMENDATIONS_FILE).write_text(json.dumps([
+            {"id": "x", "label": "X", "cmd": ["programa-x"]},
+            {"id": "n", "label": "N", "cmd": ["navegador"], "category": "browser"},
+        ]), encoding="utf-8")
+        with mock.patch.object(server_module.os, "name", "nt"), \
+                mock.patch.object(server_module.shutil, "which",
+                                  side_effect=AssertionError("não devia procurar")):
+            recs = server_module.load_recommendations()
+        self.assertEqual([r["installed"] for r in recs], [False, True])
+
 
 class ClienteNativoWebTests(unittest.TestCase):
     def test_index_carrega_o_script_do_menu_nativo_por_ultimo(self):

@@ -714,6 +714,11 @@ def load_recommendations(check_installed=True):
     recs = _read_recommendations()
     if not check_installed:
         return recs
+    if os.name == "nt":
+        # Os comandos das recomendações são de Linux: no Windows o shutil.which
+        # nunca acha nenhum, mas varre PATH x PATHEXT e levava ~1 s por abertura
+        # da área dos pais num notebook de 2012, disputando CPU com o Edge.
+        return [{**rec, "installed": rec.get("category") == "browser"} for rec in recs]
     result = []
     for rec in recs:
         all_cmds = []
