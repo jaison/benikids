@@ -157,6 +157,63 @@ def enter_parent_settings(browser):
     )
 
 
+def run_native_menu_parent_handoff(browser, artifacts):
+    """Área dos pais pelo menu nativo: a página fica escondida esperando o PIN
+    digitado no menu e entra liberada, sem pedir o PIN de novo."""
+    espera = browser.evaluate(
+        "fetch('/api/pais/preparar',{method:'POST'}).then(r=>r.json()).then(d=>d.espera)",
+        await_promise=True,
+    )
+    assert espera, "Native menu handoff did not create a wait id"
+    browser.evaluate(
+        "location.replace('/cliente.html?ir=%2Findex.html%3Fpais%3D1#espera=' + "
+        + json.dumps(espera) + ")"
+    )
+    browser.wait_for(
+        "location.pathname==='/index.html' && document.querySelector('.cliente-capa')!==null "
+        "&& typeof cfg!=='undefined' && cfg!==null",
+        message="Hidden parent page did not wait behind the brand cover",
+    )
+    browser.evaluate("new Promise(resolve=>setTimeout(resolve,1500))", await_promise=True)
+    assert_js(
+        browser,
+        "document.getElementById('admin').classList.contains('hidden') && "
+        "document.getElementById('pin').classList.contains('hidden') && "
+        "location.hash==='' && !location.search.includes('espera')",
+        "Hidden parent page opened something before the PIN",
+    )
+    browser.screenshot(artifacts / "native-parent-waiting.png")
+    wrong = browser.evaluate(
+        "fetch('/api/pais/liberar',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({pin:'0000',espera:" + json.dumps(espera) + "})}).then(r=>r.status)",
+        await_promise=True,
+    )
+    assert wrong == 403, f"Wrong PIN was not rejected: {wrong}"
+    right = browser.evaluate(
+        "fetch('/api/pais/liberar',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({pin:" + json.dumps(PIN) + ",espera:" + json.dumps(espera) + "})})"
+        ".then(r=>r.json())",
+        await_promise=True,
+    )
+    assert right == {"valid": True, "entregue": True}, right
+    browser.wait_for(
+        "!document.getElementById('admin').classList.contains('hidden') && "
+        "document.getElementById('pin').classList.contains('hidden') && "
+        "document.querySelector('.cliente-capa')===null",
+        message="Parent settings did not open after the native PIN",
+    )
+    browser.screenshot(artifacts / "native-parent-open.png")
+    # volta à aba comum do menu web para os próximos cenários
+    browser.evaluate("sessionStorage.clear(); location.replace('/index.html')")
+    browser.wait_for(
+        "location.pathname==='/index.html' && typeof cfg!=='undefined' && cfg!==null && "
+        "!document.documentElement.classList.contains('beni-cliente') && "
+        "!document.querySelector('.cornerbar').classList.contains('hidden')",
+        message="Launcher did not come back after the native parent handoff",
+    )
+    log_scenario("native menu PIN unlocks the hidden parent page once")
+
+
 def run_benikids_setup(browser, artifacts):
     """Benikids: a fresh install opens configurar.html (children, parent PIN, preferences)."""
     browser.wait_for(
@@ -488,6 +545,8 @@ def run_scenarios(browser, release_fixture, installed_version, artifacts, restor
     browser.click("#setPinBtn")
     browser.wait_for("cfg.pinConfigured === true")
     browser.click("#backBtn")
+
+    run_native_menu_parent_handoff(browser, artifacts)
 
     browser.click("#parentBtn")
     browser.wait_for("!document.getElementById('pin').classList.contains('hidden')")
