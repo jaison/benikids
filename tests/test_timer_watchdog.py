@@ -102,3 +102,16 @@ class SairComPinTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class BotaoDoTimerTest(unittest.TestCase):
+    def test_botao_mostra_o_estado_e_faz_o_que_diz(self):
+        # roteiro 17: "Iniciar timer" com o timer ligado, e o clique o parava
+        raiz = Path(__file__).resolve().parent.parent / "src" / "frontend"
+        js = (raiz / "runtime-controls.js").read_text(encoding="utf-8")
+        self.assertIn("lastTimerStatus=data;\n    atualizarBotaoTimer();", js)
+        self.assertIn("btn.dataset.acao=ligado?'parar':'iniciar';", js)
+        self.assertIn("const parar=btn.dataset.acao?btn.dataset.acao==='parar'", js)
+        ps = (raiz / "parent-settings.js").read_text(encoding="utf-8")
+        self.assertIn("atualizarBotaoTimer();", ps)
+        self.assertNotIn("setIconLabel(timerBtn,'timer'", ps)
