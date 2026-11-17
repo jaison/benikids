@@ -1274,6 +1274,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if passo == "espera":
             # a página escondida fica aqui até o PIN (long polling: um pedido por vez)
             estado, token = aguardar_espera(data.get("espera"), PAIS_ESPERA_POR_PEDIDO)
+            if estado == "ocupada":
+                # outro pedido já espera nesta espera: só a página do menu devia estar aqui
+                log_runtime_event("pais.espera_ocupada", level="warning")
+                self.json_response({"estado": estado}, 409)
+                return
             resposta = {"estado": estado}
             if token:
                 resposta["token"] = token

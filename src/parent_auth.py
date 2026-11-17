@@ -214,15 +214,27 @@ def cancelar_espera(espera):
 
 def aguardar_espera(espera, timeout=20.0):
     """A página escondida espera o PIN. Devolve ("pronto", token) uma única vez,
-    ("aguardando", None) se o tempo acabou, ou ("desconhecida", None)."""
+    ("aguardando", None) se o tempo acabou, ("ocupada", None) se outro pedido já
+    espera nesta mesma espera, ou ("desconhecida", None).
+
+    Um pedido por vez: o id da espera fica na linha de comando do navegador, que
+    outro programa do mesmo usuário consegue ler. Sem esta regra, um programa
+    esperando junto com a página poderia levar o token quando o PIN chegasse."""
     if not isinstance(espera, str) or not espera:
         return "desconhecida", None
     with _pais_lock:
         _limpar_pais(time.time())
         item = _esperas.get(espera)
-    if item is None:
-        return "desconhecida", None
-    item["evento"].wait(max(0.0, timeout))
+        if item is None:
+            return "desconhecida", None
+        if item.get("ocupada"):
+            return "ocupada", None
+        item["ocupada"] = True
+    try:
+        item["evento"].wait(max(0.0, timeout))
+    finally:
+        with _pais_lock:
+            item["ocupada"] = False
     with _pais_lock:
         if _esperas.get(espera) is not item:
             return "desconhecida", None

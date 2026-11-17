@@ -1904,6 +1904,25 @@ class ServerApiTests(unittest.TestCase):
         status, data, _ = self.pais("preparar")
         self.assertEqual((status, data), (200, {"espera": None, "pinConfigured": False}))
 
+    def test_pais_nativo_segundo_pedido_na_mesma_espera_recebe_409(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        espera = self.pais("preparar")[1]["espera"]
+        primeiro = []
+        t = threading.Thread(target=lambda: primeiro.append(self.pais("espera", {"espera": espera})))
+        with mock.patch.object(server_module, "PAIS_ESPERA_POR_PEDIDO", 2.0):
+            t.start()
+            time.sleep(0.2)
+            with mock.patch.object(server_module, "log_runtime_event") as log:
+                status, data, _ = self.pais("espera", {"espera": espera})
+            self.assertEqual((status, data), (409, {"estado": "ocupada"}))
+            log.assert_called_once_with("pais.espera_ocupada", level="warning")
+            self.assertNotIn(espera, repr(log.call_args))
+            self.pais("liberar", {"pin": "1234", "espera": espera})
+            t.join(5)
+        self.assertEqual(primeiro[0][1]["estado"], "pronto")
+
     def test_pais_nativo_cancelar_tira_a_espera(self):
         import parent_auth
         parent_auth.limpar_pais()

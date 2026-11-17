@@ -58,6 +58,26 @@ class EsperaTokenTest(unittest.TestCase):
         self.assertLess(time.monotonic() - inicio, 1)
         self.assertEqual(resultado[0][0], "pronto")
 
+    def test_um_pedido_por_vez_em_cada_espera(self):
+        # o id fica na linha de comando do navegador: outro programa esperando junto
+        # não pode disputar o token com a página
+        espera = pa.criar_espera()
+        resultado = []
+        t = threading.Thread(target=lambda: resultado.append(pa.aguardar_espera(espera, 5)))
+        t.start()
+        time.sleep(0.05)
+        self.assertEqual(pa.aguardar_espera(espera, 0), ("ocupada", None))
+        pa.liberar_espera(espera)
+        t.join(5)
+        self.assertEqual(resultado[0][0], "pronto")
+        # o 2º não levou nada, e depois da entrega a espera não existe mais
+        self.assertEqual(pa.aguardar_espera(espera, 0), ("desconhecida", None))
+
+    def test_depois_do_tempo_a_espera_aceita_o_proximo_pedido(self):
+        espera = pa.criar_espera()
+        self.assertEqual(pa.aguardar_espera(espera, 0), ("aguardando", None))
+        self.assertEqual(pa.aguardar_espera(espera, 0), ("aguardando", None))
+
     def test_cancelar_acorda_e_invalida(self):
         espera = pa.criar_espera()
         pa.liberar_espera(espera)

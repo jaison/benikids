@@ -191,6 +191,17 @@ Agora, com PIN configurado:
    Cancelar (ou o PIN sair da tela por outro motivo, como o tempo esgotado) fecha o
    navegador que esperava: o job inteiro no Windows, TERM no Linux.
 
+**O id da espera na linha de comando.** O endereço com `#espera=<id>` fica na linha de
+comando do navegador, que outro programa do mesmo usuário consegue ler. Por isso cada espera
+aceita **um pedido esperando de cada vez**: um 2º pedido simultâneo recebe 409 e vira o
+evento `pais.espera_ocupada` no diagnóstico (sem o id). Assim, um programa não consegue
+esperar junto com a página e disputar o token quando o PIN chega. O que sobra: um programa
+que leia o id e comece a esperar ANTES da página pode levar o token. Nesse caso a página
+recebe 409 e cai no PIN dela, e o aviso fica no log. Tirar o id da linha de comando (a
+página buscar o id num endereço de uso único nos primeiros segundos) só mudaria a corrida
+de lugar: o mesmo programa poderia buscá-lo primeiro. O risco é baixo, porque um programa
+do mesmo usuário já consegue ler o perfil do Edge, inclusive o cookie de admin.
+
 Sem PIN configurado, abre direto como antes. Quem usa o menu web (sem menu nativo) continua
 com o PIN da página. Se algo falhar (servidor antigo, espera vencida), a página cai no PIN
 dela.
