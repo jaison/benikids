@@ -107,6 +107,37 @@ def sair_com_pin(pin, pedir=None):
     return "saiu" if status in (200, 204) else "erro"
 
 
+def janela_na_frente(janela, campo, plataforma=None):
+    """Põe a tela de tempo esgotado no primeiro plano e o foco num campo dela.
+
+    Roteiro 17/18: a tela aparecia por cima, mas o teclado não entrava.
+    - O stay_top fazia focus_force() na janela inteira a cada 500 ms, o que
+      tirava o foco do campo do PIN (e do de minutos). Agora só põe o foco no
+      PIN quando ele não está em nenhum campo desta tela.
+    - No Windows, um processo de fundo não toma o primeiro plano só com o
+      focus_force do Tk: o teclado continuava indo para a janela de baixo (um
+      "5" foi para o PIN do menu nativo). trazer_para_frente usa o
+      AttachThreadInput + SetForegroundWindow, como o resto do Benikids."""
+    if plataforma is None and os.name == "nt":
+        try:
+            import plataforma_windows as plataforma
+        except Exception:
+            plataforma = None
+    if plataforma is not None:
+        try:
+            if plataforma.pid_da_janela_ativa() != os.getpid():
+                plataforma.trazer_para_frente(plataforma.raiz_da_janela(janela.winfo_id()))
+        except Exception:
+            pass
+    try:
+        atual = janela.focus_get()
+    except Exception:
+        atual = None
+    # num campo desta tela (PIN ou minutos): deixa onde está
+    if atual is None or not str(atual).startswith(str(janela) + "."):
+        campo.focus_force()
+
+
 def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente):
     """O que a vigia faz a cada volta. `menu_na_frente` é chamado só quando
     importa (pergunta ao servidor). Devolve uma lista de ações: "bloquear",
@@ -384,16 +415,17 @@ class WatchdogApp:
         b.bind("<Alt-F4>", lambda e: None)
         b.bind("<Button-3>", lambda e: None)
 
-        # Keep trying to stay on top
+        # Keep trying to stay on top (sem roubar o foco do campo em que se digita)
         def stay_top():
             try:
                 b.lift()
                 b.attributes("-topmost", True)
-                b.focus_force()
+                janela_na_frente(b, pin_entry)
             except tk.TclError:
                 return
             b.after(500, stay_top)
 
+        b.update_idletasks()
         stay_top()
 
     def _destroy_block(self):

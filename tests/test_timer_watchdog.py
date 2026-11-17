@@ -115,3 +115,48 @@ class BotaoDoTimerTest(unittest.TestCase):
         ps = (raiz / "parent-settings.js").read_text(encoding="utf-8")
         self.assertIn("atualizarBotaoTimer();", ps)
         self.assertNotIn("setIconLabel(timerBtn,'timer'", ps)
+
+
+class FocoDaTelaTest(unittest.TestCase):
+    class Janela:
+        def __init__(self, foco):
+            self.foco = foco
+
+        def __str__(self):
+            return ".!toplevel"
+
+        def winfo_id(self):
+            return 77
+
+        def focus_get(self):
+            return self.foco
+
+    def test_nao_rouba_o_foco_do_campo_em_que_se_digita(self):
+        # roteiro 17/18: focus_force() na janela inteira a cada 500 ms tirava o foco do PIN
+        campo = mock.Mock()
+        tw.janela_na_frente(self.Janela(".!toplevel.!frame.!spinbox"), campo, plataforma=None)
+        campo.focus_force.assert_not_called()
+        for fora in (None, ".!toplevel", ".!toplevel2.!entry"):
+            campo = mock.Mock()
+            tw.janela_na_frente(self.Janela(fora), campo, plataforma=None)
+            campo.focus_force.assert_called_once_with()
+
+    def test_no_windows_traz_a_tela_para_o_primeiro_plano(self):
+        plataforma = mock.Mock()
+        plataforma.pid_da_janela_ativa.return_value = 1  # outro processo na frente
+        plataforma.raiz_da_janela.return_value = 500
+        tw.janela_na_frente(self.Janela(None), mock.Mock(), plataforma=plataforma)
+        plataforma.raiz_da_janela.assert_called_once_with(77)
+        plataforma.trazer_para_frente.assert_called_once_with(500)
+
+    def test_ja_na_frente_nao_mexe(self):
+        plataforma = mock.Mock()
+        plataforma.pid_da_janela_ativa.return_value = tw.os.getpid()
+        tw.janela_na_frente(self.Janela(".!toplevel.!entry"), mock.Mock(), plataforma=plataforma)
+        plataforma.trazer_para_frente.assert_not_called()
+
+    def test_stay_top_usa_a_funcao_nova(self):
+        texto = Path(tw.__file__).read_text(encoding="utf-8")
+        trecho = texto[texto.index("def stay_top():"):texto.index("stay_top()\n", texto.index("def stay_top():") + 20)]
+        self.assertIn("janela_na_frente(b, pin_entry)", trecho)
+        self.assertNotIn("b.focus_force()", trecho)
