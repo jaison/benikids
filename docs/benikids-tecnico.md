@@ -128,7 +128,7 @@ login → ~/.config/autostart → cozy-iniciar
           ├─ cozy-itch-sync      (coleções do itch.io → tiles "itch-*" no config.json)
           └─ cozy-kids-launcher  (servidor Python em 127.0.0.1:38431 + menu nativo beni-menu;
                  │                    sem GPU utilizável, Firefox em modo quiosque)
-                 ├─ Pais → PIN na tela do menu + Firefox/Edge escondido com a área dos pais
+                 ├─ Pais → PIN na tela do menu + Firefox/Edge atrás dele com a área dos pais
                  │         (aparece com o PIN certo; fecha ao voltar)
                  ├─ usage_limits.py   (tempo por categoria, dia da semana, reforço de aprendizagem)
                  └─ tocar num ícone → process_supervisor.py + overlay.py (❌, tempo, ‹ Voltar)
@@ -168,7 +168,7 @@ O código ainda usa os nomes internos do original (`cozy-kids-launcher`, porta 3
 `~/.local/share/cozy-kids-launcher`). Assim fica fácil comparar com o projeto original e trazer
 correções de lá.
 
-### Área dos pais pelo menu nativo (PIN no menu, navegador escondido)
+### Área dos pais pelo menu nativo (PIN no menu, navegador atrás dele)
 
 Medido num i5 de 2012 com Windows: de clicar em "Pais" até o PIN aparecer levava ~3 s
 (~1,1 s só para o Edge abrir, ~0,5 s de passagem para o quiosque, ~1 s da página até o PIN).
@@ -176,10 +176,10 @@ Agora, com PIN configurado:
 
 1. O menu mostra **na hora** a tela de PIN nativa (a mesma de sair/desligar) e pede ao
    servidor uma "espera" (`POST /api/pais/preparar`).
-2. No mesmo instante abre o navegador **escondido**, com `cliente.html?ir=…#espera=<id>`
+2. No mesmo instante abre o navegador **atrás do menu**, com `cliente.html?ir=…#espera=<id>`
    (o id vai depois do `#`, que não chega ao servidor). A página carrega o `index.html`
    coberta com o fundo da marca e fica presa em `POST /api/pais/espera` (o pedido espera
-   até 20 s pelo PIN; sem timer, que o navegador atrasa em janela escondida). Antes do PIN
+   até 20 s pelo PIN; sem timer, que o navegador atrasa em janela coberta). Antes do PIN
    ela não abre a área dos pais nem pede os dados dela (exigem o cookie de admin).
 3. O PIN vai para `POST /api/pais/liberar` — mesma validação, mesma mensagem e o mesmo
    bloqueio de tentativas do `verify-pin`. Certo: nasce um **token de uso único que vale
@@ -189,26 +189,35 @@ Agora, com PIN configurado:
    sites; nem o id, nem o token, nem o PIN vão para log.
 4. O menu traz o navegador para a frente, e a área dos pais abre sem pedir o PIN de novo.
    Cancelar (ou o PIN sair da tela por outro motivo, como o tempo esgotado) fecha o
-   navegador escondido: o job inteiro no Windows, TERM no Linux.
+   navegador que esperava: o job inteiro no Windows, TERM no Linux.
 
 Sem PIN configurado, abre direto como antes. Quem usa o menu web (sem menu nativo) continua
 com o PIN da página. Se algo falhar (servidor antigo, espera vencida), a página cai no PIN
 dela.
 
-**Como o navegador fica escondido** (`cliente/src/navegador.rs`): uma thread vigia as
-janelas desta abertura até o PIN.
-- **Windows:** toda janela visível dos processos do Job Object leva `SW_HIDE` assim que
-  surge (a cada 10 ms nos primeiros 10 s). Janela escondida não aparece no Alt+Tab, no
-  Win+Tab nem na barra de tarefas. Enquanto isso, o menu fica "sempre por cima" e chama
-  `LockSetForegroundWindow`, para o navegador não roubar o foco; se roubar, o menu pega de
-  volta. Ao revelar: `SW_SHOW`, o navegador vai para a frente e o menu deixa de ficar por
-  cima.
-- **Linux (X11):** `xdotool windowunmap` nas janelas do Firefox (pelo pid) assim que
-  aparecem, e o foco volta ao menu; ao revelar, `windowmap` + `windowactivate`.
-- **Risco:** entre a janela nascer e ser escondida há alguns milissegundos (no Linux, até
-  ~80 ms) em que ela existe; com o menu por cima, não deve aparecer, mas uma tecla digitada
-  bem nesse instante pode ir para o navegador. O Gerenciador de Tarefas do Windows lista o
-  Edge e permite "Alternar para" — vale para qualquer processo e não muda com isto.
+**Como o navegador fica atrás do menu** (`cliente/src/navegador.rs`): uma thread vigia as
+janelas desta abertura, com o mesmo laço nos dois sistemas (`vigiar`, testado com um sistema
+de janelas de mentira).
+- **Esperando o PIN:** o menu fica "sempre por cima" e com o foco. Cada janela do navegador
+  que nasce é **guardada** atrás do menu, fora do Alt+Tab e da barra de tarefas. Ela **não é
+  escondida**: no pacote 13 o Edge escondido (`SW_HIDE`) voltava todo branco, porque o
+  Chromium para de desenhar e não retoma.
+- **PIN aceito:** a janela guardada volta ao normal e vem para a frente com o foco. Se ela
+  ainda não nasceu (PIN digitado em 0,3 s, e o Edge leva ~1 s), vem para a frente quando
+  nascer; até lá o menu mostra "Abrindo a área dos pais...". Um novo clique em "Pais" com o
+  navegador já aberto o traz para a frente.
+- **Windows:** `WS_EX_TOOLWINDOW` sem `WS_EX_APPWINDOW` (fora do Alt+Tab; refeito se o
+  Chromium mudar o estilo), `ITaskbarList::DeleteTab`/`AddTab` (barra de tarefas),
+  `HWND_BOTTOM`, menu `HWND_TOPMOST` (conferido a cada volta) e `LockSetForegroundWindow`.
+  O Edge abre com `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-features=CalculateNativeWinOcclusion`, para continuar desenhando coberto.
+- **Linux (X11):** `wmctrl` põe a janela do Firefox `below`, `skip_taskbar` e `skip_pager`, e
+  o menu `above`; o `xdotool` devolve o foco ao menu e, depois do PIN, ativa o Firefox.
+- **Risco:** a janela nasce tentando pegar o foco; o Windows recusa por causa da trava, e, se
+  pegar, a vigia devolve ao menu em até 10 ms (80 ms no Linux). Uma tecla digitada bem nesse
+  instante pode ir para o navegador. O Gerenciador de Tarefas do Windows lista o Edge e
+  permite "Alternar para" — vale para qualquer programa e não muda com isto. No Linux, o
+  Alt+Tab do xfwm4 pular janelas `skip_taskbar` precisa ser conferido no notebook.
 
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:

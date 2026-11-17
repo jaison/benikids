@@ -39,13 +39,15 @@ enum AcaoPin {
     Sair,
     Desligar,
     Perfil(String),
-    /// Área dos pais: o navegador já abre escondido com esta "espera" (None até o
+    /// Área dos pais: o navegador já abre atrás do menu com esta "espera" (None até o
     /// servidor responder); o PIN certo o libera e o traz para a frente.
     Pais(Option<String>),
 }
 
 /// A área dos pais dentro do navegador.
 const PAGINA_PAIS: &str = "/index.html?pais=1";
+/// Aviso do menu entre o PIN aceito e o navegador vir para a frente.
+const ABRINDO_PAIS: &str = "Abrindo a área dos pais...";
 
 /// Quanto tempo a mensagem fica na tela se ninguém tocar em OK.
 const MENSAGEM_SEGUNDOS: u32 = 30;
@@ -780,7 +782,7 @@ impl Menu {
         self.abrir_navegador(caminho, None, cx);
     }
 
-    /// `espera`: abre escondido, esperando o PIN digitado no menu (área dos pais).
+    /// `espera`: abre atrás do menu, esperando o PIN digitado nele (área dos pais).
     fn abrir_navegador(&mut self, caminho: &str, espera: Option<&str>, cx: &mut Context<Self>) {
         if self.o.demo {
             self.inicio = None;
@@ -801,7 +803,16 @@ impl Menu {
         if self.o.web_familia == "chromium" {
             // o navegador é fechado à força: sem o "Restaurar páginas?" na abertura seguinte
             cmd.arg(format!("--user-data-dir={}", self.o.web_perfil.display()))
-                .args(["--no-first-run", "--password-store=basic", "--disable-session-crashed-bubble", "--kiosk", &url]);
+                .args(["--no-first-run", "--password-store=basic", "--disable-session-crashed-bubble"])
+                // atrás do menu (área dos pais com PIN) ele tem de continuar desenhando:
+                // sem isso o Chromium para de pintar a janela coberta e ela aparece branca
+                .args([
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=CalculateNativeWinOcclusion",
+                    "--kiosk",
+                    &url,
+                ]);
         } else {
             cmd.arg("--no-remote")
                 .arg("--profile")
@@ -818,10 +829,10 @@ impl Menu {
             .get_json("/api/cliente/estado")
             .and_then(|v| dados::numero(&v, "voltar"))
             .unwrap_or(0.) as u64;
-        let aberto = if espera.is_some() { Navegador::abrir_escondido(&mut cmd) } else { Navegador::abrir(&mut cmd) };
+        let aberto = if espera.is_some() { Navegador::abrir_atras(&mut cmd) } else { Navegador::abrir(&mut cmd) };
         match aberto {
             Ok(nav) => {
-                let jeito = if nav.escondido() { " (escondido, esperando o PIN)" } else { "" };
+                let jeito = if nav.esperando_pin() { " (atrás do menu, esperando o PIN)" } else { "" };
                 log::info!("navegador aberto para {caminho}{jeito} (pid {})", nav.id());
                 self.web = Some((nav, base));
                 self.inicio = None;
@@ -835,10 +846,13 @@ impl Menu {
     fn vigiar_web(&mut self, cx: &mut Context<Self>) -> bool {
         let pin_dos_pais = matches!(self.janela, Some(Janela::Pin { acao: AcaoPin::Pais(_), .. }));
         let Some((nav, base)) = self.web.as_mut() else { return false };
-        if nav.escondido() && !pin_dos_pais {
+        if nav.esperando_pin() && !pin_dos_pais {
             // o PIN dos pais saiu da tela sem ser aceito (cancelado, tempo esgotado...)
-            log::info!("PIN dos pais fora da tela: fechando o navegador escondido");
+            log::info!("PIN dos pais fora da tela: fechando o navegador que esperava atrás do menu");
             nav.fechar();
+        }
+        if !nav.chegando() && self.inicio.as_ref().is_some_and(|i| i.texto == ABRINDO_PAIS) {
+            self.inicio = None; // o navegador já veio para a frente
         }
         match nav.aberto() {
             true => {
@@ -862,6 +876,9 @@ impl Menu {
             false => {
                 log::info!("navegador fechado; de volta ao menu");
                 self.web = None;
+                if self.inicio.as_ref().is_some_and(|i| i.texto == ABRINDO_PAIS) {
+                    self.inicio = None;
+                }
                 self.api.esquecer_sessao();
                 self.carregar_config(cx);
                 self.atualizar_uso(cx);
@@ -916,11 +933,17 @@ impl Menu {
     fn executar(&mut self, acao: AcaoPin, cx: &mut Context<Self>) {
         match acao {
             AcaoPin::Pais(espera) => {
-                if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.escondido()) {
-                    log::info!("PIN dos pais aceito: trazendo o navegador para a frente");
-                    nav.revelar();
+                if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.esperando_pin()) {
+                    // a vigia traz a janela para a frente, agora ou quando ela nascer
+                    log::info!("PIN dos pais aceito: o navegador vem para a frente");
+                    nav.liberar();
+                    self.geracao += 1;
+                    let g = self.geracao;
+                    self.inicio =
+                        Some(Inicio { emoji: "🔑".into(), texto: ABRINDO_PAIS.into(), sucesso: false, geracao: g });
+                    self.esconder_inicio_depois(g, Duration::from_secs(30), cx);
                 } else {
-                    // o navegador escondido não abriu ou fechou: abre agora, visível
+                    // o navegador da espera não abriu ou fechou: abre agora, na frente
                     // (com a espera liberada, a página entra direto)
                     self.web = None;
                     self.abrir_navegador(PAGINA_PAIS, None, cx);
@@ -973,17 +996,22 @@ impl Menu {
     }
 
     /// "Pais": com PIN, a tela de PIN do menu aparece na hora e o navegador abre
-    /// escondido atrás dele, já carregando a área dos pais; o PIN certo o libera
+    /// atrás dele, já carregando a área dos pais; o PIN certo o traz para a frente
     /// (ver /api/pais/* no servidor). Sem PIN, abre direto como antes.
     fn abrir_pais(&mut self, cx: &mut Context<Self>) {
         if self.o.demo || !self.pin_configurado() {
             self.abrir_web(PAGINA_PAIS, cx);
             return;
         }
-        if self.web.as_mut().is_some_and(|(n, _)| n.aberto()) {
+        if let Some((nav, _)) = self.web.as_mut().and_then(|w| w.0.aberto().then_some(w)) {
+            // já aberto (ex.: ficou atrás do menu): traz para a frente em vez de nada
+            if !nav.esperando_pin() {
+                log::info!("pais: navegador já aberto; trazendo para a frente");
+                nav.trazer_para_frente();
+            }
             return;
         }
-        log::info!("pais: PIN na tela do menu; abrindo o navegador escondido");
+        log::info!("pais: PIN na tela do menu; abrindo o navegador atrás dele");
         self.janela = Some(Janela::Pin { pin: String::new(), erro: String::new(), acao: AcaoPin::Pais(None) });
         self.tarefa(
             cx,
@@ -1158,9 +1186,9 @@ impl Menu {
 
     fn fechar_pin(&mut self, cx: &mut Context<Self>) {
         if let Some(Janela::Pin { acao: AcaoPin::Pais(espera), .. }) = self.janela.take() {
-            // desistiram: fecha o navegador escondido (o job inteiro no Windows)
-            if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.escondido()) {
-                log::info!("PIN dos pais cancelado: fechando o navegador escondido");
+            // desistiram: fecha o navegador que esperava (o job inteiro no Windows)
+            if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.esperando_pin()) {
+                log::info!("PIN dos pais cancelado: fechando o navegador que esperava atrás do menu");
                 nav.fechar();
             }
             if let Some(e) = espera {
