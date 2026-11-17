@@ -293,14 +293,15 @@ impl Navegador {
 
 #[cfg(windows)]
 mod plataforma {
-    use std::collections::HashMap;
-    use std::sync::Arc;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::{Arc, Mutex};
+    use std::time::Instant;
 
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::System::Com::{CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GWL_EXSTYLE, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, HWND_BOTTOM,
-        HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsWindow, IsWindowVisible, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW,
+        HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsWindow, IsWindowVisible, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW,
         SetWindowPos, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     };
     use windows_sys::core::GUID;
@@ -398,11 +399,49 @@ mod plataforma {
         barra: Option<Barra>,
         estilos: HashMap<isize, isize>,
         avisou_topmost: bool,
+        /// pids do navegador vistos na última volta
+        pids_vistos: Vec<u32>,
+        /// quando o navegador pegou o foco (para medir até o menu recuperar)
+        perdeu_foco_em: Option<Instant>,
+        /// janelas com a troca de estilo em andamento (numa thread à parte)
+        em_andamento: Arc<Mutex<HashSet<isize>>>,
     }
 
     impl Sistema {
         pub fn novo(pid: u32, job: Option<Arc<Job>>) -> Self {
-            Self { pid, job, barra: None, estilos: HashMap::new(), avisou_topmost: false }
+            Self {
+                pid,
+                job,
+                barra: None,
+                estilos: HashMap::new(),
+                avisou_topmost: false,
+                pids_vistos: Vec::new(),
+                perdeu_foco_em: None,
+                em_andamento: Arc::new(Mutex::new(HashSet::new())),
+            }
+        }
+
+        /// Se o navegador está com o foco, devolve ao menu (de novo a cada volta,
+        /// enquanto ele insistir) e mede no log quanto tempo levou. Roteiro 18: o
+        /// foco ficava 410–668 ms no Edge, porque a vigia travava em chamadas
+        /// síncronas às janelas do Edge (ocupado abrindo) e do menu (inativo);
+        /// agora elas são assíncronas ou feitas numa thread à parte.
+        fn checar_foco(&mut self) {
+            let frente = unsafe { GetForegroundWindow() };
+            let mut pid = 0u32;
+            unsafe { GetWindowThreadProcessId(frente, &mut pid) };
+            if pid != 0 && self.pids_vistos.contains(&pid) {
+                if self.perdeu_foco_em.is_none() {
+                    self.perdeu_foco_em = Some(Instant::now());
+                    log::info!("o navegador pegou o foco; devolvendo ao menu");
+                }
+                crate::menu::trazer_para_frente();
+            } else if let Some(t) = self.perdeu_foco_em {
+                if frente == crate::menu::janela_do_menu() {
+                    log::info!("foco de volta ao menu em {} ms", t.elapsed().as_millis());
+                    self.perdeu_foco_em = None;
+                }
+            }
         }
 
         fn pids(&self) -> Vec<u32> {
@@ -419,7 +458,8 @@ mod plataforma {
                 return;
             }
             let onde = if sim { HWND_TOPMOST } else { HWND_NOTOPMOST };
-            unsafe { SetWindowPos(h, onde, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) };
+            // assíncrono: a vigia não espera o menu (inativo, desenha a cada 500 ms)
+            unsafe { SetWindowPos(h, onde, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS) };
         }
     }
 
@@ -431,7 +471,8 @@ mod plataforma {
         type Id = isize;
 
         fn listar(&mut self) -> Vec<isize> {
-            let mut busca = Busca { pids: self.pids(), achadas: Vec::new() };
+            self.pids_vistos = self.pids();
+            let mut busca = Busca { pids: self.pids_vistos.clone(), achadas: Vec::new() };
             unsafe { EnumWindows(Some(visiveis), &mut busca as *mut Busca as LPARAM) };
             busca.achadas.into_iter().map(|h| h as isize).collect()
         }
@@ -451,6 +492,7 @@ mod plataforma {
         }
 
         fn manter_menu(&mut self, guardadas: &[isize]) {
+            self.checar_foco();
             let menu = crate::menu::janela_do_menu();
             if menu.is_null() {
                 return;
@@ -464,15 +506,11 @@ mod plataforma {
             }
             // o Chromium pode refazer o estilo da janela (ex.: ao entrar no quiosque)
             for j in guardadas {
-                if estilo(*j as HWND) & WS_EX_TOOLWINDOW as isize == 0 {
+                let ocupada = self.em_andamento.lock().map(|e| e.contains(j)).unwrap_or(true);
+                if !ocupada && estilo(*j as HWND) & WS_EX_TOOLWINDOW as isize == 0 {
                     log::info!("o navegador voltou ao Alt+Tab; guardando de novo");
                     self.guardar(*j);
                 }
-            }
-            let frente = unsafe { GetForegroundWindow() } as isize;
-            if guardadas.contains(&frente) {
-                log::info!("o navegador pegou o foco; devolvendo ao menu");
-                crate::menu::trazer_para_frente();
             }
         }
 
@@ -482,17 +520,31 @@ mod plataforma {
         }
 
         fn guardar(&mut self, j: isize) {
+            // o foco primeiro: a janela que acabou de nascer costuma pegá-lo
+            self.checar_foco();
             let h = j as HWND;
             let antes = estilo(h);
             self.estilos.entry(j).or_insert(antes); // o original, para devolver
             let novo = (antes | WS_EX_TOOLWINDOW as isize) & !(WS_EX_APPWINDOW as isize | WS_EX_TOPMOST as isize);
-            unsafe {
-                SetWindowLongPtrW(h, GWL_EXSTYLE, novo);
-                if antes & WS_EX_TOPMOST as isize != 0 {
-                    SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                }
-                SetWindowPos(h, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            // Trocar o estilo de uma janela de outro processo espera a thread dela
+            // (o Edge, ocupado abrindo): numa thread à parte, a vigia segue olhando o foco.
+            if let Ok(mut e) = self.em_andamento.lock() {
+                e.insert(j);
             }
+            let em_andamento = self.em_andamento.clone();
+            let _ = std::thread::Builder::new().name("guardar-janela".into()).spawn(move || {
+                let h = j as HWND;
+                unsafe {
+                    SetWindowLongPtrW(h, GWL_EXSTYLE, novo);
+                    if antes & WS_EX_TOPMOST as isize != 0 {
+                        SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                    }
+                    SetWindowPos(h, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                }
+                if let Ok(mut e) = em_andamento.lock() {
+                    e.remove(&j);
+                }
+            });
             if self.barra.is_none() {
                 self.barra = Barra::nova();
             }
