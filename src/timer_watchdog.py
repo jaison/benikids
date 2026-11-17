@@ -9,6 +9,7 @@ import sys
 import time
 import tkinter as tk
 from tkinter import font as tkfont
+import urllib.error
 import urllib.request
 
 from process_state import terminate_owned_process
@@ -62,13 +63,71 @@ def kill_browser():
         pass
 
 
-def exit_kids():
+def http(method, path, data=None, cookie=""):
+    """(status, json ou None, cabeçalhos). Sem exceção: erro de rede vira status 0."""
+    payload = json.dumps(data).encode("utf-8") if data is not None else None
+    headers = {"Content-Type": "application/json"} if payload is not None else {}
+    if cookie:
+        headers["Cookie"] = cookie
+    req = urllib.request.Request(BASE_URL + path, data=payload, headers=headers, method=method)
     try:
-        api("/exit-kids", {})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            corpo = resp.read()
+            status, cabecalhos = resp.status, resp.headers
+    except urllib.error.HTTPError as erro:
+        corpo, status, cabecalhos = erro.read(), erro.code, erro.headers
     except Exception:
-        pass
-    kill_browser()
-    sys.exit(0)
+        return 0, None, {}
+    try:
+        dados = json.loads(corpo.decode("utf-8")) if corpo else None
+    except ValueError:
+        dados = None
+    return status, dados, cabecalhos
+
+
+def sair_com_pin(pin, pedir=None):
+    """"Sair" da tela "Acabou o tempo!". Com PIN configurado, só sai com o PIN
+    certo: confere no servidor (mesmo bloqueio de tentativas), usa o cookie de
+    admin para o /exit-kids (que grava a flag de saída e fecha o menu) e só
+    então sai. Antes, sem o cookie, o /exit-kids dava 403 e o kill_browser()
+    derrubava o menu, que voltava sozinho (Windows: "menu nativo caiu (código
+    15)"). Devolve "saiu", "pin" (PIN errado), "espera" (muitas tentativas) ou
+    "erro"."""
+    pedir = pedir or http
+    status, dados, cabecalhos = pedir("POST", "/api/verify-pin", {"pin": pin or ""})
+    if status == 429:
+        return "espera"
+    if status != 200 or not (dados or {}).get("valid"):
+        return "pin" if status == 403 else "erro"
+    cookie = ""
+    bruto = cabecalhos.get("Set-Cookie", "") if cabecalhos else ""
+    if bruto:
+        cookie = bruto.split(";", 1)[0]
+    status, _, _ = pedir("POST", "/exit-kids", {}, cookie=cookie)
+    return "saiu" if status in (200, 204) else "erro"
+
+
+def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente):
+    """O que a vigia faz a cada volta. `menu_na_frente` é chamado só quando
+    importa (pergunta ao servidor). Devolve uma lista de ações: "bloquear",
+    "fechar_bloqueio", "aviso", "fechar_aviso"."""
+    acoes = []
+    if status.get("expired"):
+        # com o menu na frente e sem app aberto, a tela é a do próprio menu
+        if bloqueio_aberto or not menu_na_frente():
+            acoes.append("bloquear")
+        if aviso_aberto:
+            acoes.append("fechar_aviso")
+        return acoes
+    if bloqueio_aberto:
+        # tempo estendido por outra tela (menu, área dos pais, API) ou timer parado
+        acoes.append("fechar_bloqueio")
+    if status.get("warning"):
+        if not aviso_aberto and not menu_na_frente():
+            acoes.append("aviso")
+    elif aviso_aberto:
+        acoes.append("fechar_aviso")
+    return acoes
 
 
 class WatchdogApp:
@@ -303,9 +362,22 @@ class WatchdogApp:
             padx=20,
             pady=8,
             cursor="hand2",
-            command=exit_kids,
+            command=lambda: sair(),
         )
         exit_btn.pack(pady=(16, 0))
+
+        def sair():
+            resultado = sair_com_pin(pin_entry.get())
+            if resultado == "saiu":
+                kill_browser()  # o servidor já fechou; garante, como antes
+                sys.exit(0)
+            textos = {
+                "pin": "Digite o PIN para sair" if not pin_entry.get() else "PIN incorreto",
+                "espera": "Muitas tentativas. Espere um pouco.",
+            }
+            err_lbl.config(text=textos.get(resultado, "Não deu para sair. Tente de novo."), fg="#c00")
+            pin_entry.delete(0, tk.END)
+            pin_entry.focus_set()
 
         # Trap Escape to prevent closing
         b.bind("<Escape>", lambda e: None)
@@ -337,18 +409,22 @@ class WatchdogApp:
             return
         data = api("/api/timer/status")
         self.status = data
-        active = data.get("active", False)
-        expired = data.get("expired", False)
-        warning = data.get("warning", False)
         remaining = data.get("remainingSeconds", 0)
-
-        if expired:
-            self.show_block()
-        elif warning and not self.warn_window:
-            mins = max(1, remaining // 60)
-            self.show_warning(mins)
-        elif not warning and not expired:
-            self._destroy_warn()
+        if data:  # servidor fora do ar: não mexe em nada
+            acoes = decidir(
+                data,
+                self.block_window is not None,
+                self.warn_window is not None,
+                lambda: bool(api("/api/timer/tela").get("menuNaFrente")),
+            )
+            if "fechar_bloqueio" in acoes:
+                self._destroy_block()
+            if "fechar_aviso" in acoes:
+                self._destroy_warn()
+            if "bloquear" in acoes:
+                self.show_block()
+            if "aviso" in acoes:
+                self.show_warning(max(1, remaining // 60))
 
         self.root.after(self.poll_interval, self.tick)
 

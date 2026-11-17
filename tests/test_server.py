@@ -1933,6 +1933,24 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual(self.pais("liberar", {"pin": "1234", "espera": espera})[1],
                          {"valid": True, "entregue": False})
 
+    def test_timer_tela_diz_se_o_menu_cobre_a_tela(self):
+        # só uma tela "Acabou o tempo!": a do menu quando ele está na frente sem app aberto
+        casos = [
+            # (registro do menu, pid na frente, app aberto, uso ativo) -> menu cobre?
+            ({"pid": 10}, 10, False, False, True),
+            ({"pid": 10}, 99, False, False, False),
+            (None, 10, False, False, False),
+            ({"pid": 10}, 10, True, False, False),
+            ({"pid": 10}, 10, False, True, False),
+        ]
+        for registro, frente, app, uso, esperado in casos:
+            with mock.patch.object(server_module, "owned_process", return_value=registro), \
+                    mock.patch.object(server_module, "pid_da_janela_ativa", return_value=frente), \
+                    mock.patch.object(server_module, "owned_process_alive", return_value=app), \
+                    mock.patch.object(server_module, "usage_status", return_value={"active": uso}):
+                status, data, _ = self.request("/api/timer/tela")
+            self.assertEqual((status, data), (200, {"menuNaFrente": esperado}), (registro, frente, app, uso))
+
     def controles_de_teste(self):
         import controles
         home = Path(self.temp_dir.name) / "home"

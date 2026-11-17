@@ -923,6 +923,32 @@ def menu_na_frente():
         return False
 
 
+def pid_da_janela_ativa():
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return plataforma_windows.pid_da_janela_ativa()
+        except Exception:  # noqa: BLE001
+            return None
+    return controles.janela_ativa_pid()
+
+
+def menu_cobre_a_tela():
+    """O menu (nativo ou web) está na frente e nenhum app/site está aberto: aí a
+    tela "Acabou o tempo!" é a do próprio menu, e o timer_watchdog não mostra a
+    dele (eram duas telas ao mesmo tempo, com o teclado indo para a de baixo).
+    Com um app ou jogo na frente, quem cobre é o watchdog."""
+    browser = owned_process(BROWSER_PIDFILE, "browser")
+    if not browser or pid_da_janela_ativa() != browser.get("pid"):
+        return False
+    if owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
+        return False
+    try:
+        return not usage_status(load_cfg()).get("active")
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def fechar_app_pelo_controle():
     """Start + Select seguros: fecha o app aberto como o ✕ do overlay e mostra o menu."""
     if not owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
@@ -1407,6 +1433,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # Menu nativo (beni-menu): quantas vezes uma página aberta por ele pediu
             # para voltar ao menu (ele fecha o navegador quando o número muda).
             return self.json_response({"voltar": cliente_voltar_contador()})
+        if self.path == "/api/timer/tela":
+            # timer_watchdog: quem mostra o "Acabou o tempo!" (o menu ou ele)
+            return self.json_response({"menuNaFrente": menu_cobre_a_tela()})
         if self.path == "/api/timer/status":
             return self.json_response(timer_status(load_cfg()))
         if self.path == "/api/availability/status":
