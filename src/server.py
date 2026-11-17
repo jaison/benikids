@@ -96,7 +96,12 @@ from parent_auth import (
     PIN_FAILURE_WINDOW_SECONDS,
     PIN_KDF_ITERATIONS,
     admin_session_cookie,
+    aguardar_espera,
+    cancelar_espera,
     clear_admin_sessions,
+    criar_espera,
+    liberar_espera,
+    trocar_token_pais,
     clear_pin_failures,
     create_admin_session,
     expired_admin_session_cookie,
@@ -1112,6 +1117,10 @@ def telemetria_service():
     return _TELEMETRIA[0]
 
 
+# Quanto um pedido da página escondida espera pelo PIN antes de voltar vazio.
+PAIS_ESPERA_POR_PEDIDO = 20.0
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     server_version = "CozyKidsLauncher"
     sys_version = ""
@@ -1221,6 +1230,72 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return True
         self.json_response({"status": "error", "message": "Parent authentication required"}, 403)
         return False
+
+    def pedido_do_proprio_computador(self):
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+    def area_dos_pais_nativa(self, passo):
+        """Área dos pais pelo menu nativo (PIN no menu, navegador já aberto e
+        escondido). Ver o fluxo em parent_auth.criar_espera. Nada daqui vai para
+        o log: nem o id da espera, nem o token, nem o PIN."""
+        if not self.pedido_do_proprio_computador():
+            self.json_response({"status": "error", "message": "Local requests only"}, 403)
+            return
+        data = self.read_json_body(required=passo != "preparar")
+        if data is None:
+            return
+        if passo == "preparar":
+            if not load_cfg().get("pinHash", ""):
+                self.json_response({"espera": None, "pinConfigured": False})
+                return
+            self.json_response({"espera": criar_espera(), "pinConfigured": True})
+            return
+        if passo == "liberar":
+            if pin_attempt_blocked():
+                log_runtime_event("auth.throttled", level="warning")
+                self.json_response({"valid": False, "message": "Too many attempts"}, 429)
+                return
+            cfg = load_cfg()
+            pin_hash = cfg.get("pinHash", "")
+            pin = data.get("pin", "")
+            if pin_hash and (not isinstance(pin, str) or not verify_pin(pin_hash, pin)):
+                record_pin_failure()
+                log_runtime_event("auth.failed", level="warning")
+                self.json_response({"valid": False}, 403)
+                return
+            clear_pin_failures()
+            if pin_hash and is_legacy_pin_hash(pin_hash):
+                cfg["pinHash"] = hash_pin(pin)
+                save_cfg(cfg)
+            entregue = liberar_espera(data.get("espera"))
+            log_runtime_event("auth.succeeded")
+            self.json_response({"valid": True, "entregue": entregue})
+            return
+        if passo == "espera":
+            # a página escondida fica aqui até o PIN (long polling: um pedido por vez)
+            estado, token = aguardar_espera(data.get("espera"), PAIS_ESPERA_POR_PEDIDO)
+            if estado == "ocupada":
+                # outro pedido já espera nesta espera: só a página do menu devia estar aqui
+                log_runtime_event("pais.espera_ocupada", level="warning")
+                self.json_response({"estado": estado}, 409)
+                return
+            resposta = {"estado": estado}
+            if token:
+                resposta["token"] = token
+            self.json_response(resposta, 404 if estado == "desconhecida" else 200)
+            return
+        if passo == "entrar":
+            if not trocar_token_pais(data.get("token")):
+                log_runtime_event("auth.failed", level="warning")
+                self.json_response({"status": "error"}, 403)
+                return
+            sessao = create_admin_session()
+            self.json_response({"status": "ok"}, headers={"Set-Cookie": self.admin_cookie(sessao)})
+            return
+        if passo == "cancelar":
+            self.json_response({"status": "ok" if cancelar_espera(data.get("espera")) else "ignored"})
+            return
+        self.json_response({"status": "error", "message": "Unknown action"}, 404)
 
     @staticmethod
     def admin_cookie(token):
@@ -1842,6 +1917,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 {"valid": True, "pinConfigured": True},
                 headers={"Set-Cookie": self.admin_cookie(token)},
             )
+            return
+        if action.startswith("api/pais/"):
+            self.area_dos_pais_nativa(action[len("api/pais/"):])
             return
         if action == "api/pin/set":
             cfg = load_cfg()

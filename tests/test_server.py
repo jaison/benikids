@@ -1816,6 +1816,123 @@ class ServerApiTests(unittest.TestCase):
         self.assertIn("Too many", data["message"])
 
 
+    # ---- área dos pais pelo menu nativo (PIN no menu, navegador escondido)
+
+    def pais(self, passo, body=None, origin="__base__"):
+        return self.request(f"/api/pais/{passo}", method="POST", body=body,
+                            origin=self.base_url if origin == "__base__" else origin)
+
+    def test_pais_nativo_fluxo_completo_e_token_de_uso_unico(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        status, data, _ = self.pais("preparar")
+        self.assertEqual(status, 200)
+        espera = data["espera"]
+        self.assertTrue(espera)
+        # antes do PIN, a página escondida não recebe nada (nem dados dos pais)
+        with mock.patch.object(server_module, "PAIS_ESPERA_POR_PEDIDO", 0.05):
+            status, data, _ = self.pais("espera", {"espera": espera})
+        self.assertEqual((status, data), (200, {"estado": "aguardando"}))
+        self.assertEqual(self.request("/api/telemetria/previa")[0], 403)
+        # PIN errado: mesma resposta do verify-pin, e a espera continua presa
+        status, data, _ = self.pais("liberar", {"pin": "9999", "espera": espera})
+        self.assertEqual((status, data), (403, {"valid": False}))
+        with mock.patch.object(server_module, "PAIS_ESPERA_POR_PEDIDO", 0.05):
+            self.assertEqual(self.pais("espera", {"espera": espera})[1], {"estado": "aguardando"})
+        # PIN certo: a espera entrega o token uma vez só
+        status, data, headers = self.pais("liberar", {"pin": "1234", "espera": espera})
+        self.assertEqual((status, data), (200, {"valid": True, "entregue": True}))
+        self.assertIsNone(headers["Set-Cookie"])
+        status, data, _ = self.pais("espera", {"espera": espera})
+        self.assertEqual(data["estado"], "pronto")
+        token = data["token"]
+        self.assertEqual(self.pais("espera", {"espera": espera})[0], 404)
+        # o token vira o cookie de admin normal
+        status, _, headers = self.pais("entrar", {"token": token})
+        self.assertEqual(status, 200)
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        self.assertTrue(cookie.startswith(server_module.ADMIN_COOKIE_NAME + "="))
+        self.assertEqual(self.request("/api/telemetria/previa", cookie=cookie)[0], 200)
+        # usado: não serve de novo
+        status, _, headers = self.pais("entrar", {"token": token})
+        self.assertEqual(status, 403)
+        self.assertIsNone(headers["Set-Cookie"])
+
+    def test_pais_nativo_pin_errado_bloqueia_como_hoje(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        espera = self.pais("preparar")[1]["espera"]
+        for _ in range(server_module.PIN_FAILURE_LIMIT):
+            self.assertEqual(self.pais("liberar", {"pin": "0000", "espera": espera})[0], 403)
+        status, data, _ = self.pais("liberar", {"pin": "1234", "espera": espera})
+        self.assertEqual(status, 429)
+        self.assertIn("Too many", data["message"])
+        # o bloqueio vale também para o PIN do menu web
+        self.assertEqual(self.request("/api/verify-pin", method="POST", body={"pin": "1234"},
+                                      origin=self.base_url)[0], 429)
+
+    def test_pais_nativo_token_vencido_ou_inventado_e_recusado(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        self.assertEqual(self.pais("entrar", {"token": "inventado"})[0], 403)
+        self.assertEqual(self.pais("entrar", {})[0], 403)
+        espera = self.pais("preparar")[1]["espera"]
+        self.pais("liberar", {"pin": "1234", "espera": espera})
+        token = self.pais("espera", {"espera": espera})[1]["token"]
+        agora = time.time() + parent_auth.PAIS_TOKEN_TTL_SECONDS + 1
+        with mock.patch.object(parent_auth.time, "time", return_value=agora):
+            self.assertEqual(self.pais("entrar", {"token": token})[0], 403)
+
+    def test_pais_nativo_so_do_proprio_computador(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        handler = server_module.Handler
+        for endereco, local in (("127.0.0.1", True), ("::1", True), ("192.168.0.10", False), ("10.0.0.2", False)):
+            falso = types.SimpleNamespace(client_address=(endereco, 5000))
+            self.assertEqual(handler.pedido_do_proprio_computador(falso), local, endereco)
+        with mock.patch.object(handler, "pedido_do_proprio_computador", return_value=False):
+            self.assertEqual(self.pais("preparar")[0], 403)
+            self.assertEqual(self.pais("liberar", {"pin": "1234", "espera": "x"})[0], 403)
+        # página de outro site não fala com estes endereços
+        self.assertEqual(self.pais("preparar", origin="https://example.com")[0], 403)
+
+    def test_pais_nativo_sem_pin_nao_cria_espera(self):
+        status, data, _ = self.pais("preparar")
+        self.assertEqual((status, data), (200, {"espera": None, "pinConfigured": False}))
+
+    def test_pais_nativo_segundo_pedido_na_mesma_espera_recebe_409(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        espera = self.pais("preparar")[1]["espera"]
+        primeiro = []
+        t = threading.Thread(target=lambda: primeiro.append(self.pais("espera", {"espera": espera})))
+        with mock.patch.object(server_module, "PAIS_ESPERA_POR_PEDIDO", 2.0):
+            t.start()
+            time.sleep(0.2)
+            with mock.patch.object(server_module, "log_runtime_event") as log:
+                status, data, _ = self.pais("espera", {"espera": espera})
+            self.assertEqual((status, data), (409, {"estado": "ocupada"}))
+            log.assert_called_once_with("pais.espera_ocupada", level="warning")
+            self.assertNotIn(espera, repr(log.call_args))
+            self.pais("liberar", {"pin": "1234", "espera": espera})
+            t.join(5)
+        self.assertEqual(primeiro[0][1]["estado"], "pronto")
+
+    def test_pais_nativo_cancelar_tira_a_espera(self):
+        import parent_auth
+        parent_auth.limpar_pais()
+        self.enable_pin()
+        espera = self.pais("preparar")[1]["espera"]
+        self.assertEqual(self.pais("cancelar", {"espera": espera})[1], {"status": "ok"})
+        self.assertEqual(self.pais("espera", {"espera": espera})[0], 404)
+        self.assertEqual(self.pais("liberar", {"pin": "1234", "espera": espera})[1],
+                         {"valid": True, "entregue": False})
+
     def controles_de_teste(self):
         import controles
         home = Path(self.temp_dir.name) / "home"

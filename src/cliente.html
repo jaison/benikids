@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Beni</title>
-<style>html,body{margin:0;background:#fff;font-family:system-ui,sans-serif}</style>
+<style>html,body{margin:0;background:#e8f6fe;font-family:system-ui,sans-serif}</style>
 </head>
 <body>
 <script>
@@ -15,6 +15,14 @@
   var ir = new URLSearchParams(location.search).get('ir') || '/index.html?pais=1';
   if (ir.charAt(0) !== '/' || ir.charAt(1) === '/' || ir.indexOf('\\') !== -1) ir = '/index.html?pais=1';
   try { sessionStorage.setItem('beniCliente', '1'); } catch (e) {}
+  // Área dos pais pelo menu nativo: o PIN é digitado no menu e esta janela fica
+  // escondida esperando (frontend/cliente-nativo.js). O id da espera vem depois
+  // do "#", que não vai ao servidor, e só vale até o PIN (uma vez).
+  var espera = /^#espera=([A-Za-z0-9_-]{16,64})$/.exec(location.hash);
+  try {
+    if (espera) sessionStorage.setItem('beniEspera', espera[1]);
+    else sessionStorage.removeItem('beniEspera');
+  } catch (e) {}
   location.replace(ir);
 })();
 </script>

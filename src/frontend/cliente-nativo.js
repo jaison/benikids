@@ -37,11 +37,65 @@
   }
   if (!pais) { voltarAoMenu(); return; }
 
+  // ---------- PIN digitado no menu nativo ----------
+  // O menu abre esta janela escondida e pede o PIN na tela dele. Até o PIN, a
+  // página fica coberta com o fundo da marca e não abre a área dos pais (nem
+  // pede os dados dela, que exigem o cookie). Com o PIN certo, o servidor
+  // entrega UMA vez um token de 30 s (POST /api/pais/espera, que segura o
+  // pedido até lá) e a página o troca pelo cookie de admin (/api/pais/entrar).
+  // Se algo falhar, cai no caminho de sempre: o PIN da própria página.
+  let esperaId = null;
+  try { esperaId = sessionStorage.getItem('beniEspera'); } catch (e) {}
+  let aguardandoMenu = !!esperaId;
+  let capa = null;
+  function tirarCapa() {
+    if (capa) { capa.remove(); capa = null; }
+  }
+  function esqueceEspera() {
+    aguardandoMenu = false;
+    try { sessionStorage.removeItem('beniEspera'); } catch (e) {}
+  }
+  function postJson(url, corpo) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo), credentials: 'same-origin' });
+  }
+  function aguardarMenu() {
+    if (!aguardandoMenu || avisou) return;
+    postJson('/api/pais/espera', { espera: esperaId }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) { return { status: r.status, d: d }; });
+    }).then(function (res) {
+      if (!aguardandoMenu) return;
+      if (res.status === 200 && res.d.estado === 'aguardando') { aguardarMenu(); return; }
+      if (res.status === 200 && res.d.estado === 'pronto' && res.d.token) {
+        return postJson('/api/pais/entrar', { token: res.d.token }).then(function (r) {
+          esqueceEspera();
+          if (r.ok) entrarDepois = true; // cookie de admin: abre o painel sem PIN
+          abrirPais();
+          setTimeout(tirarCapa, 150);
+        });
+      }
+      esqueceEspera(); // espera desconhecida: PIN da página
+      tirarCapa();
+      abrirPais();
+    }).catch(function () {
+      // servidor reiniciando ou janela fechando: tenta de novo daqui a pouco
+      setTimeout(aguardarMenu, 1000);
+    });
+  }
+  if (aguardandoMenu) {
+    capa = document.createElement('div');
+    capa.className = 'cliente-capa';
+    capa.innerHTML = '<img src="/marca/logo.svg" alt="" width="220" height="49">';
+    document.body.appendChild(capa);
+  }
+
   // Some com a tela da criança desta aba: só a área dos pais interessa aqui.
   const estilo = document.createElement('style');
   estilo.textContent = 'html.beni-cliente #kids, html.beni-cliente .cornerbar, html.beni-cliente #clockBadge,'
     + ' html.beni-cliente #batteryBadge, html.beni-cliente #timerBadge, html.beni-cliente .nav { visibility:hidden !important; }'
     + ' html.beni-cliente #timerBlock, html.beni-cliente #timerWarning, html.beni-cliente #usageMessage { display:none !important; }';
+  estilo.textContent += ' .cliente-capa { position:fixed; inset:0; z-index:2147483647; display:flex;'
+    + ' align-items:center; justify-content:center; background:linear-gradient(#e8f6fe,#acdef9); }';
   document.head.appendChild(estilo);
 
   const fecharAdminOriginal = window.closeAdmin;
@@ -148,7 +202,7 @@
   // carregamento (apps, recomendações, cronômetro). Sem PIN, a área dos pais abre
   // direto e espera tudo carregar.
   function abrirPais() {
-    if (avisou || recarregando || !temCfg()) return;
+    if (avisou || recarregando || aguardandoMenu || !temCfg()) return;
     if (!cfg.pinConfigured && !carregou) return;
     if (aberto('admin') || aberto('pin')) return;
     if (entrarDepois) { window.enterAdmin(); return; } // o PIN já foi aceito
@@ -214,6 +268,7 @@
     semCfgDesde = Date.now();
     falhasSeguidas = 0;
     espera.hidden = true;
+    if (aguardandoMenu) { vazioDesde = 0; return; } // ainda no PIN do menu nativo
     if (entrarDepois) { registrar('painel'); window.enterAdmin(); return; }
     if (algoNaTela() || (!cfg.pinConfigured && !carregou)) { vazioDesde = 0; return; }
     // nada na tela: espera mais um segundo (transições) e pede o PIN de novo
@@ -228,6 +283,7 @@
     return;
   }
   carregar();
+  aguardarMenu();
   (function primeiro() {
     if (avisou || recarregando) return;
     if (temCfg()) { abrirPais(); return; }

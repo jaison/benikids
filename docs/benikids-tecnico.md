@@ -128,7 +128,8 @@ login → ~/.config/autostart → cozy-iniciar
           ├─ cozy-itch-sync      (coleções do itch.io → tiles "itch-*" no config.json)
           └─ cozy-kids-launcher  (servidor Python em 127.0.0.1:38431 + menu nativo beni-menu;
                  │                    sem GPU utilizável, Firefox em modo quiosque)
-                 ├─ Pais → Firefox só com a área dos pais (fecha ao voltar)
+                 ├─ Pais → PIN na tela do menu + Firefox/Edge atrás dele com a área dos pais
+                 │         (aparece com o PIN certo; fecha ao voltar)
                  ├─ usage_limits.py   (tempo por categoria, dia da semana, reforço de aprendizagem)
                  └─ tocar num ícone → process_supervisor.py + overlay.py (❌, tempo, ‹ Voltar)
                         ├─ apps locais: atalhos em ~/.local/bin (supertux, gcompris, …)
@@ -166,6 +167,73 @@ login → ~/.config/autostart → cozy-iniciar
 O código ainda usa os nomes internos do original (`cozy-kids-launcher`, porta 38431, pastas em
 `~/.local/share/cozy-kids-launcher`). Assim fica fácil comparar com o projeto original e trazer
 correções de lá.
+
+### Área dos pais pelo menu nativo (PIN no menu, navegador atrás dele)
+
+Medido num i5 de 2012 com Windows: de clicar em "Pais" até o PIN aparecer levava ~3 s
+(~1,1 s só para o Edge abrir, ~0,5 s de passagem para o quiosque, ~1 s da página até o PIN).
+Agora, com PIN configurado:
+
+1. O menu mostra **na hora** a tela de PIN nativa (a mesma de sair/desligar) e pede ao
+   servidor uma "espera" (`POST /api/pais/preparar`).
+2. No mesmo instante abre o navegador **atrás do menu**, com `cliente.html?ir=…#espera=<id>`
+   (o id vai depois do `#`, que não chega ao servidor). A página carrega o `index.html`
+   coberta com o fundo da marca e fica presa em `POST /api/pais/espera` (o pedido espera
+   até 20 s pelo PIN; sem timer, que o navegador atrasa em janela coberta). Antes do PIN
+   ela não abre a área dos pais nem pede os dados dela (exigem o cookie de admin).
+3. O PIN vai para `POST /api/pais/liberar` — mesma validação, mesma mensagem e o mesmo
+   bloqueio de tentativas do `verify-pin`. Certo: nasce um **token de uso único que vale
+   30 s**; a espera o entrega uma vez à página, que o troca pelo cookie de admin normal em
+   `POST /api/pais/entrar`. Token usado, vencido ou inventado é recusado. Esses endereços só
+   respondem a pedidos do próprio computador (127.0.0.1/::1) e recusam páginas de outros
+   sites; nem o id, nem o token, nem o PIN vão para log.
+4. O menu traz o navegador para a frente, e a área dos pais abre sem pedir o PIN de novo.
+   Cancelar (ou o PIN sair da tela por outro motivo, como o tempo esgotado) fecha o
+   navegador que esperava: o job inteiro no Windows, TERM no Linux.
+
+**O id da espera na linha de comando.** O endereço com `#espera=<id>` fica na linha de
+comando do navegador, que outro programa do mesmo usuário consegue ler. Por isso cada espera
+aceita **um pedido esperando de cada vez**: um 2º pedido simultâneo recebe 409 e vira o
+evento `pais.espera_ocupada` no diagnóstico (sem o id). Assim, um programa não consegue
+esperar junto com a página e disputar o token quando o PIN chega. O que sobra: um programa
+que leia o id e comece a esperar ANTES da página pode levar o token. Nesse caso a página
+recebe 409 e cai no PIN dela, e o aviso fica no log. Tirar o id da linha de comando (a
+página buscar o id num endereço de uso único nos primeiros segundos) só mudaria a corrida
+de lugar: o mesmo programa poderia buscá-lo primeiro. O risco é baixo, porque um programa
+do mesmo usuário já consegue ler o perfil do Edge, inclusive o cookie de admin.
+
+Sem PIN configurado, abre direto como antes. Quem usa o menu web (sem menu nativo) continua
+com o PIN da página. Se algo falhar (servidor antigo, espera vencida), a página cai no PIN
+dela.
+
+**Como o navegador fica atrás do menu** (`cliente/src/navegador.rs`): uma thread vigia as
+janelas desta abertura, com o mesmo laço nos dois sistemas (`vigiar`, testado com um sistema
+de janelas de mentira).
+- **Esperando o PIN:** o menu fica "sempre por cima" e com o foco. Cada janela do navegador
+  que nasce é **guardada** atrás do menu, fora do Alt+Tab e da barra de tarefas. Ela **não é
+  escondida**: no pacote 13 o Edge escondido (`SW_HIDE`) voltava todo branco, porque o
+  Chromium para de desenhar e não retoma.
+- **PIN aceito:** a janela guardada volta ao normal e vem para a frente com o foco. Se ela
+  ainda não nasceu (PIN digitado em 0,3 s, e o Edge leva ~1 s), vem para a frente quando
+  nascer; até lá o menu mostra "Abrindo a área dos pais...". Um novo clique em "Pais" com o
+  navegador já aberto o traz para a frente.
+- **Windows:** `WS_EX_TOOLWINDOW` sem `WS_EX_APPWINDOW` (fora do Alt+Tab; refeito se o
+  Chromium mudar o estilo), `ITaskbarList::DeleteTab`/`AddTab` (barra de tarefas),
+  `HWND_BOTTOM` e menu `HWND_TOPMOST` (conferido a cada volta). Ao devolver, a barra de
+  tarefas é avisada de que a janela é de tela cheia (`ITaskbarList2::MarkFullscreenWindow`);
+  sem isso ela ficava por cima da área dos pais. **Não** usa `LockSetForegroundWindow`: a
+  trava vale para todos os programas e só sai se quem destrava estiver na frente — no
+  roteiro 17 a tela "Acabou o tempo!" ficou sem teclado. Em qualquer fim da espera (PIN
+  aceito, cancelado, timer, navegador que fechou, erro) o menu deixa de ficar por cima.
+  O Edge abre com `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-features=CalculateNativeWinOcclusion`, para continuar desenhando coberto.
+- **Linux (X11):** `wmctrl` põe a janela do Firefox `below`, `skip_taskbar` e `skip_pager`, e
+  o menu `above`; o `xdotool` devolve o foco ao menu e, depois do PIN, ativa o Firefox.
+- **Risco:** a janela nasce tentando pegar o foco; se pegar, a vigia devolve ao menu em até
+  10 ms (80 ms no Linux). Uma tecla digitada bem nesse
+  instante pode ir para o navegador. O Gerenciador de Tarefas do Windows lista o Edge e
+  permite "Alternar para" — vale para qualquer programa e não muda com isto. No Linux, o
+  Alt+Tab do xfwm4 pular janelas `skip_taskbar` precisa ser conferido no notebook.
 
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:
