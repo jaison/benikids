@@ -49,6 +49,20 @@ class DecidirTest(unittest.TestCase):
         self.assertEqual(tw.decidir({"active": True}, False, True, lambda: False), ["fechar_aviso"])
 
 
+class DecidirRoteiro19Test(unittest.TestCase):
+    def test_aviso_aberto_fecha_quando_o_menu_volta_a_frente(self):
+        st = {"active": True, "warning": True}
+        self.assertEqual(tw.decidir(st, False, True, lambda: True), ["fechar_aviso"])
+        self.assertEqual(tw.decidir(st, False, True, lambda: False), [])
+
+    def test_na_partida_espera_o_menu(self):
+        # reabrir com o tempo esgotado mostrava a rosa antes do menu
+        perguntou = mock.Mock(return_value=False)
+        self.assertEqual(tw.decidir({"expired": True}, False, False, perguntou, partida=True), [])
+        perguntou.assert_not_called()
+        self.assertEqual(tw.decidir({"expired": True}, False, False, perguntou, partida=False), ["bloquear"])
+
+
 class SairComPinTest(unittest.TestCase):
     def servidor(self, pin_certo="1234", bloqueado=False, sem_pin=False):
         chamadas = []
