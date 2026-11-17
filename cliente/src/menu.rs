@@ -32,6 +32,61 @@ pub struct Opcoes {
     pub demo: bool,
 }
 
+// ---------------------------------------------------------------- timer
+
+#[derive(Debug, PartialEq)]
+enum PassoTimer {
+    Esgotado,
+    FecharEsgotado,
+    Aviso,
+    Desligado,
+    Nada,
+}
+
+/// O que fazer com o estado do timer que veio do servidor. A tela "Acabou o
+/// tempo!" fecha sempre que o tempo deixa de estar esgotado: antes ela só fechava
+/// com o timer desligado, e o tempo estendido em outra tela a deixava aberta
+/// (no roteiro 17, até com o selo "10 min" depois de o menu reabrir).
+fn passo_do_timer(ativo: bool, esgotado: bool, aviso: bool, tela_aberta: bool, aviso_mostrado: bool) -> PassoTimer {
+    if ativo && esgotado {
+        return if tela_aberta { PassoTimer::Nada } else { PassoTimer::Esgotado };
+    }
+    if tela_aberta {
+        return PassoTimer::FecharEsgotado;
+    }
+    if ativo && aviso && !aviso_mostrado {
+        return PassoTimer::Aviso;
+    }
+    if !ativo {
+        return PassoTimer::Desligado;
+    }
+    PassoTimer::Nada
+}
+
+#[cfg(test)]
+mod testes_timer {
+    use super::*;
+
+    #[test]
+    fn tela_de_tempo_esgotado_fecha_quando_o_tempo_e_estendido() {
+        assert_eq!(passo_do_timer(true, false, false, true, false), PassoTimer::FecharEsgotado);
+        assert_eq!(passo_do_timer(false, false, false, true, false), PassoTimer::FecharEsgotado);
+    }
+
+    #[test]
+    fn tempo_esgotado_abre_a_tela_uma_vez() {
+        assert_eq!(passo_do_timer(true, true, false, false, false), PassoTimer::Esgotado);
+        assert_eq!(passo_do_timer(true, true, false, true, false), PassoTimer::Nada);
+    }
+
+    #[test]
+    fn aviso_e_timer_desligado() {
+        assert_eq!(passo_do_timer(true, false, true, false, false), PassoTimer::Aviso);
+        assert_eq!(passo_do_timer(true, false, true, false, true), PassoTimer::Nada);
+        assert_eq!(passo_do_timer(false, false, false, false, true), PassoTimer::Desligado);
+    }
+}
+
 // ---------------------------------------------------------------- estado
 
 #[derive(Clone, PartialEq)]
@@ -283,19 +338,29 @@ impl Menu {
             let ativo = dados::verdade(&v, "active");
             let esgotado = dados::verdade(&v, "expired");
             let aviso = dados::verdade(&v, "warning");
-            if ativo && esgotado {
-                if !matches!(m.janela, Some(Janela::TimerEsgotado { .. })) {
+            let tela = matches!(m.janela, Some(Janela::TimerEsgotado { .. }));
+            match passo_do_timer(ativo, esgotado, aviso, tela, m.aviso_timer_mostrado) {
+                PassoTimer::Esgotado => {
                     m.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
                 }
-            } else if ativo && aviso && !m.aviso_timer_mostrado {
-                m.aviso_timer_mostrado = true;
-                let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
-                m.mostrar_aviso_timer(dados::minutos_usados(restante), cx);
-            } else if !ativo {
-                m.aviso_timer_mostrado = false;
-                if matches!(m.janela, Some(Janela::TimerEsgotado { .. } | Janela::AvisoTimer { .. })) {
+                PassoTimer::FecharEsgotado => {
+                    // tempo estendido em outro lugar (tela do watchdog, área dos pais, API)
+                    // ou estado velho depois de o menu reabrir
                     m.janela = None;
+                    m.aviso_timer_mostrado = aviso;
                 }
+                PassoTimer::Aviso => {
+                    m.aviso_timer_mostrado = true;
+                    let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
+                    m.mostrar_aviso_timer(dados::minutos_usados(restante), cx);
+                }
+                PassoTimer::Desligado => {
+                    m.aviso_timer_mostrado = false;
+                    if matches!(m.janela, Some(Janela::AvisoTimer { .. })) {
+                        m.janela = None;
+                    }
+                }
+                PassoTimer::Nada => {}
             }
             if v != m.timer {
                 m.timer = v;
