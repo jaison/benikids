@@ -300,7 +300,7 @@ mod plataforma {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::System::Com::{CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GWL_EXSTYLE, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, HWND_BOTTOM,
+        EnumWindows, GWL_EXSTYLE, GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, HWND_BOTTOM,
         HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsWindow, IsWindowVisible, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW,
         SetWindowPos, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     };
@@ -401,8 +401,10 @@ mod plataforma {
         avisou_topmost: bool,
         /// pids do navegador vistos na última volta
         pids_vistos: Vec<u32>,
-        /// quando o navegador pegou o foco (para medir até o menu recuperar)
+        /// quando o navegador pegou o foco (para medir até ele largar)
         perdeu_foco_em: Option<Instant>,
+        /// quando o menu foi posto por cima (o pedido é assíncrono)
+        segurou_em: Option<Instant>,
         /// janelas com a troca de estilo em andamento (numa thread à parte)
         em_andamento: Arc<Mutex<HashSet<isize>>>,
     }
@@ -417,6 +419,7 @@ mod plataforma {
                 avisou_topmost: false,
                 pids_vistos: Vec::new(),
                 perdeu_foco_em: None,
+                segurou_em: None,
                 em_andamento: Arc::new(Mutex::new(HashSet::new())),
             }
         }
@@ -433,14 +436,21 @@ mod plataforma {
             if pid != 0 && self.pids_vistos.contains(&pid) {
                 if self.perdeu_foco_em.is_none() {
                     self.perdeu_foco_em = Some(Instant::now());
-                    log::info!("o navegador pegou o foco; devolvendo ao menu");
+                    // a classe e a visibilidade dizem que janela era (a do quiosque,
+                    // ou uma auxiliar invisível do Chromium)
+                    let mut classe = [0u16; 64];
+                    let n = unsafe { GetClassNameW(frente, classe.as_mut_ptr(), classe.len() as i32) };
+                    let classe = String::from_utf16_lossy(&classe[..n.max(0) as usize]);
+                    let visivel = unsafe { IsWindowVisible(frente) } != 0;
+                    log::info!(
+                        "o navegador pegou o foco (janela {classe}, visível: {visivel}, pid {pid}); devolvendo ao menu"
+                    );
                 }
                 crate::menu::trazer_para_frente();
-            } else if let Some(t) = self.perdeu_foco_em {
-                if frente == crate::menu::janela_do_menu() {
-                    log::info!("foco de volta ao menu em {} ms", t.elapsed().as_millis());
-                    self.perdeu_foco_em = None;
-                }
+            } else if let Some(t) = self.perdeu_foco_em.take() {
+                // N = quanto tempo uma janela do navegador ficou como a da frente
+                let com = if frente == crate::menu::janela_do_menu() { "o menu" } else { "outra janela" };
+                log::info!("o navegador largou o foco em {} ms (agora com {com})", t.elapsed().as_millis());
             }
         }
 
@@ -487,6 +497,7 @@ mod plataforma {
         // `manter_menu` devolve ao menu em até 10 ms.
         fn segurar_menu(&mut self) {
             self.menu_por_cima(true);
+            self.segurou_em = Some(Instant::now());
             let menu = crate::menu::janela_do_menu();
             log::info!("menu por cima (exstyle {:#x})", estilo(menu));
         }
@@ -497,9 +508,12 @@ mod plataforma {
             if menu.is_null() {
                 return;
             }
-            if estilo(menu) & WS_EX_TOPMOST as isize == 0 {
+            // O pedido de "por cima" é assíncrono: logo depois de segurar_menu o
+            // estilo ainda não mudou. Era isso o aviso a cada abertura no roteiro 19.
+            let assentou = self.segurou_em.is_some_and(|t| t.elapsed().as_millis() > 500);
+            if assentou && estilo(menu) & WS_EX_TOPMOST as isize == 0 {
                 if !self.avisou_topmost {
-                    log::warn!("o menu perdeu o \"sempre por cima\"; pondo de novo");
+                    log::info!("o menu não está \"sempre por cima\"; pondo de novo");
                     self.avisou_topmost = true;
                 }
                 self.menu_por_cima(true);
