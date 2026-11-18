@@ -198,6 +198,9 @@ pub struct Menu {
     inicio: Option<Inicio>,
     /// quando um aviso foi fechado pelo teclado: o mesmo Enter não abre o app de novo
     janela_fechada_em: Option<Instant>,
+    /// um pedido de abertura em andamento: toques em outros apps esperam a resposta
+    /// (roteiro 31: toques represados viraram ~32 aberturas seguidas)
+    abrindo_desde: Option<Instant>,
     geracao: u64,
     aviso_timer_mostrado: bool,
     /// Aviso "Faltam N minutos!": um balão no alto que some em 6 s e NÃO bloqueia
@@ -246,6 +249,7 @@ impl Menu {
             janela: None,
             inicio: None,
             janela_fechada_em: None,
+            abrindo_desde: None,
             geracao: 0,
             aviso_timer_mostrado: false,
             aviso_timer: None,
@@ -835,6 +839,10 @@ impl Menu {
             self.mostrar_bloqueio(&motivo, &tile.id, cx);
             return;
         }
+        if !pode_abrir(self.abrindo_desde, Instant::now()) {
+            log::info!("abrir {}: outro app ainda está abrindo; toque ignorado", tile.id);
+            return;
+        }
         self.som(Som::Abrir);
         if tile.biblioteca {
             self.lembrar(&tile.id);
@@ -852,11 +860,18 @@ impl Menu {
         });
         self.esconder_inicio_depois(g, Duration::from_millis(1500), cx);
         let id = tile.id.clone();
+        self.abrindo_desde = Some(Instant::now());
         self.tarefa(
             cx,
             move |api| api.post(&format!("/launch/{}", codificar(&id)), None),
             move |m, r, cx| {
+                m.abrindo_desde = None;
                 match r {
+                    Ok(r) if r.status == 429 => {
+                        // o servidor recusou: outro app acabou de abrir (sem aviso)
+                        log::info!("abrir {}: o servidor está abrindo outro app; ignorado", tile.id);
+                        m.inicio = None;
+                    }
                     Ok(r) if r.status == 403 => {
                         m.inicio = None;
                         let motivo = r.json().map(|v| dados::texto(&v, "reason")).unwrap_or_default();
@@ -2468,6 +2483,12 @@ impl Menu {
 // ---------------------------------------------------------------- comemoração
 
 /// Explosão de 8 estrelas (celebration-runtime.js): saem do centro, crescem e somem.
+/// Um pedido de abertura por vez. Passados 15 s sem resposta (servidor travado), o
+/// toque seguinte vale de novo.
+fn pode_abrir(abrindo_desde: Option<Instant>, agora: Instant) -> bool {
+    abrindo_desde.is_none_or(|t| agora.saturating_duration_since(t) >= Duration::from_secs(15))
+}
+
 fn celebracao_el(geracao: u64, largura: f32, altura: f32) -> AnyElement {
     // (x em % da largura, y em % da altura, atraso em ms, escala final)
     const PONTOS: [(f32, f32, f32, f32); 8] = [
@@ -2661,6 +2682,14 @@ mod testes {
         assert!(url.ends_with("?ir=%2Findex.html%3Fpais%3D1#espera=abc_DEF-123"), "{url}");
     }
 
+    #[test]
+    fn um_pedido_de_abertura_por_vez() {
+        let agora = Instant::now();
+        assert!(pode_abrir(None, agora));
+        assert!(!pode_abrir(Some(agora), agora + Duration::from_millis(2500)));
+        assert!(pode_abrir(Some(agora), agora + Duration::from_secs(15)));
+    }
+
 }
 
 /// A janela do menu (a primeira janela visível deste processo).
@@ -2690,31 +2719,32 @@ pub(crate) fn trazer_para_frente() {
     trazer_janela_para_frente(janela_do_menu());
 }
 
-/// Põe uma janela na frente com o foco. O Windows não deixa um processo de fundo
-/// roubar o foco: anexar a entrada à janela que está na frente libera o
-/// SetForegroundWindow.
+/// Põe uma janela na frente com o foco, SEM AttachThreadInput (roteiro 31: com as filas
+/// de entrada ligadas, uma pílula travada deixou o menu sem pintar e sem toques por 8 min).
+/// O Windows não deixa um processo de fundo roubar o foco: se o SetForegroundWindow
+/// direto não pegar, tenta com a tecla Alt apertada (entrada sintética, que só entra na
+/// fila de quem está na frente; ninguém espera ninguém). Janela travada não é tocada.
 #[cfg(windows)]
 pub(crate) fn trazer_janela_para_frente(h: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_MENU, keybd_event};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId, HWND_TOP, SW_SHOW, SWP_ASYNCWINDOWPOS, SWP_NOMOVE, SWP_NOSIZE,
+        GetForegroundWindow, HWND_TOP, IsHungAppWindow, SW_SHOW, SWP_ASYNCWINDOWPOS, SWP_NOMOVE, SWP_NOSIZE,
         SetForegroundWindow, SetWindowPos, ShowWindowAsync,
     };
     unsafe {
-        if h.is_null() || GetForegroundWindow() == h {
+        if h.is_null() || GetForegroundWindow() == h || IsHungAppWindow(h) != 0 {
             return;
         }
-        let frente = GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
-        let eu = GetCurrentThreadId();
-        let ligou = frente != 0 && frente != eu && AttachThreadInput(eu, frente, 1) != 0;
         // assíncronos: chamada síncrona espera a thread dona da janela (o menu
         // inativo, ou o Edge ocupado), e quem chama pode ser a vigia, que não pode parar
         ShowWindowAsync(h, SW_SHOW);
         SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
-        SetForegroundWindow(h);
-        if ligou {
-            AttachThreadInput(eu, frente, 0);
+        if SetForegroundWindow(h) != 0 {
+            return;
         }
+        keybd_event(VK_MENU as u8, 0, KEYEVENTF_EXTENDEDKEY, 0);
+        SetForegroundWindow(h);
+        keybd_event(VK_MENU as u8, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
     }
 }
 

@@ -7,6 +7,8 @@ import ctypes
 import os
 from ctypes import wintypes
 
+import janelas_seguras
+
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 ntdll = ctypes.WinDLL("ntdll")
@@ -60,14 +62,16 @@ user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetWindow.restype = wintypes.HWND
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-user32.BringWindowToTop.argtypes = [wintypes.HWND]
-user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.IsHungAppWindow.argtypes = [wintypes.HWND]
+user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+                                       wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t)]
+user32.SendMessageTimeoutW.restype = ctypes.c_ssize_t
 user32.IsIconic.argtypes = [wintypes.HWND]
 user32.IsZoomed.argtypes = [wintypes.HWND]
 user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
 user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.GetWindowLongW.restype = ctypes.c_long
-user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
 user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetAncestor.restype = wintypes.HWND
 user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t]
@@ -350,6 +354,7 @@ WS_MAXIMIZEBOX = 0x00010000
 VK_MENU = 0x12
 VK_LEFT = 0x25
 KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_EXTENDEDKEY = 0x0001
 
 
 def janelas_de(pids):
@@ -368,28 +373,64 @@ def janelas_de(pids):
     return achadas
 
 
-def trazer_para_frente(h):
-    """SetForegroundWindow "emprestando" a entrada da janela da frente: sem isso o
-    Windows só pisca o botão na barra de tarefas quando um processo de fundo pede."""
+def travada(h):
+    """O Windows considera a janela "Não respondendo" (5 s sem processar mensagens)."""
+    return bool(h) and bool(user32.IsHungAppWindow(h))
+
+
+SMTO_ABORTIFHUNG = 0x0002
+
+
+def responde(h, ms=300):
+    """A thread da janela processa um WM_NULL em até `ms` (e na hora volta se o Windows já
+    a vê travada). Quem chama espera no máximo `ms`."""
     if not h:
         return False
-    frente = user32.GetForegroundWindow()
-    if frente == h:
-        return True
-    t_frente = user32.GetWindowThreadProcessId(frente, None) if frente else 0
-    eu = kernel32.GetCurrentThreadId()
-    ligou = bool(t_frente) and t_frente != eu and user32.AttachThreadInput(eu, t_frente, True)
-    try:
-        if user32.IsIconic(h):
-            user32.ShowWindow(h, SW_RESTORE)
-        else:
-            user32.ShowWindow(h, SW_SHOW)
-        user32.BringWindowToTop(h)
-        ok = bool(user32.SetForegroundWindow(h))
-    finally:
-        if ligou:
-            user32.AttachThreadInput(eu, t_frente, False)
-    return ok
+    resultado = ctypes.c_size_t()
+    return bool(user32.SendMessageTimeoutW(h, 0, 0, 0, SMTO_ABORTIFHUNG, int(ms), ctypes.byref(resultado)))
+
+
+class _Janelas:
+    """As chamadas de verdade para o janelas_seguras (todas sem esperar o outro app)."""
+
+    travada = staticmethod(travada)
+    responde = staticmethod(responde)
+
+    @staticmethod
+    def frente():
+        return user32.GetForegroundWindow()
+
+    @staticmethod
+    def iconica(h):
+        return bool(user32.IsIconic(h))
+
+    @staticmethod
+    def visivel(h):
+        return bool(user32.IsWindowVisible(h))
+
+    @staticmethod
+    def mostrar(h, sw):
+        user32.ShowWindowAsync(h, sw)
+
+    @staticmethod
+    def primeiro_plano(h):
+        return bool(user32.SetForegroundWindow(h))
+
+    @staticmethod
+    def segurar_alt(apertar):
+        user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | (0 if apertar else KEYEVENTF_KEYUP), 0)
+
+
+JANELAS = _Janelas()
+ULTIMO_JEITO = [""]  # como foi o último trazer_para_frente (para o log)
+
+
+def trazer_para_frente(h):
+    """Primeiro plano SEM AttachThreadInput (roteiro 31: as filas ligadas travaram a
+    pílula, o Tux Paint e o menu juntos). Janela travada não é tocada. Ver janelas_seguras."""
+    jeito = janelas_seguras.trazer(JANELAS, h)
+    ULTIMO_JEITO[0] = jeito
+    return jeito in ("ja", "direto", "alt")
 
 
 def raiz_da_janela(h):
@@ -413,8 +454,10 @@ def maximizar_processo(pid):
     for h in janelas_de(arvore(pid)):
         if not user32.GetWindowLongW(h, GWL_STYLE) & WS_MAXIMIZEBOX:
             continue
+        if travada(h):
+            return False  # tenta na volta seguinte
         if not user32.IsZoomed(h):
-            user32.ShowWindow(h, SW_MAXIMIZE)
+            user32.ShowWindowAsync(h, SW_MAXIMIZE)
         return True
     return False
 
@@ -491,7 +534,13 @@ def sem_moldura(h):
 
 def tela_cheia_sem_moldura(h, monitor):
     """Tira o estado de maximizada e a moldura (título, bordas, botões) e põe a janela no
-    tamanho do monitor: o "tela cheia sem borda" dos jogos. Devolve o estilo de antes."""
+    tamanho do monitor: o "tela cheia sem borda" dos jogos. Devolve o estilo de antes,
+    ou None se o app não respondeu (não mexe; tenta na volta seguinte).
+
+    O SetWindowLongPtr do estilo espera o app (WM_STYLECHANGING): só depois de ele
+    responder, e o overlay chama isto na thread de trabalho, nunca na do Tk."""
+    if not janelas_seguras.pode_mexer(JANELAS, h):
+        return None
     estilo = user32.GetWindowLongPtrW(h, GWL_STYLE)
     novo = estilo & ~(WS_MAXIMIZE | WS_CAPTION | WS_THICKFRAME)
     if novo != estilo:
@@ -501,13 +550,22 @@ def tela_cheia_sem_moldura(h, monitor):
     return estilo
 
 
-def devolver_moldura(h, estilo):
+def devolver_moldura(h, estilo, retangulo_antes=None):
     """Desfaz o tela_cheia_sem_moldura: o estilo de antes (sem o WS_MAXIMIZE, que o
-    ShowWindow põe de volta do jeito certo) e a janela maximizada."""
+    ShowWindowAsync põe de volta do jeito certo) e a janela maximizada. Uma janela que
+    não era maximizada (o Tux Paint, do tamanho da tela com a moldura para fora) volta
+    ao retângulo de antes: SW_MAXIMIZE numa janela de tamanho fixo deixa a tela preta."""
+    if not janelas_seguras.pode_mexer(JANELAS, h):
+        return False
     if estilo:
         user32.SetWindowLongPtrW(h, GWL_STYLE, estilo & ~WS_MAXIMIZE)
         user32.SetWindowPos(h, None, 0, 0, 0, 0, 0x0001 | 0x0002 | SWP_TELA)
-    user32.ShowWindow(h, SW_MAXIMIZE)
+    if estilo and not estilo & WS_MAXIMIZE and retangulo_antes:
+        x, y, direita, baixo = retangulo_antes
+        user32.SetWindowPos(h, None, x, y, direita - x, baixo - y, SWP_TELA)
+    else:
+        user32.ShowWindowAsync(h, SW_MAXIMIZE)
+    return True
 
 
 def mover_por_cima(h, x, y):

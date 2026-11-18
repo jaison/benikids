@@ -11,7 +11,9 @@ import tkinter as tk
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+import janelas_seguras
 import marca_tk as marca
+import telemetria
 from process_state import (
     owned_process,
     owned_process_alive,
@@ -210,10 +212,8 @@ def focus_launcher():
     if WINDOWS:
         record = owned_process(BROWSER_PIDFILE, "browser")
         if record:
-            try:
-                win.ativar_processo(record["pid"], com_filhos=True)
-            except OSError:
-                pass
+            # ao fechar a pílula: no máximo 1 s, numa thread (o menu nunca prende a pílula)
+            janelas_seguras.rodar_com_limite(win.ativar_processo, 1.0, record["pid"], True)
         return
     try:
         result = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=3)
@@ -280,6 +280,7 @@ def format_remaining(seconds):
 # a moldura (título, bordas, botões), e ela ocupa o monitor inteiro. Não mexe em
 # preferência do Windows (o "ocultar automaticamente" foi abandonado no roteiro 27).
 BORDA_MAX = 16  # o Windows 10 põe a janela maximizada 8 px além da área (a moldura)
+BORDA_TITULO = 40  # janela do tamanho da tela com o título para fora (Tux Paint: 26 px)
 TELA_CHEIA_LIMITE = 5  # vezes que o app pode desfazer antes de o overlay desistir
 
 
@@ -304,6 +305,14 @@ def maximizada_na_area(janela, trabalho, monitor):
     return all(0 <= lado <= BORDA_MAX for lado in sobra)
 
 
+def moldura_para_fora(janela, monitor):
+    """Uma janela comum (não maximizada) do tamanho do monitor, com a moldura e o título
+    para fora da tela: o Tux Paint com --windowsize 2560x1080 fica (-3,-26,2563,1083).
+    A faixa e a barra de título aparecem; vira tela cheia sem moldura também."""
+    sobra = (monitor[0] - janela[0], monitor[1] - janela[1], janela[2] - monitor[2], janela[3] - monitor[3])
+    return all(0 <= lado <= BORDA_TITULO for lado in sobra) and any(sobra)
+
+
 class TelaCheia:
     """Decide, a cada volta, o que fazer com cada janela do app: "tela_cheia" (tirar a
     moldura e cobrir o monitor), "desistir" (o app desfaz toda hora: devolve a moldura
@@ -318,7 +327,8 @@ class TelaCheia:
         if janela in self.desistidas:
             return None
         if janela not in self.feitas:
-            if maximizada and maximizada_na_area(retangulo, trabalho, monitor):
+            if (maximizada and maximizada_na_area(retangulo, trabalho, monitor)) or \
+                    (not maximizada and not sem_moldura and moldura_para_fora(retangulo, monitor)):
                 self.feitas[janela] = 0
                 return "tela_cheia"
             return None
@@ -329,6 +339,13 @@ class TelaCheia:
             self.desistidas.add(janela)
             return "desistir"
         return "tela_cheia"
+
+    def nao_deu(self, janela):
+        """O app não respondeu e nada foi feito: esta volta não conta."""
+        if self.feitas.get(janela) == 0:
+            del self.feitas[janela]
+        elif janela in self.feitas:
+            self.feitas[janela] -= 1
 
 
 TIMER_COR_AVISO = "#fde047"
@@ -664,6 +681,10 @@ class AppOverlay:
         self.countdown_position = None
         self.closing = False
         self.erros_logados = set()
+        # roteiro 31: o que mexe em janela de outro app roda aqui, nunca na thread do Tk
+        self.trabalho = janelas_seguras.Trabalhador("overlay-janelas", ao_erro=self.erro_no_trabalho)
+        if WINDOWS:
+            self.root.report_callback_exception = self.erro_do_tk
 
         self.place()
         self.root.after(0, self.poll_process)
@@ -893,10 +914,7 @@ class AppOverlay:
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         if not record:
             return
-        try:
-            win.ativar_processo(record["pid"], com_filhos=True)
-        except OSError:
-            pass
+        self.pedir_janela("devolver o foco", self.trazer_app, record["pid"])
 
     def on_back(self):
         """Volta uma página no navegador do tile (Alt+←)."""
@@ -904,10 +922,7 @@ class AppOverlay:
         if not record:
             return
         if WINDOWS:
-            try:
-                win.alt_esquerda(record["pid"])
-            except OSError:
-                pass
+            self.pedir_janela("voltar", win.alt_esquerda, record["pid"])
             return
         windows = []
         try:
@@ -1069,17 +1084,56 @@ class AppOverlay:
         if tentativas > 1:
             self.root.after(500, lambda: self.maximize_app(tentativas - 1))
 
+    # ----- janelas de outro app (roteiro 31) -----
+    def pedir_janela(self, chave, funcao, *args):
+        """Manda para a thread de trabalho. Se ela está presa numa janela de outro app, o
+        pedido é recusado (a pílula segue) e o log diz uma vez."""
+        if self.trabalho.pedir(chave, funcao, *args):
+            return True
+        preso = self.trabalho.preso()
+        if preso and preso[1] >= 5:
+            self.log_uma_vez(f"overlay: {preso[0]} preso há mais de 5 s numa janela de outro app; a pílula segue")
+        return False
+
+    def log_uma_vez(self, texto):
+        if texto not in self.erros_logados:
+            self.erros_logados.add(texto)
+            log_windows(texto)
+
+    def erro_no_trabalho(self, chave, erro):
+        self.log_uma_vez(f"overlay: erro em {chave}: {type(erro).__name__}: {erro}")
+
+    def erro_do_tk(self, tipo, valor, tb):
+        """Erro numa função agendada do Tk: log e telemetria (o Tk só imprimiria no stderr,
+        que no pythonw não vai a lugar nenhum)."""
+        self.log_uma_vez(f"overlay: erro no Tk: {tipo.__name__}: {valor}")
+        telemetria.relatar_excecao("overlay", tipo, valor, tb)
+
+    def trazer_app(self, pid):
+        """Na thread de trabalho: traz o app para a frente e loga como foi (uma vez por jeito)."""
+        win.ativar_processo(pid, com_filhos=True)
+        jeito = win.ULTIMO_JEITO[0]
+        if jeito and jeito != "ja":
+            self.log_uma_vez(f"overlay: app trazido para a frente: {jeito}")
+
     def esticar_app(self, decisao, originais=None):
         """A cada 1 s, enquanto o app está aberto: a janela maximizada do app (que pararia
         acima da faixa da barra escondida) vira tela cheia sem moldura. Janelas pequenas
         (Klavaro, Quinze) não estão maximizadas e ficam como estão; jogos em tela cheia
-        de verdade já cobrem o monitor."""
+        de verdade já cobrem o monitor. A volta roda na thread de trabalho (o
+        SetWindowLongPtr espera o app); se ela está ocupada, esta volta é pulada."""
         if self.closing:
             return
         originais = {} if originais is None else originais
+        self.pedir_janela("tela cheia", self.passo_da_tela_cheia, decisao, originais)
+        self.root.after(1000, lambda: self.esticar_app(decisao, originais))
+
+    def passo_da_tela_cheia(self, decisao, originais):
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         try:
             for h in win.janelas_de(win.arvore(record["pid"])) if record else []:
+                if win.travada(h):
+                    continue  # app "Não respondendo": não mexe nem conta
                 ret = win.retangulo(h)
                 trabalho, monitor = win.areas_do_monitor(h)
                 if not ret or not monitor:
@@ -1087,32 +1141,37 @@ class AppOverlay:
                 acao = decisao.passo(h, win.esta_maximizada(h), ret, trabalho, monitor, win.sem_moldura(h))
                 if acao == "tela_cheia":
                     estilo = win.tela_cheia_sem_moldura(h, monitor)
-                    originais.setdefault(h, estilo)
+                    if estilo is None:
+                        decisao.nao_deu(h)
+                        continue
+                    originais.setdefault(h, (estilo, ret))
                     if decisao.feitas[h] == 0:
-                        log_windows(f"overlay: app maximizado em tela cheia sem moldura {ret} → {monitor}")
+                        log_windows(f"overlay: app em tela cheia sem moldura {ret} → {monitor}")
                     else:
                         log_windows(f"overlay: o app desfez a tela cheia ({decisao.feitas[h]}ª vez); refeita")
                 elif acao == "desistir":
-                    win.devolver_moldura(h, originais.get(h))
-                    log_windows("overlay: o app desfaz a tela cheia sem moldura; devolvida a janela maximizada")
+                    estilo, antes = originais.get(h, (None, None))
+                    win.devolver_moldura(h, estilo, antes)
+                    log_windows("overlay: o app desfaz a tela cheia sem moldura; devolvida a janela como era")
         except Exception as erro:  # noqa: BLE001 — um erro não pode parar a volta seguinte
-            texto = f"overlay: erro na tela cheia: {type(erro).__name__}: {erro}"
-            if texto not in self.erros_logados:
-                self.erros_logados.add(texto)
-                log_windows(texto)
-        self.root.after(1000, lambda: self.esticar_app(decisao, originais))
+            self.log_uma_vez(f"overlay: erro na tela cheia: {type(erro).__name__}: {erro}")
 
     def trazer_app_quando_abrir(self, estado):
         acao = "esperar"
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         try:
             pids = win.arvore(record["pid"]) if record else []
-            frente = win.pid_da_janela_ativa()
-            # a própria pílula na frente NÃO conta como o app na frente (roteiro 28: o
-            # foco ficava nela e o jogo ficava sem teclado)
-            acao = estado.passo(bool(pids) and bool(win.janelas_de(pids)), frente in pids)
-            if acao == "trazer":
-                win.ativar_processo(record["pid"], com_filhos=True)
+            janelas = win.janelas_de(pids) if pids else []
+            if any(win.travada(h) for h in janelas):
+                # roteiro 31: nunca mexer num app "Não respondendo"; a volta não conta
+                self.log_uma_vez("overlay: o app não responde; espero para trazê-lo para a frente")
+            else:
+                frente = win.pid_da_janela_ativa()
+                # a própria pílula na frente NÃO conta como o app na frente (roteiro 28: o
+                # foco ficava nela e o jogo ficava sem teclado)
+                acao = estado.passo(bool(janelas), frente in pids)
+                if acao == "trazer":
+                    self.pedir_janela("trazer o app", self.trazer_app, record["pid"])
         except (OSError, TypeError, KeyError):
             acao = estado.passo(False, False)  # conta a volta: o limite vale mesmo com erro
         if acao != "fim":
@@ -1157,6 +1216,7 @@ def main():
     parser.add_argument("--tile-id", default="")
     args = parser.parse_args()
 
+    telemetria.instalar_excepthook("overlay")
     overlay = AppOverlay(args.mode, args.url, args.label, tile_id=args.tile_id)
     write_process_record(
         OVERLAY_PIDFILE,

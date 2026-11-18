@@ -54,6 +54,19 @@ class TelaCheiaTests(unittest.TestCase):
         for _ in range(5):
             self.assertIsNone(t.passo("kapman", False, MONITOR, TRABALHO, MONITOR, True))
 
+    def test_tux_paint_screen_sized_window_with_its_title_off_screen(self):
+        """Roteiro 31: o Tux Paint com --windowsize 2560x1080 fica (-3,-26,2563,1083),
+        com título e moldura; não está maximizado."""
+        self.assertTrue(overlay.moldura_para_fora((-3, -26, 2563, 1083), MONITOR))
+        self.assertFalse(overlay.moldura_para_fora(MONITOR, MONITOR))
+        self.assertFalse(overlay.moldura_para_fora((600, 200, 1400, 800), MONITOR))
+        self.assertFalse(overlay.moldura_para_fora((-3, -60, 2563, 1083), MONITOR))
+        t = overlay.TelaCheia()
+        self.assertEqual(t.passo("tux", False, (-3, -26, 2563, 1083), TRABALHO, MONITOR, False), "tela_cheia")
+        self.assertIsNone(t.passo("tux", False, MONITOR, TRABALHO, MONITOR, True))
+        # sem moldura e do tamanho do monitor (STK, o menu): nada
+        self.assertIsNone(overlay.TelaCheia().passo("stk", False, MONITOR, TRABALHO, MONITOR, True))
+
     def test_window_that_is_not_maximized_is_left_alone(self):
         t = overlay.TelaCheia()
         self.assertIsNone(t.passo("quinze", False, (600, 200, 1400, 800), TRABALHO, MONITOR, False))
@@ -87,6 +100,7 @@ class EsticarAppTests(unittest.TestCase):
         falso.retangulo.side_effect = lambda _h: estado["ret"]
         falso.areas_do_monitor.return_value = (TRABALHO, MONITOR)
         falso.sem_moldura.side_effect = lambda _h: estado["sem"]
+        falso.travada.side_effect = lambda _h: estado.get("travada", False)
 
         def aplicar(_h, monitor):
             estado.update(zoom=False, ret=monitor, sem=True)
@@ -95,6 +109,7 @@ class EsticarAppTests(unittest.TestCase):
         falso.tela_cheia_sem_moldura.side_effect = aplicar
         o = overlay.AppOverlay.__new__(overlay.AppOverlay)
         o.closing, o.erros_logados = False, set()
+        o.trabalho = overlay.janelas_seguras.Trabalhador(iniciar=False, ao_erro=o.erro_no_trabalho)
         agendados = []
         o.root = mock.Mock()
         o.root.after.side_effect = lambda _ms, f: agendados.append(f)
@@ -102,16 +117,18 @@ class EsticarAppTests(unittest.TestCase):
                 mock.patch.object(overlay, "CACHE_DIR", pasta.name), \
                 mock.patch.object(overlay, "owned_process", return_value={"pid": 10}):
             o.esticar_app(overlay.TelaCheia(limite=2))
+            o.trabalho.rodar_uma()  # a volta roda na thread de trabalho, não na do Tk
             for passo in voltas:
                 passo(estado)
                 agendados.pop(0)()
+                o.trabalho.rodar_uma()
             log = Path(pasta.name, "beni-windows.log").read_text(encoding="utf-8")
         return falso, log, agendados
 
     def test_first_time_logs_and_keeps_going(self):
         falso, log, agendados = self.rodar([lambda _e: None])
         falso.tela_cheia_sem_moldura.assert_called_once_with("kapman", MONITOR)
-        self.assertIn("overlay: app maximizado em tela cheia sem moldura", log)
+        self.assertIn("overlay: app em tela cheia sem moldura", log)
         self.assertEqual(len(agendados), 1)  # a volta seguinte continua marcada
         self.assertNotIn("erro", log)
 
@@ -121,8 +138,42 @@ class EsticarAppTests(unittest.TestCase):
 
         falso, log, _ = self.rodar([desfaz, desfaz])
         self.assertIn("refeita", log)
-        self.assertIn("devolvida a janela maximizada", log)
-        falso.devolver_moldura.assert_called_once_with("kapman", 0x16CF0000)
+        self.assertIn("devolvida a janela como era", log)
+        falso.devolver_moldura.assert_called_once_with("kapman", 0x16CF0000, (-8, -8, 2568, 1048))
+
+    def test_hung_app_is_not_touched_and_the_turn_does_not_count(self):
+        def trava(estado):
+            estado.update(zoom=True, ret=(-8, -8, 2568, 1048), sem=False, travada=True)
+
+        falso, log, _ = self.rodar([trava, trava, trava])
+        falso.tela_cheia_sem_moldura.assert_called_once()  # só a 1ª, antes de travar
+        falso.devolver_moldura.assert_not_called()
+        self.assertNotIn("refeita", log)
+
+    def test_app_that_does_not_answer_the_ping_is_left_for_the_next_turn(self):
+        def nao_responde(_h, _monitor):
+            return None
+
+        import tempfile
+
+        pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(pasta.cleanup)
+        falso = mock.Mock()
+        falso.janelas_de.return_value = ["tux"]
+        falso.travada.return_value = False
+        falso.esta_maximizada.return_value = False
+        falso.retangulo.return_value = (-3, -26, 2563, 1083)
+        falso.areas_do_monitor.return_value = (TRABALHO, MONITOR)
+        falso.sem_moldura.return_value = False
+        falso.tela_cheia_sem_moldura.side_effect = nao_responde
+        o = overlay.AppOverlay.__new__(overlay.AppOverlay)
+        o.erros_logados = set()
+        t = overlay.TelaCheia()
+        with mock.patch.object(overlay, "win", falso, create=True), \
+                mock.patch.object(overlay, "CACHE_DIR", pasta.name), \
+                mock.patch.object(overlay, "owned_process", return_value={"pid": 10}):
+            o.passo_da_tela_cheia(t, {})
+        self.assertEqual(t.feitas, {})  # tenta de novo como se fosse a 1ª vez
 
     def test_an_unexpected_error_is_logged_once_and_the_loop_survives(self):
         def quebra(_estado):
@@ -177,8 +228,59 @@ class PrimeiraJanelaTests(unittest.TestCase):
         codigo = (Path(__file__).resolve().parent.parent / "src" / "overlay.py").read_text(encoding="utf-8")
         self.assertIn("self.trazer_app_quando_abrir(PrimeiraJanela())", codigo)
         # roteiro 28: a pílula na frente NÃO é o app na frente (ela nem pega mais o foco)
-        self.assertIn("estado.passo(bool(pids) and bool(win.janelas_de(pids)), frente in pids)", codigo)
+        self.assertIn("acao = estado.passo(bool(janelas), frente in pids)", codigo)
         self.assertNotIn("frente == os.getpid()", codigo)
+
+
+class TrazerSemTravarTests(unittest.TestCase):
+    """Roteiro 31: a pílula travou junto com o Tux Paint ao trazê-lo para a frente."""
+
+    def montar(self, travada):
+        falso = mock.Mock()
+        falso.arvore.return_value = [10, 11]
+        falso.janelas_de.return_value = [0x77]
+        falso.travada.return_value = travada
+        falso.pid_da_janela_ativa.return_value = 999  # o menu na frente
+        o = overlay.AppOverlay.__new__(overlay.AppOverlay)
+        o.erros_logados = set()
+        o.trabalho = mock.Mock()
+        o.trabalho.pedir.return_value = True
+        o.root = mock.Mock()
+        return falso, o
+
+    def test_hung_app_is_not_brought_and_the_turn_does_not_count(self):
+        falso, o = self.montar(travada=True)
+        estado = overlay.PrimeiraJanela()
+        with mock.patch.object(overlay, "win", falso, create=True), \
+                mock.patch.object(overlay, "log_windows") as log, \
+                mock.patch.object(overlay, "owned_process", return_value={"pid": 10}):
+            o.trazer_app_quando_abrir(estado)
+            o.trazer_app_quando_abrir(estado)
+        self.assertEqual(estado.voltas, 0)
+        o.trabalho.pedir.assert_not_called()
+        falso.ativar_processo.assert_not_called()
+        log.assert_called_once_with("overlay: o app não responde; espero para trazê-lo para a frente")
+        o.root.after.assert_called()  # continua olhando
+
+    def test_bringing_the_app_goes_to_the_worker_thread(self):
+        falso, o = self.montar(travada=False)
+        with mock.patch.object(overlay, "win", falso, create=True), \
+                mock.patch.object(overlay, "owned_process", return_value={"pid": 10}):
+            o.trazer_app_quando_abrir(overlay.PrimeiraJanela())
+        o.trabalho.pedir.assert_called_once_with("trazer o app", o.trazer_app, 10)
+        falso.ativar_processo.assert_not_called()  # nunca na thread do Tk
+
+    def test_stuck_worker_is_logged_once_and_the_pill_goes_on(self):
+        o = overlay.AppOverlay.__new__(overlay.AppOverlay)
+        o.erros_logados = set()
+        o.trabalho = mock.Mock()
+        o.trabalho.pedir.return_value = False
+        o.trabalho.preso.return_value = ("trazer o app", 8.0)
+        with mock.patch.object(overlay, "log_windows") as log:
+            self.assertFalse(o.pedir_janela("tela cheia", print))
+            self.assertFalse(o.pedir_janela("tela cheia", print))
+        log.assert_called_once_with(
+            "overlay: trazer o app preso há mais de 5 s numa janela de outro app; a pílula segue")
 
 
 class PilulaSemFocoTests(unittest.TestCase):

@@ -271,9 +271,43 @@ um app aberto.
       cegas. A tela cheia sem moldura vale para qualquer app maximizado;
     - janelas que não estão maximizadas (Klavaro, Quinze) e as que já cobrem a tela (menu,
       Edge dos pais, jogos em tela cheia) não mudam;
-    - se o app desfizer isso 5 vezes, o overlay devolve a moldura e a janela maximizada e
-      desiste daquela janela. O log diz "overlay: app maximizado em tela cheia sem moldura…",
-      "o app desfez…; refeita" e "devolvida a janela maximizada".
+    - uma janela comum do tamanho do monitor com o título e a moldura para fora da tela
+      (o Tux Paint com `--windowsize`, porque o `--fullscreen` sai com código 52 no Intel
+      HD 4000) também vira tela cheia sem moldura;
+    - se o app desfizer isso 5 vezes, o overlay devolve a moldura e a janela como era
+      (maximizada, ou no retângulo de antes) e desiste daquela janela. O log diz "overlay:
+      app em tela cheia sem moldura…", "o app desfez…; refeita" e "devolvida a janela como era".
+  - Janela de outro app, sem travar (roteiro 31). No PC de teste, a pílula travou junto com
+    o Tux Paint, e o menu parou de pintar e de receber toques por 8 min. A pílula ligava a
+    fila de entrada dela à da janela da frente (`AttachThreadInput`) e chamava `ShowWindow`
+    e `BringWindowToTop` enquanto o Tux Paint ainda criava a janela. As regras agora:
+    - nada de `AttachThreadInput`, nem no Python nem no menu nativo. Para trazer uma janela
+      para a frente: `SetForegroundWindow` direto e, se o Windows recusar, com a tecla Alt
+      apertada (entrada sintética, que só entra na fila de quem está na frente);
+    - janela "Não respondendo" (`IsHungAppWindow`) não é tocada, e a volta não conta para
+      os limites;
+    - só chamadas assíncronas (`ShowWindowAsync`, `SetWindowPos` com `SWP_ASYNCWINDOWPOS`).
+      O `SetWindowLongPtr` do estilo (tela cheia sem moldura) espera o app, então só vai
+      depois de ele responder a um `SendMessageTimeout` de 300 ms;
+    - no overlay, tudo isso roda numa thread de trabalho (`janelas_seguras.Trabalhador`),
+      nunca na thread do Tk. Se ela ficar presa, os pedidos novos são recusados, a pílula
+      segue viva e o log diz "overlay: … preso há mais de 5 s numa janela de outro app".
+  - Vigia da pílula (`src/vigia_da_pilula.py`, uma thread do servidor no Windows), a cada 1 s
+    enquanto um app está aberto:
+    - pílula morta por 3 s, ou travada (sem responder a um `SendMessageTimeout` de 500 ms)
+      por 6 s: encerra o overlay e abre de novo com os mesmos argumentos ("overlay: pílula
+      travada; reaberta"). No máximo 3 vezes por app aberto;
+    - app "Não respondendo": o tempo de uso para de contar ("app: … não responde; o tempo
+      de uso não conta"). Depois de 15 s, loga "app: … não responde há N s" e manda para
+      a telemetria. Não fecha sozinho: o ✕ da pílula encerra o supervisor, e o Job Object
+      dele leva a árvore inteira do app, mesmo travada;
+    - telemetria, no máximo 1 por assinatura por dia: `overlay.travou:<tile>`,
+      `overlay.caiu:<tile>`, `app.travou:<tile>` e `excecao:<processo>:<Tipo>` (exceção
+      não tratada no iniciador, no overlay, no servidor e no vigia, com o traceback limpo).
+  - Um app por vez: o servidor recusa (429) um pedido de abertura enquanto outro está
+    abrindo e nos 3 s depois de um app ter aberto, e o menu nativo não manda outro pedido
+    enquanto espera a resposta. No roteiro 31, os toques represados no menu congelado
+    viraram ~32 aberturas seguidas do mesmo site.
   - A pílula, o ‹ Voltar e a contagem do overlay nunca pegam o foco nem entram no Alt+Tab
     (`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`), mas continuam clicáveis. No roteiro 28, o
     Alt+Tab e o Jogo do Quinze deixavam o foco na pílula, e o jogo ficava sem teclado.

@@ -446,7 +446,8 @@ class Trava:
                 if volta:
                     ok = win.trazer_para_frente(volta)
                     self.log(f"foco: estava na {classe_frente or 'área de trabalho (nenhuma janela)'}; "
-                             f"{'devolvido ao menu/app' if ok else 'não deu para devolver'} ({classe_de(volta)})")
+                             f"{'devolvido ao menu/app' if ok else 'não deu para devolver'} ({classe_de(volta)}, "
+                             f"{getattr(win, 'ULTIMO_JEITO', ['?'])[0]})")
             except Exception as erro:  # noqa: BLE001
                 erro_de("foco", erro)
 
