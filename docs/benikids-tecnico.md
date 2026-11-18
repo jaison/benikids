@@ -253,6 +253,25 @@ um app aberto.
     próprio Explorer anuncia a tela inteira como área de trabalho, e os apps maximizados vão
     até embaixo. Gravar a área com `SPI_SETWORKAREA` não segurava: no roteiro 24 o Explorer a
     reescrevia em 36 de 40 medições.
+  - A preferência do usuário é a que está **gravada** em
+    `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3`, valor `Settings`.
+    São 48 bytes no Windows 10/11, e os 4 primeiros dizem o tamanho (0x30). No byte 8, o bit
+    0x01 é o "ocultar automaticamente": 0x02 é a barra fixa e 0x03 é ocultar. O
+    `ABM_SETSTATE` muda só o estado em memória do Explorer. O Explorer grava no registro uma
+    cópia própria das opções, e não o estado de agora.
+  - Por que um Explorer reiniciado vazava o autohide (roteiro 26): ligar o autohide enquanto
+    o Explorer ainda está abrindo entra na cópia que ele grava. Ao devolver a barra no Sair, o
+    Explorer gravou essa cópia: 0x03. Com o Explorer aberto antes do Benikids, a cópia já
+    estava pronta, e o registro ficava 0x02. Agora:
+    - o autohide só é ligado com o Explorer aberto há pelo menos 12 s. Isso vale depois de
+      um reinício e também na abertura junto com o Windows. Enquanto isso, a barra fica
+      escondida, mas os apps maximizados ficam sem os 40 px de baixo;
+    - na abertura, o estado original vem do registro, e não só do `ABM_GETSTATE`. Um autohide
+      que sobrou na memória do Explorer não vira "preferência";
+    - no Sair, depois de devolver, o Benikids confere o registro por 3 s. Se o Explorer gravou
+      o autohide do Benikids, acerta só o bit 0x01 do byte 8 e reinicia o Explorer. A cópia
+      errada continuaria na memória dele e seria gravada de novo, por exemplo ao desligar o
+      PC. O Explorer novo lê o registro certo.
   - Uma janela invisível recebe o `TaskbarCreated` do Explorer reiniciado, esconde a barra nova
     na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms é a reserva: ela
     também reconhece a barra nova (outra janela `Shell_TrayWnd`), esconde e religa o "ocultar
@@ -293,17 +312,19 @@ um app aberto.
   Com o iniciador vivo, o instalador continua pedindo "Pais → Sair".
 - **Queda do iniciador:** o Windows desfaz o gancho e encerra o job, então a tecla Windows volta
   na hora e nenhum menu fica por cima. A barra continua escondida e em "ocultar
-  automaticamente", que o Windows grava como preferência. Isso só se desfaz de um destes jeitos:
+  automaticamente", mas só na memória do Explorer. Isso se desfaz de um destes jeitos:
   - o Benikids abrir e fechar de novo: o estado original fica guardado em
     `~/.cache/cozy-kids-launcher/barra-escondida.json`, e é ele que volta;
-  - o Explorer reiniciar ou a pessoa sair e entrar no Windows: a barra volta, mas em
-    "ocultar automaticamente".
+  - o Explorer reiniciar ou a pessoa sair e entrar no Windows: o Explorer novo lê o registro
+    e volta como o usuário deixou.
 - **Como o adulto recupera a barra:**
   1. Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos, "Windows Explorer" → Reiniciar.
-     A barra volta e aparece ao levar o mouse à borda de baixo.
-  2. Para ela ficar sempre visível: Configurações → Personalização → Barra de tarefas →
-     desligar "Ocultar automaticamente a barra de tarefas no modo área de trabalho". Abrir e
-     fechar o Benikids também desfaz isso.
+  2. Se ela continuar se escondendo sozinha, o "ocultar automaticamente" ficou gravado. Isso
+     aconteceu com o pacote 23 de teste, nunca com uma versão publicada. Para desfazer:
+     Configurações → Personalização → Barra de tarefas → desligar "Ocultar automaticamente
+     a barra de tarefas no modo área de trabalho". Isso grava a preferência certa. O
+     Benikids não tem como saber se foi o usuário que ligou, por isso respeita o que está
+     gravado.
 
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:

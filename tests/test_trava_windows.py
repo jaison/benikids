@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -17,11 +18,48 @@ import trava_windows as trava  # noqa: E402
 NORMAL = trava.ABS_ALWAYSONTOP  # barra comum, sempre visível
 
 
+# StuckRects3 "Settings" de um Windows 10 de verdade (barra embaixo, 2560x1080, fixa):
+# 48 bytes; os 4 primeiros são o tamanho (0x30) e o byte 8 tem as opções (0x02 fixa,
+# 0x03 com "ocultar automaticamente").
+STUCKRECTS_FIXA = bytes.fromhex(
+    "30000000feffffff0200000003000000"
+    "3e000000280000000000000010040000"
+    "000a0000380400006000000001000000")
+
+
+def stuckrects(autohide):
+    return trava.com_autohide_no_registro(STUCKRECTS_FIXA, autohide)
+
+
 class WindowsDeMentira:
-    def __init__(self, barras=("principal",), estado=NORMAL):
+    """Um Explorer de mentira. O registro (StuckRects3) só muda quando o Explorer grava a
+    cópia dele: `contaminado` imita o Explorer reiniciado do roteiro 26, que gravou o
+    "ocultar automaticamente" do Benikids quando a barra foi devolvida."""
+
+    def __init__(self, barras=("principal",), estado=NORMAL, registro="igual", idade=3600.0):
         self.visiveis = {b: True for b in barras}
         self.bits = estado
         self.chamadas = []
+        if registro == "igual":
+            registro = stuckrects(bool((estado or 0) & trava.ABS_AUTOHIDE))
+        self.reg = registro
+        self.idade = idade
+        self.contaminado = False
+        self.reiniciado = 0
+
+    def registro(self):
+        return self.reg
+
+    def gravar_registro(self, dados):
+        self.chamadas.append(("registro", dados[8]))
+        self.reg = dados
+
+    def idade_do_explorer(self):
+        return self.idade
+
+    def reiniciar_explorer(self):
+        self.reiniciado += 1
+        self.contaminado = False
 
     def barras(self):
         return list(self.visiveis)
@@ -36,6 +74,8 @@ class WindowsDeMentira:
     def mostrar(self, janela):
         self.chamadas.append(("mostrar", janela))
         self.visiveis[janela] = True
+        if self.contaminado and self.reg:
+            self.reg = stuckrects(True)  # o Explorer grava a cópia errada
 
     def estado(self):
         return self.bits
@@ -64,6 +104,9 @@ class TeclasTests(unittest.TestCase):
 
 class BarraTests(unittest.TestCase):
     def setUp(self):
+        dormir = mock.patch.object(trava.time, "sleep")
+        dormir.start()
+        self.addCleanup(dormir.stop)
         self.pasta = tempfile.TemporaryDirectory()
         self.arquivo = os.path.join(self.pasta.name, "barra-escondida.json")
 
@@ -198,6 +241,108 @@ class BarraTests(unittest.TestCase):
             t.ligar()
             self.assertEqual(t.threads, {})
         t.desligar()
+
+
+class PreferenciaGravadaTests(unittest.TestCase):
+    """Roteiro 26: depois de um Explorer reiniciado com o Benikids aberto, o Sair deixava o
+    StuckRects3 com 0x03 (ocultar automaticamente) no lugar do 0x02 do usuário."""
+
+    def setUp(self):
+        dormir = mock.patch.object(trava.time, "sleep")
+        dormir.start()
+        self.addCleanup(dormir.stop)
+        self.pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(self.pasta.cleanup)
+        self.arquivo = os.path.join(self.pasta.name, "barra-escondida.json")
+
+    def test_only_bit_one_of_byte_eight_changes(self):
+        self.assertIs(trava.autohide_no_registro(STUCKRECTS_FIXA), False)
+        ligado = trava.com_autohide_no_registro(STUCKRECTS_FIXA, True)
+        self.assertEqual(ligado[8], 0x03)
+        self.assertEqual(ligado[:8] + ligado[9:], STUCKRECTS_FIXA[:8] + STUCKRECTS_FIXA[9:])
+        self.assertIs(trava.autohide_no_registro(ligado), True)
+        self.assertEqual(trava.com_autohide_no_registro(ligado, False), STUCKRECTS_FIXA)
+        self.assertEqual(trava.com_autohide_no_registro(STUCKRECTS_FIXA, False), STUCKRECTS_FIXA)
+
+    def test_unknown_format_is_never_read_or_written(self):
+        for dados in (None, b"", STUCKRECTS_FIXA[:40], b"\x28" + STUCKRECTS_FIXA[1:], "texto"):
+            self.assertIsNone(trava.autohide_no_registro(dados))
+        win = WindowsDeMentira(registro=STUCKRECTS_FIXA[:40])
+        barra = trava.Barra(win, self.arquivo)
+        barra.esconder()
+        barra.restaurar()
+        self.assertNotIn("registro", [c[0] for c in win.chamadas])
+        self.assertEqual(win.bits, NORMAL)
+
+    def test_the_saved_preference_wins_over_a_leftover_autohide(self):
+        # o "ocultar automaticamente" de agora sobrou de um Benikids; o gravado é fixa
+        log = []
+        win = WindowsDeMentira(estado=NORMAL | trava.ABS_AUTOHIDE, registro=stuckrects(False))
+        barra = trava.Barra(win, self.arquivo, log.append)
+        barra.esconder()
+        self.assertEqual(barra.original, NORMAL)
+        self.assertTrue(any("vale a gravada" in linha for linha in log))
+        barra.restaurar()
+        self.assertEqual(win.bits, NORMAL)
+        self.assertEqual(win.reg, stuckrects(False))
+
+    def test_a_user_who_chose_autohide_keeps_it(self):
+        win = WindowsDeMentira(estado=NORMAL | trava.ABS_AUTOHIDE)
+        barra = trava.Barra(win, self.arquivo)
+        barra.esconder()
+        barra.restaurar()
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+        self.assertEqual(win.reg, stuckrects(True))
+        self.assertEqual(win.reiniciado, 0)
+
+    def test_autohide_waits_for_a_young_explorer(self):
+        log = []
+        win = WindowsDeMentira(idade=3.0)  # Benikids abriu junto com o Windows
+        barra = trava.Barra(win, self.arquivo, log.append)
+        barra.esconder()
+        self.assertEqual(win.visiveis, {"principal": False})  # a barra some já
+        self.assertEqual(win.bits, NORMAL)  # o autohide espera
+        self.assertTrue(any("espera" in linha for linha in log))
+        win.idade = 11.9
+        barra.manter()
+        self.assertEqual(win.bits, NORMAL)
+        win.idade = 12.5
+        barra.manter()
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+
+    def test_restarted_explorer_gets_autohide_only_after_it_settles(self):
+        win = WindowsDeMentira()
+        barra = trava.Barra(win, self.arquivo)
+        barra.esconder()
+        win.visiveis, win.bits, win.idade = {"nova": True}, NORMAL, 1.3
+        barra.explorer_voltou()
+        barra.manter()
+        self.assertEqual(win.visiveis, {"nova": False})
+        self.assertEqual(win.bits, NORMAL)
+        win.idade = 13.0
+        barra.manter()
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+
+    def test_exit_fixes_the_registry_and_restarts_explorer_when_it_saved_our_autohide(self):
+        log = []
+        win = WindowsDeMentira()
+        barra = trava.Barra(win, self.arquivo, log.append)
+        barra.esconder()
+        win.contaminado = True  # o Explorer gravaria o autohide do Benikids
+        barra.restaurar()
+        self.assertEqual(win.bits, NORMAL)
+        self.assertEqual(win.reg, STUCKRECTS_FIXA)
+        self.assertEqual(win.reiniciado, 1)
+        self.assertTrue(any("preferência devolvida no registro" in linha for linha in log))
+
+    def test_clean_exit_does_not_touch_the_registry_or_explorer(self):
+        win = WindowsDeMentira()
+        barra = trava.Barra(win, self.arquivo)
+        barra.esconder()
+        barra.restaurar()
+        self.assertNotIn("registro", [c[0] for c in win.chamadas])
+        self.assertEqual(win.reiniciado, 0)
+        self.assertEqual(win.reg, STUCKRECTS_FIXA)
 
 
 class FocoTests(unittest.TestCase):
