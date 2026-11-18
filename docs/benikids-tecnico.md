@@ -235,6 +235,36 @@ de janelas de mentira).
   permite "Alternar para" — vale para qualquer programa e não muda com isto. No Linux, o
   Alt+Tab do xfwm4 pular janelas `skip_taskbar` precisa ser conferido no notebook.
 
+### Windows: tecla Windows e barra de tarefas presas (`src/trava_windows.py`)
+Enquanto o Benikids está aberto (menu nativo ou web, app aberto pelo menu, área dos pais),
+a criança não sai pela tecla Windows nem pela barra de tarefas. Quem cuida é o iniciador
+(`beni_windows.py`): é o único processo que vive do começo ao fim e reabre os outros quando
+caem. O menu nativo cai e volta, e pode ser trocado pelo menu web; o overlay só existe com
+um app aberto.
+- **Tecla Windows:** um gancho de teclado de baixo nível (`WH_KEYBOARD_LL`, numa thread com
+  fila de mensagens própria) engole LWin/RWin, e com elas todas as combinações (Win+X, Win+D,
+  Win+E, Win+R, Win+Tab…), além de Ctrl+Esc, que também abre o Iniciar. Alt+Tab e
+  Ctrl+Shift+Esc passam; Ctrl+Alt+Del o Windows não deixa bloquear. Não usa política
+  (`NoWinKeys`), que pede administrador e logoff. O gancho é posto de novo a cada 30 s,
+  porque o Windows tira em silêncio um gancho que demorou a responder.
+- **Barra de tarefas:** `Shell_TrayWnd` e `Shell_SecondaryTrayWnd` ficam escondidas
+  (`ShowWindowAsync(SW_HIDE)`), e a área de trabalho da tela principal vira a tela inteira
+  (`SPI_SETWORKAREA`, sem gravar nas configurações). Sem isso, um app maximizado deixaria
+  vazia a faixa da barra. A cada 0,5 s a trava confere de novo, porque um Explorer
+  reiniciado cria uma barra visível.
+- **Saída:** no Sair com PIN, no `exit-kids`, quando o menu fecha e antes de instalar uma
+  atualização, o `finally` do iniciador desfaz o gancho e devolve a barra e a área de
+  trabalho. O `atexit` repete isso; a segunda chamada não faz nada.
+- **Queda do iniciador:** o Windows desfaz o gancho sozinho quando o processo acaba, então a
+  tecla Windows volta na hora. A barra fica escondida até uma destas coisas:
+  - o Benikids abrir e fechar de novo. A área de trabalho original fica guardada em
+    `~/.cache/cozy-kids-launcher/barra-escondida.json`, e é ela que volta, não a tela inteira;
+  - o Explorer reiniciar;
+  - a pessoa sair e entrar de novo no Windows.
+- **Como o adulto recupera a barra:** Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos,
+  "Windows Explorer" → Reiniciar. Também resolve sair e entrar de novo no Windows, ou
+  reiniciar o computador.
+
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:
 limites por categoria e dia da semana, categorias que dividem tempo, reforço de aprendizagem,

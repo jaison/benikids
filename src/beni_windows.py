@@ -6,10 +6,13 @@ Sobe o servidor (server.py), o vigia do timer (timer_watchdog.py) e o menu nativ
 - o servidor caiu: sobe de novo (até 3 vezes em 60 s);
 - o menu caiu: reabre; sem GPU (código 75), cedo demais ou na 3ª queda, troca
   pelo menu web num navegador em modo quiosque.
+Enquanto roda, a tecla Windows e a barra de tarefas ficam presas (trava_windows.py),
+com o menu, com um app aberto e na área dos pais; tudo volta quando ele sai.
 
 Roda com o pythonw.exe que vem no pacote (sem janela de console).
 """
 
+import atexit
 import os
 import socket
 import subprocess
@@ -21,6 +24,7 @@ sys.path.insert(0, APP_ROOT)
 
 import plataforma_windows as win  # noqa: E402
 import telemetria  # noqa: E402
+import trava_windows  # noqa: E402
 from app_detection import browser_family, find_browser  # noqa: E402
 from process_state import (  # noqa: E402
     owned_process,
@@ -39,6 +43,7 @@ TILE_PIDFILE = os.path.join(CACHE, "tile-process.pid")
 OVERLAY_PIDFILE = os.path.join(CACHE, "overlay.pid")
 LOG = os.path.join(CACHE, "beni-windows.log")
 MENU_LOG = os.path.join(CACHE, "menu-nativo.log")
+BARRA_ESCONDIDA = os.path.join(CACHE, "barra-escondida.json")
 SEM_GPU = 75
 SEM_CONSOLE = 0x08000000
 
@@ -255,6 +260,13 @@ def main():
         return 0  # o instalador da versão nova abre o Benikids de novo quando terminar
     procurar_atualizacao_depois()
 
+    # A criança não sai pela tecla Windows nem pela barra de tarefas. Desliga no
+    # finally (Sair, exit-kids, menu fechado, atualização) e no atexit; numa queda o
+    # Windows desfaz o gancho sozinho (a barra: docs/benikids-tecnico.md).
+    trava = trava_windows.Trava(BARRA_ESCONDIDA, log)
+    atexit.register(trava.desligar)
+    trava.ligar()
+
     servidor = None if porta_aberta() else subir_servidor()
     vigia = iniciar([pythonw(), os.path.join(APP_ROOT, "timer_watchdog.py"), "--port", str(PORTA)])
     usar_web = os.path.isfile(os.path.join(CONFIG, "menu")) and \
@@ -329,6 +341,7 @@ def main():
             return 0
     finally:
         encerrar_tudo(servidor, vigia, menu)
+        trava.desligar()
         log("fim")
 
 
