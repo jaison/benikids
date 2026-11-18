@@ -430,6 +430,31 @@ user32.MonitorFromWindow.restype = wintypes.HANDLE
 user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_MONITORINFO)]
 
 
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
+WS_EX_NOACTIVATE = 0x08000000
+user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+
+
+def nao_ativavel(h):
+    """A janela nunca recebe o foco nem aparece no Alt+Tab, mas continua clicável
+    (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW). Para a pílula do overlay: no roteiro 28 o
+    Alt+Tab e o Jogo do Quinze deixavam o foco nela, e a criança ficava sem teclado."""
+    if not h:
+        return False
+    ex = user32.GetWindowLongPtrW(h, GWL_EXSTYLE)
+    novo = (ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+    if novo != ex:
+        user32.SetWindowLongPtrW(h, GWL_EXSTYLE, novo)
+        # SWP_NOSIZE|NOMOVE|NOZORDER|NOACTIVATE|FRAMECHANGED
+        user32.SetWindowPos(h, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020)
+    return True
+
+
 def esta_maximizada(h):
     return bool(user32.IsZoomed(h))
 
@@ -452,11 +477,35 @@ def areas_do_monitor(h):
     return (t.left, t.top, t.right, t.bottom), (mon.left, mon.top, mon.right, mon.bottom)
 
 
-def posicionar(h, ret):
-    """Muda posição e tamanho sem mexer na ordem, sem ativar e sem esperar o app
-    (SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS)."""
-    x, y, direita, baixo = ret
-    return bool(user32.SetWindowPos(h, None, x, y, direita - x, baixo - y, 0x0004 | 0x0010 | 0x0200 | 0x4000))
+WS_MAXIMIZE = 0x01000000
+WS_CAPTION = 0x00C00000
+WS_THICKFRAME = 0x00040000
+SWP_TELA = 0x0004 | 0x0010 | 0x0020 | 0x0200 | 0x4000  # NOZORDER|NOACTIVATE|FRAMECHANGED|NOOWNERZORDER|ASYNC
+
+
+def sem_moldura(h):
+    return not user32.GetWindowLongPtrW(h, GWL_STYLE) & (WS_CAPTION | WS_THICKFRAME)
+
+
+def tela_cheia_sem_moldura(h, monitor):
+    """Tira o estado de maximizada e a moldura (título, bordas, botões) e põe a janela no
+    tamanho do monitor: o "tela cheia sem borda" dos jogos. Devolve o estilo de antes."""
+    estilo = user32.GetWindowLongPtrW(h, GWL_STYLE)
+    novo = estilo & ~(WS_MAXIMIZE | WS_CAPTION | WS_THICKFRAME)
+    if novo != estilo:
+        user32.SetWindowLongPtrW(h, GWL_STYLE, novo)
+    x, y, direita, baixo = monitor
+    user32.SetWindowPos(h, None, x, y, direita - x, baixo - y, SWP_TELA)
+    return estilo
+
+
+def devolver_moldura(h, estilo):
+    """Desfaz o tela_cheia_sem_moldura: o estilo de antes (sem o WS_MAXIMIZE, que o
+    ShowWindow põe de volta do jeito certo) e a janela maximizada."""
+    if estilo:
+        user32.SetWindowLongPtrW(h, GWL_STYLE, estilo & ~WS_MAXIMIZE)
+        user32.SetWindowPos(h, None, 0, 0, 0, 0, 0x0001 | 0x0002 | SWP_TELA)
+    user32.ShowWindow(h, SW_MAXIMIZE)
 
 
 def mover_por_cima(h, x, y):

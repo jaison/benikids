@@ -138,6 +138,18 @@ def configure_overlay_window(window):
     except tk.TclError:
         pass
     window.lift()
+    sem_ativar(window)  # Windows: pílula, ‹ Voltar e contagem nunca pegam o foco
+
+
+def sem_ativar(window):
+    """Janela do overlay que não recebe foco nem entra no Alt+Tab (só Windows)."""
+    if not WINDOWS:
+        return
+    try:
+        window.update_idletasks()
+        win.nao_ativavel(int(window.wm_frame(), 16))
+    except (tk.TclError, ValueError, OSError, AttributeError):
+        pass
 
 
 def x11_toplevel_id(window):
@@ -232,57 +244,52 @@ def format_remaining(seconds):
 
 
 # A barra de tarefas fica escondida (trava_windows), mas o Windows continua reservando
-# a faixa dela: um app maximizado para 40 px acima do fim da tela. O overlay estica a
-# janela maximizada até o monitor inteiro, sem tirar o estado de maximizada e sem mexer
-# em preferência do Windows (o "ocultar automaticamente" foi abandonado no roteiro 27).
+# a faixa dela: um app maximizado para 40 px acima do fim da tela. Esticar a janela
+# maximizada não segurava (roteiro 28: o app a devolvia à área em menos de 100 ms).
+# Agora a janela maximizada vira "tela cheia sem moldura": sai o estado de maximizada e
+# a moldura (título, bordas, botões), e ela ocupa o monitor inteiro. Não mexe em
+# preferência do Windows (o "ocultar automaticamente" foi abandonado no roteiro 27).
 BORDA_MAX = 16  # o Windows 10 põe a janela maximizada 8 px além da área (a moldura)
-ESTICAR_LIMITE = 10  # vezes que a mesma janela pode "voltar" antes de o overlay desistir
+TELA_CHEIA_LIMITE = 5  # vezes que o app pode desfazer antes de o overlay desistir
 
 
-def log_windows(texto):
-    """Uma linha no beni-windows.log (o do iniciador), para o teste no PC ver o overlay."""
-    try:
-        with open(os.path.join(CACHE_DIR, "beni-windows.log"), "a", encoding="utf-8") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
-    except OSError:
-        pass
-
-
-def retangulo_esticado(janela, trabalho, monitor):
-    """Retângulos (esquerda, topo, direita, baixo). Para uma janela MAXIMIZADA, devolve o
-    retângulo que cobre o monitor inteiro, com a mesma sobra de moldura que ela tem em
-    volta da área de trabalho (os -8 do Windows 10; 0 nos apps sem moldura); ou None se
-    não há o que fazer: já cobre o monitor, a área é o monitor todo, ou o retângulo não é
-    o de uma janela maximizada naquela área (então não é com ela)."""
-    if janela[0] <= monitor[0] and janela[1] <= monitor[1] and janela[2] >= monitor[2] and janela[3] >= monitor[3]:
-        return None
+def maximizada_na_area(janela, trabalho, monitor):
+    """Retângulos (esquerda, topo, direita, baixo). True se a janela é uma maximizada
+    comum: ocupa a área de trabalho, com até 16 px de moldura além dela em cada lado, e
+    a área é menor que o monitor (há uma faixa reservada para a barra)."""
     if tuple(trabalho) == tuple(monitor):
-        return None
+        return False
+    if janela[0] <= monitor[0] and janela[1] <= monitor[1] and janela[2] >= monitor[2] and janela[3] >= monitor[3]:
+        return False  # já cobre o monitor (tela cheia de verdade, o menu)
     sobra = (trabalho[0] - janela[0], trabalho[1] - janela[1], janela[2] - trabalho[2], janela[3] - trabalho[3])
-    if any(not 0 <= lado <= BORDA_MAX for lado in sobra):
-        return None
-    return (monitor[0] - sobra[0], monitor[1] - sobra[1], monitor[2] + sobra[2], monitor[3] + sobra[3])
+    return all(0 <= lado <= BORDA_MAX for lado in sobra)
 
 
-class Esticador:
-    """Lembra quantas vezes cada janela precisou ser esticada: um app que se redimensiona
-    sozinho toda hora não fica num cabo de guerra com o overlay."""
+class TelaCheia:
+    """Decide, a cada volta, o que fazer com cada janela do app: "tela_cheia" (tirar a
+    moldura e cobrir o monitor), "desistir" (o app desfaz toda hora: devolve a moldura
+    e a maximiza de novo, para ele continuar usável) ou None."""
 
-    def __init__(self, limite=ESTICAR_LIMITE):
+    def __init__(self, limite=TELA_CHEIA_LIMITE):
         self.limite = limite
-        self.vezes = {}
+        self.feitas = {}  # janela → quantas vezes o app desfez
+        self.desistidas = set()
 
-    def passo(self, janela, retangulo, trabalho, monitor):
-        """Devolve o retângulo novo para a janela, ou None."""
-        if self.vezes.get(janela, 0) >= self.limite:
+    def passo(self, janela, maximizada, retangulo, trabalho, monitor, sem_moldura):
+        if janela in self.desistidas:
             return None
-        novo = retangulo_esticado(retangulo, trabalho, monitor)
-        if novo is not None:
-            self.vezes[janela] = self.vezes.get(janela, 0) + 1
-        return novo
-
-    def desistiu(self, janela):
-        return self.vezes.get(janela, 0) == self.limite
+        if janela not in self.feitas:
+            if maximizada and maximizada_na_area(retangulo, trabalho, monitor):
+                self.feitas[janela] = 0
+                return "tela_cheia"
+            return None
+        if sem_moldura and tuple(retangulo) == tuple(monitor):
+            return None  # continua como deixamos
+        self.feitas[janela] += 1
+        if self.feitas[janela] >= self.limite:
+            self.desistidas.add(janela)
+            return "desistir"
+        return "tela_cheia"
 
 
 TIMER_COR_AVISO = "#fde047"
@@ -569,7 +576,9 @@ class AppOverlay:
         self.root.geometry("120x60+14+14")
         self.root.resizable(False, False)
         configure_overlay_window(self.root)
-        self.root.focus_force()
+        if not WINDOWS:
+            # no Windows a pílula nunca pega o foco (sem_ativar): o teclado fica com o app
+            self.root.focus_force()
         self.x11_raiser = X11WindowRaiser()
         self.set_alpha(PILL_ALPHA_IDLE)
 
@@ -621,7 +630,7 @@ class AppOverlay:
             self.root.after(500, lambda: self.maximize_app(120))
         if WINDOWS:
             self.root.after(300, lambda: self.trazer_app_quando_abrir(PrimeiraJanela()))
-            self.root.after(1000, lambda: self.esticar_app(Esticador()))
+            self.root.after(1000, lambda: self.esticar_app(TelaCheia()))
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -998,31 +1007,35 @@ class AppOverlay:
         if tentativas > 1:
             self.root.after(500, lambda: self.maximize_app(tentativas - 1))
 
-    def esticar_app(self, esticador):
-        """A cada 1 s, enquanto o app está aberto: janela maximizada que para acima da
-        faixa da barra escondida é esticada até o monitor. Janelas pequenas (Klavaro,
-        Quinze) não são maximizadas e ficam como estão; tela cheia de verdade já cobre."""
+    def esticar_app(self, decisao, originais=None):
+        """A cada 1 s, enquanto o app está aberto: a janela maximizada do app (que pararia
+        acima da faixa da barra escondida) vira tela cheia sem moldura. Janelas pequenas
+        (Klavaro, Quinze) não estão maximizadas e ficam como estão; jogos em tela cheia
+        de verdade já cobrem o monitor."""
         if self.closing:
             return
+        originais = {} if originais is None else originais
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         try:
             for h in win.janelas_de(win.arvore(record["pid"])) if record else []:
-                if not win.esta_maximizada(h):
-                    continue
-                ret, trabalho, monitor = win.retangulo(h), *win.areas_do_monitor(h)
+                ret = win.retangulo(h)
+                trabalho, monitor = win.areas_do_monitor(h)
                 if not ret or not monitor:
                     continue
-                novo = esticador.passo(h, ret, trabalho, monitor)
-                if novo:
-                    win.posicionar(h, novo)
-                    vezes = esticador.vezes[h]
-                    if vezes == 1:
-                        log_windows(f"overlay: app maximizado esticado até o monitor {ret} → {novo}")
-                    elif esticador.desistiu(h):
-                        log_windows(f"overlay: o app voltou ao tamanho dele {vezes} vezes; parei de esticar")
+                acao = decisao.passo(h, win.esta_maximizada(h), ret, trabalho, monitor, win.sem_moldura(h))
+                if acao == "tela_cheia":
+                    estilo = win.tela_cheia_sem_moldura(h, monitor)
+                    originais.setdefault(h, estilo)
+                    if decisao.feitas[h] == 0:
+                        log_windows(f"overlay: app maximizado em tela cheia sem moldura {ret} → {monitor}")
+                    else:
+                        log_windows(f"overlay: o app desfez a tela cheia ({decisao.feitas[h]}ª vez); refeita")
+                elif acao == "desistir":
+                    win.devolver_moldura(h, originais.get(h))
+                    log_windows("overlay: o app desfaz a tela cheia sem moldura; devolvida a janela maximizada")
         except (OSError, TypeError, KeyError, ValueError):
             pass
-        self.root.after(1000, lambda: self.esticar_app(esticador))
+        self.root.after(1000, lambda: self.esticar_app(decisao, originais))
 
     def trazer_app_quando_abrir(self, estado):
         acao = "esperar"
@@ -1030,8 +1043,9 @@ class AppOverlay:
         try:
             pids = win.arvore(record["pid"]) if record else []
             frente = win.pid_da_janela_ativa()
-            acao = estado.passo(bool(pids) and bool(win.janelas_de(pids)),
-                                frente in pids or frente == os.getpid())
+            # a própria pílula na frente NÃO conta como o app na frente (roteiro 28: o
+            # foco ficava nela e o jogo ficava sem teclado)
+            acao = estado.passo(bool(pids) and bool(win.janelas_de(pids)), frente in pids)
             if acao == "trazer":
                 win.ativar_processo(record["pid"], com_filhos=True)
         except (OSError, TypeError, KeyError):

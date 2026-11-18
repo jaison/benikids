@@ -258,20 +258,31 @@ um app aberto.
       Kapman maximizado saiu de maximizado.
     - `SPI_SETWORKAREA` também não: o Explorer reescrevia a área (roteiro 24).
   - A barra escondida continua reservando a faixa dela, então um app maximizado para 40 px
-    acima do fim da tela. Quem cobre essa faixa é o overlay do app (`overlay.py`,
-    `retangulo_esticado`):
-    - a cada 1 s, a janela do app que está maximizada (`IsZoomed`) e ocupa a área de
-      trabalho é esticada até o monitor (`MonitorFromWindow` + `GetMonitorInfo`) com
-      `SetWindowPos`. A moldura que ela tem além da área (os 8 px do Windows 10) é mantida,
-      e o estado de maximizada continua;
+    acima do fim da tela. Quem cobre essa faixa é o overlay do app (`overlay.py`, `TelaCheia`):
+    - a cada 1 s, a janela do app que está maximizada (`IsZoomed`) e ocupa a área de trabalho
+      vira **tela cheia sem moldura**. O overlay tira `WS_MAXIMIZE`, `WS_CAPTION` e
+      `WS_THICKFRAME` (`SetWindowLongPtr`) e põe a janela no tamanho do monitor
+      (`MonitorFromWindow` + `GetMonitorInfo`, `SetWindowPos` com `SWP_FRAMECHANGED`). Somem
+      também o título e os botões minimizar/maximizar/fechar, que a pílula cobria;
+    - esticar a janela ainda maximizada não segurava: no roteiro 28, o Kapman, o KBlocks e o
+      Pencil2D a devolviam à área de trabalho em menos de 100 ms;
+    - não usei a tela cheia dos próprios apps (a dos KDE é Ctrl+Shift+F). Ela não fica gravada
+      no `*rc` de um jeito que valha para todos, e mandar a tecla seria um liga/desliga às
+      cegas. A tela cheia sem moldura vale para qualquer app maximizado;
     - janelas que não estão maximizadas (Klavaro, Quinze) e as que já cobrem a tela (menu,
       Edge dos pais, jogos em tela cheia) não mudam;
-    - se o app voltar ao tamanho dele 10 vezes, o overlay desiste daquela janela, para não
-      ficar num cabo de guerra. O log diz "overlay: app maximizado esticado..." e "parei de
-      esticar".
-  - Uma janela invisível recebe o `TaskbarCreated` do Explorer reiniciado, esconde a barra nova
-    na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms é a reserva e também
-    reconhece a barra nova (outra janela `Shell_TrayWnd`).
+    - se o app desfizer isso 5 vezes, o overlay devolve a moldura e a janela maximizada e
+      desiste daquela janela. O log diz "overlay: app maximizado em tela cheia sem moldura…",
+      "o app desfez…; refeita" e "devolvida a janela maximizada".
+  - A pílula, o ‹ Voltar e a contagem do overlay nunca pegam o foco nem entram no Alt+Tab
+    (`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`), mas continuam clicáveis. No roteiro 28, o
+    Alt+Tab e o Jogo do Quinze deixavam o foco na pílula, e o jogo ficava sem teclado.
+  - A barra nova de um Explorer reiniciado é escondida pelo aviso do próprio Windows
+    (`SetWinEventHook` de `EVENT_OBJECT_CREATE`/`EVENT_OBJECT_SHOW`, fora de contexto, na
+    thread da barra), assim que ela aparece. Sem o autohide, ela ficava até 2 s por cima do
+    jogo. A janela invisível do `TaskbarCreated` (que chega ~5 s depois) e a conferência a
+    cada 250 ms ficam de reserva; depois de um reinício, a conferência roda a cada 50 ms
+    por 5 s.
   - Se o foco ficar na área de trabalho (`Progman`/`WorkerW`) ou na barra por duas voltas,
     volta para a última janela que estava na frente (menu ou app). Logo depois de o Explorer
     voltar, "nenhuma janela na frente" também conta.

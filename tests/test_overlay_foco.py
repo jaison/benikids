@@ -29,49 +29,46 @@ MONITOR = (0, 0, 2560, 1080)
 TRABALHO = (0, 0, 2560, 1040)  # a barra escondida continua reservando 40 px embaixo
 
 
-class EsticarTests(unittest.TestCase):
-    """Roteiro 27: sem o "ocultar automaticamente", os apps maximizados param 40 px acima do
-    fim da tela; o overlay estica a janela maximizada até o monitor."""
+class TelaCheiaTests(unittest.TestCase):
+    """Roteiro 28: esticar a janela maximizada não segurava (o app a devolvia em menos de
+    100 ms). A janela maximizada do app vira tela cheia sem moldura."""
 
-    def test_windows10_maximized_window_keeps_its_8px_frame_overhang(self):
-        # Kapman/KBlocks maximizados no Windows 10: 8 px além da área em cada lado
-        self.assertEqual(overlay.retangulo_esticado((-8, -8, 2568, 1048), TRABALHO, MONITOR),
-                         (-8, -8, 2568, 1088))
-
-    def test_frameless_maximized_window_goes_edge_to_edge(self):
-        self.assertEqual(overlay.retangulo_esticado((0, 0, 2560, 1040), TRABALHO, MONITOR), MONITOR)
-
-    def test_taskbar_on_the_left_or_top_is_handled_the_same_way(self):
-        self.assertEqual(overlay.retangulo_esticado((52, -8, 2568, 1088), (60, 0, 2560, 1080), MONITOR),
-                         (-8, -8, 2568, 1088))
-        self.assertEqual(overlay.retangulo_esticado((-8, 32, 2568, 1088), (0, 40, 2560, 1080), MONITOR),
-                         (-8, -8, 2568, 1088))
-
-    def test_second_monitor_uses_its_own_rectangles(self):
+    def test_windows10_maximized_window_is_recognized(self):
+        self.assertTrue(overlay.maximizada_na_area((-8, -8, 2568, 1048), TRABALHO, MONITOR))  # Kapman, KBlocks
+        self.assertTrue(overlay.maximizada_na_area((0, 0, 2560, 1040), TRABALHO, MONITOR))  # sem moldura
+        self.assertTrue(overlay.maximizada_na_area((52, -8, 2568, 1088), (60, 0, 2560, 1080), MONITOR))  # barra à esquerda
         mon2, trab2 = (2560, 0, 4480, 1080), (2560, 0, 4480, 1040)
-        self.assertEqual(overlay.retangulo_esticado((2552, -8, 4488, 1048), trab2, mon2), (2552, -8, 4488, 1088))
+        self.assertTrue(overlay.maximizada_na_area((2552, -8, 4488, 1048), trab2, mon2))  # segundo monitor
 
-    def test_already_stretched_fullscreen_or_no_strip_is_left_alone(self):
-        self.assertIsNone(overlay.retangulo_esticado((-8, -8, 2568, 1088), TRABALHO, MONITOR))  # já esticada
-        self.assertIsNone(overlay.retangulo_esticado(MONITOR, TRABALHO, MONITOR))  # STK, menu: tela cheia
-        self.assertIsNone(overlay.retangulo_esticado((-8, -8, 2568, 1088), MONITOR, MONITOR))  # sem faixa
+    def test_small_fullscreen_or_odd_windows_are_not(self):
+        self.assertFalse(overlay.maximizada_na_area((600, 200, 1400, 800), TRABALHO, MONITOR))  # Klavaro, Quinze
+        self.assertFalse(overlay.maximizada_na_area(MONITOR, TRABALHO, MONITOR))  # STK em tela cheia, o menu
+        self.assertFalse(overlay.maximizada_na_area((-8, -8, 2568, 1088), MONITOR, MONITOR))  # sem faixa
+        self.assertFalse(overlay.maximizada_na_area((-30, -30, 2590, 1070), TRABALHO, MONITOR))
+        self.assertFalse(overlay.maximizada_na_area((0, 0, 2000, 1040), TRABALHO, MONITOR))
 
-    def test_a_window_that_is_not_maximized_to_the_work_area_is_not_touched(self):
-        # Klavaro/Quinze em janela; ou um app "maximizado" num tamanho próprio
-        self.assertIsNone(overlay.retangulo_esticado((600, 200, 1400, 800), TRABALHO, MONITOR))
-        self.assertIsNone(overlay.retangulo_esticado((-30, -30, 2590, 1070), TRABALHO, MONITOR))
-        self.assertIsNone(overlay.retangulo_esticado((0, 0, 2000, 1040), TRABALHO, MONITOR))
+    def test_maximized_app_becomes_borderless_fullscreen_once(self):
+        t = overlay.TelaCheia()
+        self.assertEqual(t.passo("kapman", True, (-8, -8, 2568, 1048), TRABALHO, MONITOR, False), "tela_cheia")
+        # depois: sem moldura, no tamanho do monitor (e já não está maximizada)
+        for _ in range(5):
+            self.assertIsNone(t.passo("kapman", False, MONITOR, TRABALHO, MONITOR, True))
 
-    def test_an_app_that_keeps_shrinking_back_is_given_up_on(self):
-        e = overlay.Esticador(limite=3)
+    def test_window_that_is_not_maximized_is_left_alone(self):
+        t = overlay.TelaCheia()
+        self.assertIsNone(t.passo("quinze", False, (600, 200, 1400, 800), TRABALHO, MONITOR, False))
+        self.assertIsNone(t.passo("klavaro", True, (600, 200, 1400, 800), TRABALHO, MONITOR, False))
+        self.assertIsNone(t.passo("stk", False, MONITOR, TRABALHO, MONITOR, True))
+
+    def test_app_that_undoes_it_gets_it_again_then_its_window_back(self):
+        t = overlay.TelaCheia(limite=3)
         maximizada = (-8, -8, 2568, 1048)
-        for _ in range(3):
-            self.assertIsNotNone(e.passo("kapman", maximizada, TRABALHO, MONITOR))
-        self.assertTrue(e.desistiu("kapman"))
-        self.assertIsNone(e.passo("kapman", maximizada, TRABALHO, MONITOR))
-        self.assertIsNotNone(e.passo("outra", maximizada, TRABALHO, MONITOR))  # cada janela conta à parte
-        self.assertIsNone(e.passo("ok", (-8, -8, 2568, 1088), TRABALHO, MONITOR))
-        self.assertNotIn("ok", e.vezes)
+        self.assertEqual(t.passo("pencil", True, maximizada, TRABALHO, MONITOR, False), "tela_cheia")
+        self.assertEqual(t.passo("pencil", True, maximizada, TRABALHO, MONITOR, False), "tela_cheia")  # 1ª
+        self.assertEqual(t.passo("pencil", False, MONITOR, TRABALHO, MONITOR, False), "tela_cheia")  # moldura voltou
+        self.assertEqual(t.passo("pencil", True, maximizada, TRABALHO, MONITOR, False), "desistir")
+        self.assertIsNone(t.passo("pencil", True, maximizada, TRABALHO, MONITOR, False))  # fica como o app quer
+        self.assertEqual(t.passo("outra", True, maximizada, TRABALHO, MONITOR, False), "tela_cheia")
 
 
 class PilulaTests(unittest.TestCase):
@@ -117,8 +114,26 @@ class PrimeiraJanelaTests(unittest.TestCase):
     def test_overlay_starts_it_on_windows(self):
         codigo = (Path(__file__).resolve().parent.parent / "src" / "overlay.py").read_text(encoding="utf-8")
         self.assertIn("self.trazer_app_quando_abrir(PrimeiraJanela())", codigo)
-        # a pílula na frente (a criança arrastando) também conta como "app na frente"
-        self.assertIn("frente in pids or frente == os.getpid()", codigo)
+        # roteiro 28: a pílula na frente NÃO é o app na frente (ela nem pega mais o foco)
+        self.assertIn("estado.passo(bool(pids) and bool(win.janelas_de(pids)), frente in pids)", codigo)
+        self.assertNotIn("frente == os.getpid()", codigo)
+
+
+class PilulaSemFocoTests(unittest.TestCase):
+    def test_every_overlay_window_is_made_non_activating_on_windows(self):
+        janela = mock.Mock()
+        janela.wm_frame.return_value = "0x1234"
+        falso = mock.Mock()
+        with mock.patch.object(overlay, "WINDOWS", True), mock.patch.object(overlay, "win", falso, create=True):
+            overlay.configure_overlay_window(janela)
+        falso.nao_ativavel.assert_called_once_with(0x1234)
+        janela.focus_force.assert_not_called()
+
+    def test_nothing_changes_outside_windows(self):
+        janela = mock.Mock()
+        with mock.patch.object(overlay, "WINDOWS", False):
+            overlay.configure_overlay_window(janela)
+        janela.wm_frame.assert_not_called()
 
 
 if __name__ == "__main__":
