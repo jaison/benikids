@@ -45,6 +45,18 @@ class TelemetriaTest(unittest.TestCase):
         self.assertTrue(self.t.talvez_enviar())
         self.assertEqual(self.enviados[1]["id"], corpo["id"])  # o mesmo número aleatório
 
+    def test_fora_de_windows_e_linux_nao_liga_a_thread(self):
+        # o Mac de quem desenvolve não pode entrar na contagem de instalações
+        from unittest import mock
+        with mock.patch.object(telemetria, "SISTEMA_SUPORTADO", False), \
+             mock.patch.object(telemetria.threading, "Thread") as thread:
+            self.t.iniciar(primeira_espera=0)
+        thread.assert_not_called()
+        with mock.patch.object(telemetria, "SISTEMA_SUPORTADO", True), \
+             mock.patch.object(telemetria.threading, "Thread") as thread:
+            self.t.iniciar(primeira_espera=0)
+        thread.assert_called_once()
+
     def test_desligada_pelos_pais_nao_envia(self):
         self.cfg = {"telemetryEnabled": False}
         self.assertFalse(self.t.talvez_enviar())

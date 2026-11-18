@@ -15,6 +15,7 @@ import platform
 import re
 import secrets
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -27,6 +28,10 @@ ENDERECO_APAGAR = BASE + "/v1/apagar"
 FILA_PROBLEMAS = os.path.join(os.path.expanduser("~"), ".config", "cozy-kids-launcher", "problemas-pendentes.jsonl")
 INTERVALO = 24 * 3600
 SEM_CONSOLE = 0x08000000 if os.name == "nt" else 0
+# O Benikids só é instalado em Windows e Linux. Fora deles (o Mac de quem desenvolve,
+# rodando o servidor para testar) nada é enviado: antes isso entrava no banco como
+# "linux" e inflava a contagem de instalações.
+SISTEMA_SUPORTADO = sys.platform == "win32" or sys.platform.startswith("linux")
 
 
 def ligada(cfg):
@@ -441,6 +446,9 @@ class Telemetria:
         return True
 
     def iniciar(self, primeira_espera=120, entre_tentativas=3600):
+        if not SISTEMA_SUPORTADO:
+            return
+
         def laco():
             if self._parar.wait(primeira_espera):
                 return
