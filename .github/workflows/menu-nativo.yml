@@ -7,9 +7,9 @@ name: Menu nativo
 on:
   push:
     branches: [main, develop]
-    paths: ["cliente/**", "src/**", "themes/**", "scripts/windows/**", "beni/config/config.json", "VERSION", ".github/workflows/menu-nativo.yml"]
+    paths: ["cliente/**", "src/**", "tests/ajudantes/**", "tests/test_janela_travada_windows.py", "themes/**", "scripts/windows/**", "beni/config/config.json", "VERSION", ".github/workflows/menu-nativo.yml"]
   pull_request:
-    paths: ["cliente/**", "src/**", "themes/**", "scripts/windows/**", "beni/config/config.json", "VERSION", ".github/workflows/menu-nativo.yml"]
+    paths: ["cliente/**", "src/**", "tests/ajudantes/**", "tests/test_janela_travada_windows.py", "themes/**", "scripts/windows/**", "beni/config/config.json", "VERSION", ".github/workflows/menu-nativo.yml"]
   release:
     types: [published]
   workflow_dispatch:
@@ -126,6 +126,22 @@ jobs:
           name: beni-menu-windows
           path: saida-pacote/
           if-no-files-found: error
+
+  # Roteiro 34: uma janela Win32 travada de verdade (tests/ajudantes/janela_travada.py)
+  # e o vigia da pílula fechando o app em 30 s (aqui, 4 s). No PC de teste não dá para
+  # provocar o "Não respondendo". O ajudante fica em tests/ e não entra no pacote.
+  app-travado-windows:
+    name: App travado (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Vigia fecha a janela travada
+        run: python -m unittest -v tests.test_janela_travada_windows
 
   # Pacote para Windows: launcher (o mesmo servidor Python do Linux) + Python
   # embutido (python-build-standalone, com Tk) + menu nativo + configuração inicial.
