@@ -442,17 +442,19 @@ user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
 
 def nao_ativavel(h):
     """A janela nunca recebe o foco nem aparece no Alt+Tab, mas continua clicável
-    (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW). Para a pílula do overlay: no roteiro 28 o
-    Alt+Tab e o Jogo do Quinze deixavam o foco nela, e a criança ficava sem teclado."""
+    (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW), e fica por cima de tudo sem ser ativada
+    (SetWindowPos HWND_TOPMOST com SWP_NOACTIVATE; o lift/-topmost do Tk podem ativar).
+    Devolve o exstyle lido de volta (0 se não deu)."""
     if not h:
-        return False
+        return 0
     ex = user32.GetWindowLongPtrW(h, GWL_EXSTYLE)
     novo = (ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+    flags = 0x0001 | 0x0002 | 0x0010  # NOSIZE | NOMOVE | NOACTIVATE
     if novo != ex:
         user32.SetWindowLongPtrW(h, GWL_EXSTYLE, novo)
-        # SWP_NOSIZE|NOMOVE|NOZORDER|NOACTIVATE|FRAMECHANGED
-        user32.SetWindowPos(h, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020)
-    return True
+        flags |= 0x0020  # FRAMECHANGED
+    user32.SetWindowPos(h, wintypes.HWND(-1), 0, 0, 0, 0, flags)  # HWND_TOPMOST
+    return user32.GetWindowLongPtrW(h, GWL_EXSTYLE) & 0xFFFFFFFF
 
 
 def esta_maximizada(h):

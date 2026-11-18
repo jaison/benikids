@@ -71,6 +71,68 @@ class TelaCheiaTests(unittest.TestCase):
         self.assertEqual(t.passo("outra", True, maximizada, TRABALHO, MONITOR, False), "tela_cheia")
 
 
+class EsticarAppTests(unittest.TestCase):
+    """Roda o esticar_app de verdade (com um Windows de mentira) e confere o log: no
+    roteiro 29 ele chamava log_windows, que não existia, e o NameError matava a volta."""
+
+    def rodar(self, voltas):
+        import tempfile
+
+        pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(pasta.cleanup)
+        falso = mock.Mock()
+        falso.janelas_de.return_value = ["kapman"]
+        estado = {"zoom": True, "ret": (-8, -8, 2568, 1048), "sem": False}
+        falso.esta_maximizada.side_effect = lambda _h: estado["zoom"]
+        falso.retangulo.side_effect = lambda _h: estado["ret"]
+        falso.areas_do_monitor.return_value = (TRABALHO, MONITOR)
+        falso.sem_moldura.side_effect = lambda _h: estado["sem"]
+
+        def aplicar(_h, monitor):
+            estado.update(zoom=False, ret=monitor, sem=True)
+            return 0x16CF0000
+
+        falso.tela_cheia_sem_moldura.side_effect = aplicar
+        o = overlay.AppOverlay.__new__(overlay.AppOverlay)
+        o.closing, o.erros_logados = False, set()
+        agendados = []
+        o.root = mock.Mock()
+        o.root.after.side_effect = lambda _ms, f: agendados.append(f)
+        with mock.patch.object(overlay, "win", falso, create=True), \
+                mock.patch.object(overlay, "CACHE_DIR", pasta.name), \
+                mock.patch.object(overlay, "owned_process", return_value={"pid": 10}):
+            o.esticar_app(overlay.TelaCheia(limite=2))
+            for passo in voltas:
+                passo(estado)
+                agendados.pop(0)()
+            log = Path(pasta.name, "beni-windows.log").read_text(encoding="utf-8")
+        return falso, log, agendados
+
+    def test_first_time_logs_and_keeps_going(self):
+        falso, log, agendados = self.rodar([lambda _e: None])
+        falso.tela_cheia_sem_moldura.assert_called_once_with("kapman", MONITOR)
+        self.assertIn("overlay: app maximizado em tela cheia sem moldura", log)
+        self.assertEqual(len(agendados), 1)  # a volta seguinte continua marcada
+        self.assertNotIn("erro", log)
+
+    def test_app_that_undoes_it_is_redone_then_given_back(self):
+        def desfaz(estado):
+            estado.update(zoom=True, ret=(-8, -8, 2568, 1048), sem=False)
+
+        falso, log, _ = self.rodar([desfaz, desfaz])
+        self.assertIn("refeita", log)
+        self.assertIn("devolvida a janela maximizada", log)
+        falso.devolver_moldura.assert_called_once_with("kapman", 0x16CF0000)
+
+    def test_an_unexpected_error_is_logged_once_and_the_loop_survives(self):
+        def quebra(_estado):
+            overlay.win.retangulo.side_effect = NameError("x")
+
+        _falso, log, agendados = self.rodar([quebra, lambda _e: None])
+        self.assertEqual(log.count("overlay: erro na tela cheia: NameError: x"), 1)
+        self.assertEqual(len(agendados), 1)
+
+
 class PilulaTests(unittest.TestCase):
     # roteiro 26: a pílula mostrava "28 min" do limite de Aprender com o timer em 3 min
     def test_shows_whatever_ends_first(self):
@@ -120,21 +182,63 @@ class PrimeiraJanelaTests(unittest.TestCase):
 
 
 class PilulaSemFocoTests(unittest.TestCase):
-    def test_every_overlay_window_is_made_non_activating_on_windows(self):
+    """Roteiro 29: a pílula continuava ativável (exstyle 0x80008). O Tk recria a janela de
+    fora quando o -alpha muda o WS_EX_LAYERED, e o estilo ficava na janela antiga."""
+
+    def setUp(self):
+        import tempfile
+
+        pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(pasta.cleanup)
+        self.log = Path(pasta.name, "beni-windows.log")
+        for alvo, valor in (("WINDOWS", True), ("CACHE_DIR", pasta.name), ("_SEM_ATIVAR", {})):
+            p = mock.patch.object(overlay, alvo, valor)
+            p.start()
+            self.addCleanup(p.stop)
+        self.falso = mock.Mock()
+        self.falso.raiz_da_janela.return_value = 0x1234
+        self.falso.nao_ativavel.return_value = 0x08080088  # NOACTIVATE|TOPMOST|LAYERED|TOOLWINDOW
+        p = mock.patch.object(overlay, "win", self.falso, create=True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_every_overlay_window_is_made_non_activating_on_the_real_toplevel(self):
         janela = mock.Mock()
-        janela.wm_frame.return_value = "0x1234"
-        falso = mock.Mock()
-        with mock.patch.object(overlay, "WINDOWS", True), mock.patch.object(overlay, "win", falso, create=True):
-            overlay.configure_overlay_window(janela)
-        falso.nao_ativavel.assert_called_once_with(0x1234)
+        janela.winfo_id.return_value = 0x99  # a janela de dentro; a de fora é a raiz (GA_ROOT)
+        overlay.configure_overlay_window(janela)
+        self.falso.raiz_da_janela.assert_called_with(0x99)
+        self.falso.nao_ativavel.assert_called_with(0x1234)
+        janela.attributes.assert_any_call("-toolwindow", True)
         janela.focus_force.assert_not_called()
+        janela.lift.assert_not_called()  # o lift do Tk pode ativar
+        self.assertIn("overlay: pílula sem ativar (hwnd 0x1234, exstyle 0x8080088)", self.log.read_text(encoding="utf-8"))
+
+    def test_logged_once_per_window_and_again_when_tk_recreates_it(self):
+        janela = mock.Mock()
+        for _ in range(3):
+            overlay.sem_ativar(janela, "pílula")
+        self.falso.raiz_da_janela.return_value = 0x5678  # o -alpha recriou a janela
+        overlay.sem_ativar(janela, "pílula")
+        self.assertEqual(self.falso.nao_ativavel.call_count, 4)  # confere toda vez
+        linhas = self.log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(linhas), 2)
+        self.assertIn("0x5678", linhas[1])
+
+    def test_style_that_did_not_stick_is_flagged_in_the_log(self):
+        self.falso.nao_ativavel.return_value = 0x80008  # o que o claude-win mediu
+        overlay.sem_ativar(mock.Mock(), "contagem")
+        self.assertIn("o estilo NÃO ficou", self.log.read_text(encoding="utf-8"))
+
+    def test_hover_never_reaches_full_opacity_on_windows(self):
+        codigo = (Path(__file__).resolve().parent.parent / "src" / "overlay.py").read_text(encoding="utf-8")
+        self.assertIn("PILL_ALPHA_HOVER = 0.99 if WINDOWS else 1.0", codigo)
 
     def test_nothing_changes_outside_windows(self):
         janela = mock.Mock()
         with mock.patch.object(overlay, "WINDOWS", False):
             overlay.configure_overlay_window(janela)
-        janela.wm_frame.assert_not_called()
-
+        janela.winfo_id.assert_not_called()
+        janela.lift.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()

@@ -123,8 +123,14 @@ class X11WindowRaiser:
             self.display = None
 
 
-def configure_overlay_window(window):
+def configure_overlay_window(window, nome="pílula"):
     """Apply compositor hints that keep the control above fullscreen apps."""
+    if WINDOWS:
+        try:
+            # o Tk guarda o -toolwindow e o põe de novo quando recria a janela
+            window.attributes("-toolwindow", True)
+        except tk.TclError:
+            pass
     try:
         # Tk runs through XWayland in the supported Wayland sessions. KWin can
         # place a plain topmost XWayland window behind an app after that app
@@ -137,19 +143,43 @@ def configure_overlay_window(window):
         window.attributes("-topmost", True)
     except tk.TclError:
         pass
-    window.lift()
-    sem_ativar(window)  # Windows: pílula, ‹ Voltar e contagem nunca pegam o foco
+    if WINDOWS:
+        sem_ativar(window, nome)  # pílula, ‹ Voltar e contagem nunca pegam o foco
+    else:
+        window.lift()
 
 
-def sem_ativar(window):
-    """Janela do overlay que não recebe foco nem entra no Alt+Tab (só Windows)."""
+_SEM_ATIVAR = {}  # nome da janela → hwnd já conferido (o log sai uma vez por hwnd)
+
+
+def hwnd_de_verdade(window):
+    """A janela de nível superior do Tk (a de título "App Overlay"): a raiz (GA_ROOT) da
+    janela interna do widget."""
+    return win.raiz_da_janela(window.winfo_id())
+
+
+def sem_ativar(window, nome="pílula"):
+    """Janela do overlay que não recebe foco nem entra no Alt+Tab (só Windows).
+
+    Roteiro 29: o estilo não ficava. O Tk recria a janela de fora (outro HWND) sempre que
+    o exstyle que ele controla muda: o -alpha liga e desliga o WS_EX_LAYERED (0,6 parado,
+    1,0 com o mouse em cima), e o estilo posto na janela antiga sumia com ela. Por isso:
+    o hover não chega a 1,0 no Windows, o -toolwindow vai pelo próprio Tk, e o
+    WS_EX_NOACTIVATE é conferido de novo a cada volta do stay_on_top e depois de cada
+    mudança de transparência, sempre na janela de agora."""
     if not WINDOWS:
         return
     try:
         window.update_idletasks()
-        win.nao_ativavel(int(window.wm_frame(), 16))
-    except (tk.TclError, ValueError, OSError, AttributeError):
-        pass
+        h = hwnd_de_verdade(window)
+        ex = win.nao_ativavel(h)
+    except (tk.TclError, ValueError, OSError, AttributeError, TypeError):
+        return
+    if _SEM_ATIVAR.get(nome) != h:
+        _SEM_ATIVAR[nome] = h
+        ok = bool(ex & 0x08000000) and bool(ex & 0x80)
+        log_windows(f"overlay: {nome} sem ativar (hwnd {h:#x}, exstyle {ex:#x})"
+                    + ("" if ok else " — o estilo NÃO ficou"))
 
 
 def x11_toplevel_id(window):
@@ -253,6 +283,15 @@ BORDA_MAX = 16  # o Windows 10 põe a janela maximizada 8 px além da área (a m
 TELA_CHEIA_LIMITE = 5  # vezes que o app pode desfazer antes de o overlay desistir
 
 
+def log_windows(texto):
+    """Uma linha no beni-windows.log (o do iniciador), para o teste no PC ver o overlay."""
+    try:
+        with open(os.path.join(CACHE_DIR, "beni-windows.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
 def maximizada_na_area(janela, trabalho, monitor):
     """Retângulos (esquerda, topo, direita, baixo). True se a janela é uma maximizada
     comum: ocupa a área de trabalho, com até 16 px de moldura além dela em cada lado, e
@@ -326,7 +365,9 @@ def tile_is_blocked(status, tile_id):
 PILL_BG = marca.MARINHO
 PILL_TEXT = marca.BG
 PILL_ALPHA_IDLE = 0.6
-PILL_ALPHA_HOVER = 1.0
+# No Windows, 1,0 tira o WS_EX_LAYERED e faz o Tk recriar a janela (e perder o
+# WS_EX_NOACTIVATE); 0,99 é igual à vista.
+PILL_ALPHA_HOVER = 0.99 if WINDOWS else 1.0
 PILL_FONT = marca.FONTE_CORPO   # símbolos dos botões (✕ ✥ ‹); os textos usam marca.titulo()
 BUTTON_SIZE = 46
 CORNER_MARGIN = 14
@@ -622,6 +663,7 @@ class AppOverlay:
         self.countdown_geometry = ""
         self.countdown_position = None
         self.closing = False
+        self.erros_logados = set()
 
         self.place()
         self.root.after(0, self.poll_process)
@@ -636,6 +678,23 @@ class AppOverlay:
 
     def stay_on_top(self):
         """Periodically force this window to the front so it stays visible over kiosk apps."""
+        if WINDOWS:
+            # no Windows o lift/-topmost do Tk podem ativar a pílula: por cima com
+            # SWP_NOACTIVATE, conferindo o estilo na janela de agora
+            sem_ativar(self.root, "pílula")
+            if self.back_window is not None:
+                sem_ativar(self.back_window, "‹ Voltar")
+            if self.countdown_window is not None:
+                try:
+                    self.countdown_window.geometry(self.countdown_geometry)
+                    if self.countdown_position and (self.countdown_window.winfo_rootx(),
+                                                    self.countdown_window.winfo_rooty()) != self.countdown_position:
+                        win.mover_por_cima(hwnd_de_verdade(self.countdown_window), *self.countdown_position)
+                except (tk.TclError, OSError):
+                    pass
+                sem_ativar(self.countdown_window, "contagem")
+            self.root.after(500, self.stay_on_top)
+            return
         try:
             self.root.lift()
             self.root.attributes("-topmost", True)
@@ -670,6 +729,7 @@ class AppOverlay:
             self.root.attributes("-alpha", value)
         except tk.TclError:
             pass
+        sem_ativar(self.root, "pílula")
 
     def on_enter(self, _event=None):
         if self.idle_job:
@@ -686,11 +746,12 @@ class AppOverlay:
         window = tk.Toplevel(self.root)
         window.overrideredirect(True)
         window.configure(bg=PILL_BG)
-        configure_overlay_window(window)
+        configure_overlay_window(window, "‹ Voltar")
         try:
             window.attributes("-alpha", PILL_ALPHA_IDLE)
         except tk.TclError:
             pass
+        sem_ativar(window, "‹ Voltar")  # o -alpha recria a janela no Windows
         box = tk.Frame(window, bg=PILL_BG, padx=6, pady=6, cursor="hand2")
         box.pack(fill=tk.BOTH, expand=True)
         arrow = RoundButton(box, "‹", marca.CEU, marca.MARINHO, marca.CEU_SUAVE, font_size=26)
@@ -734,6 +795,7 @@ class AppOverlay:
                 window.attributes("-alpha", value)
             except tk.TclError:
                 pass
+            sem_ativar(window, "‹ Voltar")
 
         for widget in (box, arrow, text):
             widget.bind("<ButtonPress-1>", press, add="+")
@@ -914,7 +976,7 @@ class AppOverlay:
         window = tk.Toplevel(self.root)
         self.countdown_window = window
         window.overrideredirect(True)
-        configure_overlay_window(window)
+        configure_overlay_window(window, "contagem")
         sw = window.winfo_screenwidth()
         sh = window.winfo_screenheight()
         ww, wh = min(820, sw - 40), min(440, sh - 40)
@@ -1033,8 +1095,11 @@ class AppOverlay:
                 elif acao == "desistir":
                     win.devolver_moldura(h, originais.get(h))
                     log_windows("overlay: o app desfaz a tela cheia sem moldura; devolvida a janela maximizada")
-        except (OSError, TypeError, KeyError, ValueError):
-            pass
+        except Exception as erro:  # noqa: BLE001 — um erro não pode parar a volta seguinte
+            texto = f"overlay: erro na tela cheia: {type(erro).__name__}: {erro}"
+            if texto not in self.erros_logados:
+                self.erros_logados.add(texto)
+                log_windows(texto)
         self.root.after(1000, lambda: self.esticar_app(decisao, originais))
 
     def trazer_app_quando_abrir(self, estado):

@@ -277,9 +277,21 @@ um app aberto.
   - A pílula, o ‹ Voltar e a contagem do overlay nunca pegam o foco nem entram no Alt+Tab
     (`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`), mas continuam clicáveis. No roteiro 28, o
     Alt+Tab e o Jogo do Quinze deixavam o foco na pílula, e o jogo ficava sem teclado.
+    - O Tk recria a janela de fora, com outro HWND, sempre que muda o exstyle que ele
+      controla, por exemplo o `-alpha` ligando ou desligando o `WS_EX_LAYERED`. No roteiro
+      29, o estilo ficava na janela antiga. Por isso:
+      - o estilo vai na raiz (`GetAncestor(GA_ROOT)`) do `winfo_id()`;
+      - o `-toolwindow` vai pelo próprio Tk;
+      - no Windows, o mouse em cima da pílula leva a transparência a 0,99 e não a 1,0;
+      - a cada 0,5 s e depois de cada mudança de transparência, o estilo é conferido de
+        novo na janela atual e ela é posta por cima com `SWP_NOACTIVATE`, no lugar do
+        `lift`/`-topmost` do Tk, que podem ativá-la.
+    - O log diz uma vez por janela "overlay: pílula sem ativar (hwnd …, exstyle …)", e "o
+      estilo NÃO ficou" se a leitura de volta não tiver os dois bits.
   - A barra nova de um Explorer reiniciado é escondida pelo aviso do próprio Windows
     (`SetWinEventHook` de `EVENT_OBJECT_CREATE`/`EVENT_OBJECT_SHOW`, fora de contexto, na
-    thread da barra), assim que ela aparece. Sem o autohide, ela ficava até 2 s por cima do
+    thread da barra), assim que ela aparece. O log diz "barra: aviso de janela ligado" e
+    "barra: aviso de janela escondeu a barra nova (…, N ms depois de ela aparecer)". Sem o autohide, ela ficava até 2 s por cima do
     jogo. A janela invisível do `TaskbarCreated` (que chega ~5 s depois) e a conferência a
     cada 250 ms ficam de reserva; depois de um reinício, a conferência roda a cada 50 ms
     por 5 s.
