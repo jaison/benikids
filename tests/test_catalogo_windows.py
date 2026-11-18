@@ -257,39 +257,64 @@ class PrepararLuantiTests(unittest.TestCase):
 
 
 class PrepararSuperTuxKartTests(unittest.TestCase):
-    CONFIG = ('<?xml version="1.0"?>\n<stkconfig version="12" >\n    <Video\n'
+    CONFIG = ('<?xml version="1.0"?>\n<stkconfig version="8" >\n    <Video\n'
               '        fullscreen="false"\n        prev_fullscreen="false"\n'
               '        width="1040"\n        height="807"\n        real_width="1040"\n'
               '        real_height="807"\n        prev_real_width="1024"\n        prev_real_height="768"\n'
-              '        max_texture_size="512"\n    />\n</stkconfig>\n')
+              '        max_texture_size="512"\n    />\n    <enable_internet value="0" />\n\n</stkconfig>\n')
 
-    def test_existing_config_goes_fullscreen_at_the_current_resolution(self):
-        with tempfile.TemporaryDirectory() as raiz:
-            arquivo = Path(raiz) / "config.xml"
+    def test_existing_config_goes_fullscreen_offline_at_the_current_resolution(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            arquivo = Path(pasta) / "config.xml"
             arquivo.write_text(self.CONFIG, encoding="utf-8")
-            self.assertTrue(catalogo_windows.preparar_supertuxkart("2560x1080", str(arquivo)))
+            (Path(pasta) / "players.xml").write_text("<players/>", encoding="utf-8")
+            self.assertEqual(catalogo_windows.preparar_supertuxkart("2560x1080", pasta), {"config.xml"})
             texto = arquivo.read_text(encoding="utf-8")
             for chave, valor in (("fullscreen", "true"), ("width", "2560"), ("height", "1080"),
                                  ("real_width", "2560"), ("real_height", "1080"),
                                  ("prev_real_width", "2560"), ("prev_real_height", "1080")):
                 self.assertIn(f'\n        {chave}="{valor}"', texto)
+            self.assertIn('<enable_internet value="2" />', texto)
+            self.assertNotIn('value="0"', texto)
             self.assertIn('prev_fullscreen="false"', texto)
             self.assertIn('max_texture_size="512"', texto)
-            self.assertFalse(catalogo_windows.preparar_supertuxkart("2560x1080", str(arquivo)))
+            # de novo, antes da próxima abertura: nada muda
+            self.assertEqual(catalogo_windows.preparar_supertuxkart("2560x1080", pasta), set())
+            self.assertEqual((Path(pasta) / "players.xml").read_text(encoding="utf-8"), "<players/>")
 
-    def test_first_run_without_config_relies_on_the_command_line(self):
+    def test_config_without_the_internet_key_gets_it(self):
+        texto = catalogo_windows.ajustar_config_stk('<stkconfig version="8" >\n</stkconfig>\n')
+        self.assertEqual(texto, '<stkconfig version="8" >\n    <enable_internet value="2" />\n</stkconfig>\n')
+
+    def test_first_run_gets_minimal_files_the_game_accepts(self):
+        import xml.etree.ElementTree as ET
+
         with tempfile.TemporaryDirectory() as raiz:
-            self.assertFalse(catalogo_windows.preparar_supertuxkart("1366x768", os.path.join(raiz, "config.xml")))
+            pasta = os.path.join(raiz, "supertuxkart", "config-0.10")
+            self.assertEqual(catalogo_windows.preparar_supertuxkart("1366x768", pasta), {"config.xml", "players.xml"})
+            config = ET.parse(os.path.join(pasta, "config.xml")).getroot()
+            self.assertEqual(config.tag, "stkconfig")
+            self.assertEqual(config.get("version"), "8")  # menor que isso o jogo descarta
+            self.assertEqual(config.find("enable_internet").get("value"), "2")
+            players = ET.parse(os.path.join(pasta, "players.xml")).getroot()
+            self.assertEqual(players.tag, "players")
+            self.assertEqual(players.find("current").get("player"), "Benikids")
+            jogador = players.find("player")
+            self.assertEqual(jogador.get("name"), "Benikids")
+            self.assertEqual(jogador.get("guest"), "false")
+            # sem ícone: o jogo copia o de um kart (PlayerProfile::addIcon)
+            self.assertEqual(jogador.get("icon-filename"), "")
+
+    def test_command_line_and_preparation_are_in_the_catalog(self):
         item = catalogo_windows.por_id("supertuxkart")
         self.assertEqual(item["args"], ["--fullscreen", "--screensize={tela}"])
         self.assertEqual(item["preparar"], "supertuxkart")
         with mock.patch.object(catalogo_windows, "tamanho_da_tela", return_value="1366x768"):
             self.assertEqual(catalogo_windows.preencher("--screensize={tela}", item), "--screensize=1366x768")
 
-    def test_config_lives_in_appdata(self):
+    def test_files_live_in_appdata(self):
         self.assertEqual(catalogo_windows.config_supertuxkart(appdata="A"),
                          os.path.join("A", "supertuxkart", "config-0.10", "config.xml"))
-
 
 if __name__ == "__main__":
     unittest.main()
