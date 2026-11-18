@@ -25,6 +25,55 @@ def carregar():
 overlay = carregar()
 
 
+MONITOR = (0, 0, 2560, 1080)
+TRABALHO = (0, 0, 2560, 1040)  # a barra escondida continua reservando 40 px embaixo
+
+
+class EsticarTests(unittest.TestCase):
+    """Roteiro 27: sem o "ocultar automaticamente", os apps maximizados param 40 px acima do
+    fim da tela; o overlay estica a janela maximizada até o monitor."""
+
+    def test_windows10_maximized_window_keeps_its_8px_frame_overhang(self):
+        # Kapman/KBlocks maximizados no Windows 10: 8 px além da área em cada lado
+        self.assertEqual(overlay.retangulo_esticado((-8, -8, 2568, 1048), TRABALHO, MONITOR),
+                         (-8, -8, 2568, 1088))
+
+    def test_frameless_maximized_window_goes_edge_to_edge(self):
+        self.assertEqual(overlay.retangulo_esticado((0, 0, 2560, 1040), TRABALHO, MONITOR), MONITOR)
+
+    def test_taskbar_on_the_left_or_top_is_handled_the_same_way(self):
+        self.assertEqual(overlay.retangulo_esticado((52, -8, 2568, 1088), (60, 0, 2560, 1080), MONITOR),
+                         (-8, -8, 2568, 1088))
+        self.assertEqual(overlay.retangulo_esticado((-8, 32, 2568, 1088), (0, 40, 2560, 1080), MONITOR),
+                         (-8, -8, 2568, 1088))
+
+    def test_second_monitor_uses_its_own_rectangles(self):
+        mon2, trab2 = (2560, 0, 4480, 1080), (2560, 0, 4480, 1040)
+        self.assertEqual(overlay.retangulo_esticado((2552, -8, 4488, 1048), trab2, mon2), (2552, -8, 4488, 1088))
+
+    def test_already_stretched_fullscreen_or_no_strip_is_left_alone(self):
+        self.assertIsNone(overlay.retangulo_esticado((-8, -8, 2568, 1088), TRABALHO, MONITOR))  # já esticada
+        self.assertIsNone(overlay.retangulo_esticado(MONITOR, TRABALHO, MONITOR))  # STK, menu: tela cheia
+        self.assertIsNone(overlay.retangulo_esticado((-8, -8, 2568, 1088), MONITOR, MONITOR))  # sem faixa
+
+    def test_a_window_that_is_not_maximized_to_the_work_area_is_not_touched(self):
+        # Klavaro/Quinze em janela; ou um app "maximizado" num tamanho próprio
+        self.assertIsNone(overlay.retangulo_esticado((600, 200, 1400, 800), TRABALHO, MONITOR))
+        self.assertIsNone(overlay.retangulo_esticado((-30, -30, 2590, 1070), TRABALHO, MONITOR))
+        self.assertIsNone(overlay.retangulo_esticado((0, 0, 2000, 1040), TRABALHO, MONITOR))
+
+    def test_an_app_that_keeps_shrinking_back_is_given_up_on(self):
+        e = overlay.Esticador(limite=3)
+        maximizada = (-8, -8, 2568, 1048)
+        for _ in range(3):
+            self.assertIsNotNone(e.passo("kapman", maximizada, TRABALHO, MONITOR))
+        self.assertTrue(e.desistiu("kapman"))
+        self.assertIsNone(e.passo("kapman", maximizada, TRABALHO, MONITOR))
+        self.assertIsNotNone(e.passo("outra", maximizada, TRABALHO, MONITOR))  # cada janela conta à parte
+        self.assertIsNone(e.passo("ok", (-8, -8, 2568, 1088), TRABALHO, MONITOR))
+        self.assertNotIn("ok", e.vezes)
+
+
 class PilulaTests(unittest.TestCase):
     # roteiro 26: a pílula mostrava "28 min" do limite de Aprender com o timer em 3 min
     def test_shows_whatever_ends_first(self):

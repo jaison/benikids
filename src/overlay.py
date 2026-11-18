@@ -231,6 +231,60 @@ def format_remaining(seconds):
     return f"{seconds} s"
 
 
+# A barra de tarefas fica escondida (trava_windows), mas o Windows continua reservando
+# a faixa dela: um app maximizado para 40 px acima do fim da tela. O overlay estica a
+# janela maximizada até o monitor inteiro, sem tirar o estado de maximizada e sem mexer
+# em preferência do Windows (o "ocultar automaticamente" foi abandonado no roteiro 27).
+BORDA_MAX = 16  # o Windows 10 põe a janela maximizada 8 px além da área (a moldura)
+ESTICAR_LIMITE = 10  # vezes que a mesma janela pode "voltar" antes de o overlay desistir
+
+
+def log_windows(texto):
+    """Uma linha no beni-windows.log (o do iniciador), para o teste no PC ver o overlay."""
+    try:
+        with open(os.path.join(CACHE_DIR, "beni-windows.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
+def retangulo_esticado(janela, trabalho, monitor):
+    """Retângulos (esquerda, topo, direita, baixo). Para uma janela MAXIMIZADA, devolve o
+    retângulo que cobre o monitor inteiro, com a mesma sobra de moldura que ela tem em
+    volta da área de trabalho (os -8 do Windows 10; 0 nos apps sem moldura); ou None se
+    não há o que fazer: já cobre o monitor, a área é o monitor todo, ou o retângulo não é
+    o de uma janela maximizada naquela área (então não é com ela)."""
+    if janela[0] <= monitor[0] and janela[1] <= monitor[1] and janela[2] >= monitor[2] and janela[3] >= monitor[3]:
+        return None
+    if tuple(trabalho) == tuple(monitor):
+        return None
+    sobra = (trabalho[0] - janela[0], trabalho[1] - janela[1], janela[2] - trabalho[2], janela[3] - trabalho[3])
+    if any(not 0 <= lado <= BORDA_MAX for lado in sobra):
+        return None
+    return (monitor[0] - sobra[0], monitor[1] - sobra[1], monitor[2] + sobra[2], monitor[3] + sobra[3])
+
+
+class Esticador:
+    """Lembra quantas vezes cada janela precisou ser esticada: um app que se redimensiona
+    sozinho toda hora não fica num cabo de guerra com o overlay."""
+
+    def __init__(self, limite=ESTICAR_LIMITE):
+        self.limite = limite
+        self.vezes = {}
+
+    def passo(self, janela, retangulo, trabalho, monitor):
+        """Devolve o retângulo novo para a janela, ou None."""
+        if self.vezes.get(janela, 0) >= self.limite:
+            return None
+        novo = retangulo_esticado(retangulo, trabalho, monitor)
+        if novo is not None:
+            self.vezes[janela] = self.vezes.get(janela, 0) + 1
+        return novo
+
+    def desistiu(self, janela):
+        return self.vezes.get(janela, 0) == self.limite
+
+
 TIMER_COR_AVISO = "#fde047"
 TIMER_COR_FIM = "#fca5a5"
 
@@ -567,6 +621,7 @@ class AppOverlay:
             self.root.after(500, lambda: self.maximize_app(120))
         if WINDOWS:
             self.root.after(300, lambda: self.trazer_app_quando_abrir(PrimeiraJanela()))
+            self.root.after(1000, lambda: self.esticar_app(Esticador()))
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -942,6 +997,32 @@ class AppOverlay:
             pass
         if tentativas > 1:
             self.root.after(500, lambda: self.maximize_app(tentativas - 1))
+
+    def esticar_app(self, esticador):
+        """A cada 1 s, enquanto o app está aberto: janela maximizada que para acima da
+        faixa da barra escondida é esticada até o monitor. Janelas pequenas (Klavaro,
+        Quinze) não são maximizadas e ficam como estão; tela cheia de verdade já cobre."""
+        if self.closing:
+            return
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        try:
+            for h in win.janelas_de(win.arvore(record["pid"])) if record else []:
+                if not win.esta_maximizada(h):
+                    continue
+                ret, trabalho, monitor = win.retangulo(h), *win.areas_do_monitor(h)
+                if not ret or not monitor:
+                    continue
+                novo = esticador.passo(h, ret, trabalho, monitor)
+                if novo:
+                    win.posicionar(h, novo)
+                    vezes = esticador.vezes[h]
+                    if vezes == 1:
+                        log_windows(f"overlay: app maximizado esticado até o monitor {ret} → {novo}")
+                    elif esticador.desistiu(h):
+                        log_windows(f"overlay: o app voltou ao tamanho dele {vezes} vezes; parei de esticar")
+        except (OSError, TypeError, KeyError, ValueError):
+            pass
+        self.root.after(1000, lambda: self.esticar_app(esticador))
 
     def trazer_app_quando_abrir(self, estado):
         acao = "esperar"

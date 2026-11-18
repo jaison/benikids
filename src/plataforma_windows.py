@@ -419,6 +419,46 @@ def maximizar_processo(pid):
     return False
 
 
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+user32.MonitorFromWindow.restype = wintypes.HANDLE
+user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_MONITORINFO)]
+
+
+def esta_maximizada(h):
+    return bool(user32.IsZoomed(h))
+
+
+def retangulo(h):
+    r = wintypes.RECT()
+    if not user32.GetWindowRect(h, ctypes.byref(r)):
+        return None
+    return (r.left, r.top, r.right, r.bottom)
+
+
+def areas_do_monitor(h):
+    """(área de trabalho, monitor inteiro) do monitor onde a janela está."""
+    m = user32.MonitorFromWindow(h, 2)  # MONITOR_DEFAULTTONEAREST
+    info = _MONITORINFO()
+    info.cbSize = ctypes.sizeof(info)
+    if not m or not user32.GetMonitorInfoW(m, ctypes.byref(info)):
+        return None, None
+    t, mon = info.rcWork, info.rcMonitor
+    return (t.left, t.top, t.right, t.bottom), (mon.left, mon.top, mon.right, mon.bottom)
+
+
+def posicionar(h, ret):
+    """Muda posição e tamanho sem mexer na ordem, sem ativar e sem esperar o app
+    (SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS)."""
+    x, y, direita, baixo = ret
+    return bool(user32.SetWindowPos(h, None, x, y, direita - x, baixo - y, 0x0004 | 0x0010 | 0x0200 | 0x4000))
+
+
 def mover_por_cima(h, x, y):
     """Põe a janela em x,y, por cima de tudo, sem mudar o tamanho nem roubar o foco.
     O Tk às vezes deixa uma janela sem moldura em 0,0 (o aviso de 10 s no Windows)."""

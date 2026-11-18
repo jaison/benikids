@@ -248,45 +248,40 @@ um app aberto.
   (`NoWinKeys`), que pede administrador e logoff. O gancho é posto de novo a cada 30 s,
   porque o Windows tira em silêncio um gancho que demorou a responder.
 - **Barra de tarefas** (outra thread, para a do gancho nunca esperar o Explorer):
-  - `Shell_TrayWnd` e `Shell_SecondaryTrayWnd` ficam escondidas (`ShowWindowAsync(SW_HIDE)`).
-  - A barra fica também em "ocultar automaticamente" (`SHAppBarMessage(ABM_SETSTATE)`). Assim o
-    próprio Explorer anuncia a tela inteira como área de trabalho, e os apps maximizados vão
-    até embaixo. Gravar a área com `SPI_SETWORKAREA` não segurava: no roteiro 24 o Explorer a
-    reescrevia em 36 de 40 medições.
-  - A preferência do usuário é a que está **gravada** em
-    `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3`, valor `Settings`.
-    São 48 bytes no Windows 10/11, e os 4 primeiros dizem o tamanho (0x30). No byte 8, o bit
-    0x01 é o "ocultar automaticamente": 0x02 é a barra fixa e 0x03 é ocultar. O
-    `ABM_SETSTATE` muda só o estado em memória do Explorer. O Explorer grava no registro uma
-    cópia própria das opções, e não o estado de agora.
-  - Por que um Explorer reiniciado vazava o autohide (roteiro 26): ligar o autohide enquanto
-    o Explorer ainda está abrindo entra na cópia que ele grava. Ao devolver a barra no Sair, o
-    Explorer gravou essa cópia: 0x03. Com o Explorer aberto antes do Benikids, a cópia já
-    estava pronta, e o registro ficava 0x02. Agora:
-    - o autohide só é ligado com o Explorer aberto há pelo menos 12 s. Isso vale depois de
-      um reinício e também na abertura junto com o Windows. Enquanto isso, a barra fica
-      escondida, mas os apps maximizados ficam sem os 40 px de baixo;
-    - na abertura, o estado original vem do registro, e não só do `ABM_GETSTATE`. Um autohide
-      que sobrou na memória do Explorer não vira "preferência";
-    - no Sair, depois de devolver, o Benikids confere o registro por 3 s. Se o Explorer gravou
-      o autohide do Benikids, acerta só o bit 0x01 do byte 8 e reinicia o Explorer. A cópia
-      errada continuaria na memória dele e seria gravada de novo, por exemplo ao desligar o
-      PC. O Explorer novo lê o registro certo.
+  - `Shell_TrayWnd` e `Shell_SecondaryTrayWnd` ficam escondidas (`ShowWindowAsync(SW_HIDE)`) e
+    voltam no Sair (`SW_SHOWNA`). Só isso: o Benikids **não muda nenhuma preferência do
+    usuário**.
+    - O "ocultar automaticamente" (`ABM_SETSTATE`) foi abandonado no roteiro 27. É uma
+      preferência que o Windows grava no `StuckRects3` quando quer. Ele vazou depois de um
+      Explorer reiniciado e desfez a escolha de um usuário que o desligou pelas
+      Configurações, porque o registro fica atrasado em relação a elas. Ao ser ligado, o
+      Kapman maximizado saiu de maximizado.
+    - `SPI_SETWORKAREA` também não: o Explorer reescrevia a área (roteiro 24).
+  - A barra escondida continua reservando a faixa dela, então um app maximizado para 40 px
+    acima do fim da tela. Quem cobre essa faixa é o overlay do app (`overlay.py`,
+    `retangulo_esticado`):
+    - a cada 1 s, a janela do app que está maximizada (`IsZoomed`) e ocupa a área de
+      trabalho é esticada até o monitor (`MonitorFromWindow` + `GetMonitorInfo`) com
+      `SetWindowPos`. A moldura que ela tem além da área (os 8 px do Windows 10) é mantida,
+      e o estado de maximizada continua;
+    - janelas que não estão maximizadas (Klavaro, Quinze) e as que já cobrem a tela (menu,
+      Edge dos pais, jogos em tela cheia) não mudam;
+    - se o app voltar ao tamanho dele 10 vezes, o overlay desiste daquela janela, para não
+      ficar num cabo de guerra. O log diz "overlay: app maximizado esticado..." e "parei de
+      esticar".
   - Uma janela invisível recebe o `TaskbarCreated` do Explorer reiniciado, esconde a barra nova
-    na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms é a reserva: ela
-    também reconhece a barra nova (outra janela `Shell_TrayWnd`), esconde e religa o "ocultar
-    automaticamente", porque o Explorer novo volta com ele desligado.
+    na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms é a reserva e também
+    reconhece a barra nova (outra janela `Shell_TrayWnd`).
   - Se o foco ficar na área de trabalho (`Progman`/`WorkerW`) ou na barra por duas voltas,
     volta para a última janela que estava na frente (menu ou app). Logo depois de o Explorer
     voltar, "nenhuma janela na frente" também conta.
   - No `beni-windows.log`: "barra: vigiando", "barra: Explorer voltou; escondida de novo",
-    "barra: \"ocultar automaticamente\" ligado", "foco: … devolvido ao menu/app". Uma thread
-    da trava que cair deixa "trava (barra): a thread caiu" com o erro: no `pythonw` não há
-    stderr, e no pacote 22 a thread da barra morria no primeiro timer sem deixar rastro (lia
-    `msg.hwnd`, mas o campo do `wintypes.MSG` é `hWnd`).
+    "foco: … devolvido ao menu/app". Uma thread da trava que cair deixa "trava (barra): a
+    thread caiu" com o erro: no `pythonw` não há stderr, e no pacote 22 a thread da barra
+    morria no primeiro timer sem deixar rastro (lia `msg.hwnd`, mas o campo do
+    `wintypes.MSG` é `hWnd`).
 - **Saída:** no Sair com PIN, no `exit-kids`, quando o menu fecha e antes de instalar uma
-  atualização, o `finally` do iniciador desfaz o gancho, mostra a barra e devolve o estado de
-  antes (com ou sem "ocultar automaticamente"). O `atexit` repete isso; a segunda chamada não
+  atualização, o `finally` do iniciador desfaz o gancho e mostra a barra. O `atexit` repete isso; a segunda chamada não
   faz nada.
 - **Job da sessão:** o iniciador entra num Job Object com `KILL_ON_JOB_CLOSE`, e tudo o que ele
   abre entra junto, por herança: servidor, vigia, menu e, por eles, os apps da criança, o
@@ -309,22 +304,15 @@ um app aberto.
 - **Instalador com o Benikids aberto:** se o `beni-menu.exe` está rodando, mas nenhum iniciador
   segura o mutex, é resto de uma queda (sem servidor, o Sair não funciona). O "Instalar
   Benikids.cmd" e a atualização automática encerram esses restos pelo mesmo critério e seguem.
-  Com o iniciador vivo, o instalador continua pedindo "Pais → Sair".
+  Com o iniciador vivo, o instalador continua pedindo "Pais → Sair". Os avisos do instalador
+  saem com `MB_TOPMOST | MB_SETFOREGROUND`, por cima do menu, que é topmost.
 - **Queda do iniciador:** o Windows desfaz o gancho e encerra o job, então a tecla Windows volta
-  na hora e nenhum menu fica por cima. A barra continua escondida e em "ocultar
-  automaticamente", mas só na memória do Explorer. Isso se desfaz de um destes jeitos:
-  - o Benikids abrir e fechar de novo: o estado original fica guardado em
-    `~/.cache/cozy-kids-launcher/barra-escondida.json`, e é ele que volta;
-  - o Explorer reiniciar ou a pessoa sair e entrar no Windows: o Explorer novo lê o registro
-    e volta como o usuário deixou.
-- **Como o adulto recupera a barra:**
-  1. Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos, "Windows Explorer" → Reiniciar.
-  2. Se ela continuar se escondendo sozinha, o "ocultar automaticamente" ficou gravado. Isso
-     aconteceu com o pacote 23 de teste, nunca com uma versão publicada. Para desfazer:
-     Configurações → Personalização → Barra de tarefas → desligar "Ocultar automaticamente
-     a barra de tarefas no modo área de trabalho". Isso grava a preferência certa. O
-     Benikids não tem como saber se foi o usuário que ligou, por isso respeita o que está
-     gravado.
+  na hora e nenhum menu fica por cima. A barra continua escondida até:
+  - o Explorer reiniciar ou a pessoa sair e entrar no Windows;
+  - o Benikids abrir e fechar de novo. A `~/.cache/cozy-kids-launcher/barra-escondida.json`
+    marca que a barra foi escondida e não voltou.
+- **Como o adulto recupera a barra:** Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos,
+  "Windows Explorer" → Reiniciar. Ou abrir e fechar o Benikids.
 
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:
