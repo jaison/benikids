@@ -124,6 +124,26 @@ async function extendFromBlock(minutes){
   }
 }
 
+// "Sair" da tela "Acabou o tempo!" (roteiro 34): o PIN já digitado ali vale para sair,
+// conferido no mesmo /api/verify-pin. Vazio: a tela de PIN de sempre. Errado: a tela de
+// PIN com o erro de sempre.
+async function exitFromBlock(){
+  const campo=document.getElementById('timerBlockPin');
+  const pin=campo?campo.value:'';
+  if(!cfg.pinConfigured||!pin){ exitKids(); return; }
+  let valido=false;
+  try{
+    const r=await fetch('/api/verify-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
+    const data=await r.json();
+    valido=!!(data&&data.valid);
+  }catch(e){}
+  campo.value='';
+  if(valido){ fetch('/exit-kids',{method:'POST'}).catch(()=>{}); return; }
+  exitKids();
+  const err=document.getElementById('pinErr');
+  if(err) err.textContent=uiText.pinWrong;
+}
+
 // Touch swipe
 let touchStartX=null, touchStartY=null, suppressTileClicksUntil=0;
 function suppressTileClicks(){

@@ -70,6 +70,46 @@ fn minutos_do_timer(segundos: f64) -> i64 {
     dados::minutos(segundos)
 }
 
+#[derive(Debug, PartialEq)]
+enum SairDoTimer {
+    /// sem PIN configurado: sai direto (como o pedir_pin já fazia)
+    Direto,
+    /// PIN vazio: a tela de PIN de sempre
+    PedirPin,
+    /// PIN digitado na tela "Acabou o tempo!": confere esse e sai
+    Conferir,
+}
+
+fn como_sair_do_timer(pin_configurado: bool, pin: &str) -> SairDoTimer {
+    if !pin_configurado {
+        SairDoTimer::Direto
+    } else if pin.is_empty() {
+        SairDoTimer::PedirPin
+    } else {
+        SairDoTimer::Conferir
+    }
+}
+
+/// O erro de sempre de um PIN recusado (sem dizer mais nada).
+fn erro_do_pin(muitas_tentativas: bool) -> &'static str {
+    if muitas_tentativas { "Muitas tentativas. Espere um pouco." } else { "PIN incorreto" }
+}
+
+#[cfg(test)]
+mod testes_sair_do_timer {
+    use super::*;
+
+    #[test]
+    fn pin_digitado_na_tela_vale_para_sair() {
+        assert_eq!(como_sair_do_timer(true, "1234"), SairDoTimer::Conferir);
+        assert_eq!(como_sair_do_timer(true, ""), SairDoTimer::PedirPin);
+        assert_eq!(como_sair_do_timer(false, ""), SairDoTimer::Direto);
+        assert_eq!(como_sair_do_timer(false, "1234"), SairDoTimer::Direto);
+        assert_eq!(erro_do_pin(false), "PIN incorreto");
+        assert_eq!(erro_do_pin(true), "Muitas tentativas. Espere um pouco.");
+    }
+}
+
 /// Roteiro 33: o servidor fechou um app travado e põe {"seq", "tileId"} em
 /// "appTravadoFechado" no /api/usage/status por 2 min. Devolve o seq novo, se ainda não
 /// foi mostrado.
@@ -1098,6 +1138,43 @@ impl Menu {
         }
     }
 
+    /// "Sair" da tela "Acabou o tempo!" (roteiro 34, aprovado pelo mantenedor): o PIN já
+    /// digitado ali vale para sair, conferido no mesmo /api/verify-pin do Sair (mesmo
+    /// bloqueio de tentativas). Vazio: a tela de PIN de sempre. Errado: a tela de PIN com
+    /// o erro de sempre ("PIN incorreto" ou "Muitas tentativas").
+    fn sair_do_timer(&mut self, cx: &mut Context<Self>) {
+        let pin = match &self.janela {
+            Some(Janela::TimerEsgotado { erro, .. }) if erro == CONFERINDO => return, // toque repetido
+            Some(Janela::TimerEsgotado { pin, .. }) => pin.clone(),
+            _ => String::new(),
+        };
+        match como_sair_do_timer(self.pin_configurado(), &pin) {
+            SairDoTimer::Direto => self.executar(AcaoPin::Sair, cx),
+            SairDoTimer::PedirPin => self.pedir_pin(AcaoPin::Sair, cx),
+            SairDoTimer::Conferir => {
+                if let Some(Janela::TimerEsgotado { erro, .. }) = self.janela.as_mut() {
+                    *erro = CONFERINDO.into();
+                }
+                self.tarefa(
+                    cx,
+                    move |api| api.post("/api/verify-pin", Some(&json!({"pin": pin}))),
+                    |m, r, cx| {
+                        let valido =
+                            r.as_ref().ok().and_then(|r| r.json()).is_some_and(|v| dados::verdade(&v, "valid"));
+                        if valido {
+                            m.janela = None;
+                            m.executar(AcaoPin::Sair, cx);
+                        } else {
+                            let erro = erro_do_pin(r.as_ref().is_ok_and(|r| r.status == 429));
+                            m.janela = Some(Janela::Pin { pin: String::new(), erro: erro.into(), acao: AcaoPin::Sair });
+                        }
+                        cx.notify();
+                    },
+                );
+            }
+        }
+    }
+
     fn pedir_pin(&mut self, acao: AcaoPin, cx: &mut Context<Self>) {
         if self.pin_configurado() {
             self.janela = Some(Janela::Pin { pin: String::new(), erro: String::new(), acao });
@@ -1129,11 +1206,7 @@ impl Menu {
                     m.executar(acao, cx);
                 } else if let Some(Janela::Pin { pin, erro, .. }) = m.janela.as_mut() {
                     pin.clear();
-                    *erro = if r.as_ref().is_ok_and(|r| r.status == 429) {
-                        "Muitas tentativas. Espere um pouco.".into()
-                    } else {
-                        "PIN incorreto".into()
-                    };
+                    *erro = erro_do_pin(r.as_ref().is_ok_and(|r| r.status == 429)).into();
                 }
                 cx.notify();
             },
@@ -1343,6 +1416,8 @@ impl Menu {
                 }
             }
             Janela::TimerEsgotado { mut pin, erro, foco } => {
+                // roteiro 34: um SendKeys rápido deixou o campo vazio. Só o tipo, NUNCA o valor.
+                log::info!("tela Acabou o tempo: tecla {}", if digito.is_some() { "dígito" } else { "outra" });
                 if let Some(d) = digito {
                     if pin.len() < 8 {
                         pin.push_str(&d);
@@ -1359,7 +1434,7 @@ impl Menu {
                     "right" => self.janela = Some(Janela::TimerEsgotado { pin, erro, foco: (foco + 1).min(3) }),
                     "enter" | "kp_enter" => {
                         if foco == 3 {
-                            self.pedir_pin(AcaoPin::Sair, cx);
+                            self.sair_do_timer(cx);
                         } else {
                             self.estender_timer([15, 30, 60][foco], cx);
                         }
@@ -2351,7 +2426,7 @@ impl Menu {
                     .child(botoes)
                     .child(self.botao_janela(p, "t-sair", "Sair".into(), foco == 3).on_click(cx.listener(
                         |m, _: &ClickEvent, _, cx| {
-                            m.pedir_pin(AcaoPin::Sair, cx);
+                            m.sair_do_timer(cx);
                             cx.notify();
                         },
                     )))
