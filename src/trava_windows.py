@@ -11,23 +11,20 @@ na área dos pais) e que reabre os outros quando caem.
   processo acabam: numa queda, a tecla volta na hora. A thread do gancho não faz mais
   nada: uma chamada que espera outro processo (o Explorer) atrasaria cada tecla do
   computador e faria o Windows tirar o gancho.
-- Barra de tarefas (outra thread): a barra fica em "ocultar automaticamente" e, além
-  disso, escondida (SW_HIDE). Com o "ocultar automaticamente", o próprio Explorer
-  anuncia a tela inteira como área de trabalho, e os apps maximizados vão até
-  embaixo. Gravar a área (SPI_SETWORKAREA) não servia: o Explorer a reescrevia
-  (roteiro 24). Uma janela invisível recebe o "TaskbarCreated" do Explorer
-  reiniciado e esconde a barra nova na hora; a conferência a cada 250 ms fica de
-  reserva. Se o foco cair na área de trabalho ou na barra, volta para a última janela
-  que estava na frente (menu ou app).
-
-A preferência do usuário é a gravada no registro (StuckRects3); o "ocultar
-automaticamente" do Benikids fica só na memória do Explorer, e o Sair confere que o
-registro continuou como estava (roteiro 26).
+- Barra de tarefas (outra thread): todas as barras (Shell_TrayWnd e
+  Shell_SecondaryTrayWnd) ficam escondidas (SW_HIDE) e voltam no Sair (SW_SHOWNA). O
+  Benikids não muda nenhuma preferência do usuário: nada de "ocultar automaticamente"
+  (o Windows o gravava como preferência quando queria; roteiros 25-27) nem de
+  SPI_SETWORKAREA (o Explorer o reescrevia; roteiro 24). A faixa que a barra deixa nos
+  apps maximizados é coberta pelo overlay, que estica a janela do app até o monitor.
+  Uma janela invisível recebe o "TaskbarCreated" do Explorer reiniciado e esconde a
+  barra nova na hora; a conferência a cada 250 ms fica de reserva. Se o foco cair na
+  área de trabalho ou na barra, volta para a última janela que estava na frente.
 
 Queda do iniciador (pior caso): a tecla Windows volta sozinha, mas a barra fica
-escondida até o Benikids abrir e fechar de novo, o Explorer reiniciar ou a pessoa sair e
-entrar no Windows. O estado original fica em barra-escondida.json, e a próxima abertura
-do Benikids devolve esse estado ao sair. Como o adulto recupera: docs/benikids-tecnico.md.
+escondida até o Explorer reiniciar, a pessoa sair e entrar no Windows ou o Benikids
+abrir e fechar de novo (o barra-escondida.json marca que ela precisa voltar). Como o
+adulto recupera: docs/benikids-tecnico.md.
 """
 
 import json
@@ -42,9 +39,6 @@ VK_RWIN = 0x5C
 VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_MENU = 0x12
-
-ABS_AUTOHIDE = 0x1
-ABS_ALWAYSONTOP = 0x2
 
 CLASSES_DA_BARRA = ("Shell_TrayWnd", "Shell_SecondaryTrayWnd")
 # janelas que não são do Benikids nem de um app: se o foco cair nelas, a criança
@@ -91,157 +85,40 @@ def engolir_tecla(vk, ctrl=False, shift=False, alt=False):
     return vk == VK_ESCAPE and ctrl and not shift and not alt
 
 
-def estado_com_ocultar(estado):
-    """O estado da barra com "ocultar automaticamente", mantendo o resto."""
-    return (estado or 0) | ABS_AUTOHIDE
-
-
-# ------------------------------------------------- preferência gravada (StuckRects3)
-# O Explorer grava a barra em HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\
-# StuckRects3, valor "Settings" (binário; 48 bytes no Windows 10 e 11). Os 4 primeiros
-# bytes são o tamanho da estrutura (0x30); o byte 8 guarda as opções, e o bit 0x01 é o
-# "ocultar automaticamente" (0x02 = barra fixa, 0x03 = ocultar).
-STUCKRECTS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3"
-BYTE_DAS_OPCOES = 8
-# Um Explorer que acabou de abrir ainda está montando a cópia das opções que ele grava
-# no registro. Ligar o "ocultar automaticamente" nessa hora faz o Explorer gravá-lo como
-# preferência (roteiro 26: Explorer reiniciado com o Benikids aberto → depois do Sair o
-# registro ficou 0x03). Antes de religar, espera o Explorer ter esta idade.
-ESPERA_EXPLORER = 12.0
-CONFERIR_REGISTRO_S = 3.0
-
-
-def stuckrects_valido(dados):
-    return (isinstance(dados, (bytes, bytearray)) and len(dados) > BYTE_DAS_OPCOES + 3
-            and int.from_bytes(dados[0:4], "little") == len(dados))
-
-
-def autohide_no_registro(dados):
-    """True/False pelo bit 0x01 do byte 8; None se o formato não for o conhecido."""
-    if not stuckrects_valido(dados):
-        return None
-    return bool(dados[BYTE_DAS_OPCOES] & ABS_AUTOHIDE)
-
-
-def com_autohide_no_registro(dados, ligado):
-    """Os mesmos bytes, só com o bit 0x01 do byte 8 trocado."""
-    novo = bytearray(dados)
-    if ligado:
-        novo[BYTE_DAS_OPCOES] |= ABS_AUTOHIDE
-    else:
-        novo[BYTE_DAS_OPCOES] &= 0xFF ^ ABS_AUTOHIDE
-    return bytes(novo)
-
-
 class Barra:
     """Esconde e devolve a barra de tarefas. `api` faz as chamadas ao Windows (nos testes,
-    um falso): barras() → [janela], visivel(j), esconder(j), mostrar(j),
-    estado() → bits ABS_* (ou None), definir_estado(bits), registro() → bytes do
-    StuckRects3 (ou None), gravar_registro(bytes), idade_do_explorer() → segundos (ou
-    None), reiniciar_explorer()."""
+    um falso): barras() → [janela], visivel(j), esconder(j), mostrar(j).
 
-    def __init__(self, api, arquivo, log=lambda _texto: None, dormir=None):
+    O arquivo (barra-escondida.json) só marca "a barra está escondida": se ele sobrar de
+    uma queda, a próxima abertura sabe que precisa mostrá-la de novo no Sair (ela já
+    faria isso de qualquer jeito) e loga."""
+
+    def __init__(self, api, arquivo, log=lambda _texto: None):
         self.api = api
         self.arquivo = arquivo
         self.log = log
-        self.dormir = dormir or (lambda s: time.sleep(s))
         self.ativa = False
-        self.original = None
         self.escondidas = set()
-        self.religar = False  # falta ligar o "ocultar automaticamente" (Explorer novo)
-        self.avisou_espera = False
 
-    def _ler_salvo(self):
-        try:
-            with open(self.arquivo, encoding="utf-8") as f:
-                estado = json.load(f).get("estado")
-        except (OSError, ValueError, AttributeError):
-            return None
-        return estado if isinstance(estado, int) and not isinstance(estado, bool) and 0 <= estado < 16 else None
-
-    def _salvar(self):
+    def esconder(self):
+        if os.path.exists(self.arquivo):
+            self.log("barra: o Benikids anterior não mostrou a barra de volta (queda)")
         try:
             os.makedirs(os.path.dirname(self.arquivo), exist_ok=True)
             with open(self.arquivo, "w", encoding="utf-8") as f:
-                json.dump({"estado": self.original}, f)
+                json.dump({"escondida": True}, f)
         except OSError:
             pass
-
-    def _preferencia(self, atual):
-        """O estado de agora, com o "ocultar automaticamente" que está GRAVADO no registro:
-        é a preferência do usuário. O de agora pode ser sobra de um Benikids (ou de um
-        Explorer que ainda não releu)."""
-        if not isinstance(atual, int):
-            return None
-        gravado = autohide_no_registro(self.api.registro())
-        if gravado is None:
-            return atual
-        pref = (atual & ~ABS_AUTOHIDE) | (ABS_AUTOHIDE if gravado else 0)
-        if pref != atual:
-            self.log(f"barra: o Windows está com \"ocultar automaticamente\" {'ligado' if atual & ABS_AUTOHIDE else 'desligado'}, "
-                     f"mas a preferência gravada é {'ligado' if gravado else 'desligado'}; vale a gravada")
-        return pref
-
-    def esconder(self):
-        salvo = self._ler_salvo()
-        if salvo is not None:
-            # o Benikids anterior caiu: o "ocultar automaticamente" de agora é o que ele
-            # ligou; o de verdade é o que ficou guardado
-            self.log("barra: o Benikids anterior não devolveu a barra; usando o estado guardado")
-            self.original = salvo
-        else:
-            self.original = self._preferencia(self.api.estado())
-            if self.original is not None:
-                self._salvar()
         self.ativa = True
-        self.religar = True
-        self.manter()
-
-    def _explorer_pronto(self):
-        idade = self.api.idade_do_explorer()
-        if idade is None or idade >= ESPERA_EXPLORER:
-            self.avisou_espera = False
-            return True
-        if not self.avisou_espera:
-            self.avisou_espera = True
-            self.log(f"barra: o Explorer abriu há {idade:.0f} s; o \"ocultar automaticamente\" espera "
-                     f"ele terminar de abrir ({ESPERA_EXPLORER:.0f} s)")
-        return False
-
-    def ocultar_automaticamente(self):
-        """Liga o "ocultar automaticamente" se estiver desligado. Devolve True se ficou
-        ligado; False se o Explorer ainda não respondeu (tenta de novo depois)."""
-        if not self.ativa:
-            return True
-        atual = self.api.estado()
-        if not isinstance(atual, int):
-            return False
-        if self.original is None:
-            # o Explorer ainda não existia quando o Benikids abriu: guarda agora
-            self.original = self._preferencia(atual)
-            self._salvar()
-        if atual & ABS_AUTOHIDE:
-            return True
-        self.api.definir_estado(estado_com_ocultar(atual))
-        depois = self.api.estado()
-        ok = isinstance(depois, int) and bool(depois & ABS_AUTOHIDE)
-        if ok:
-            self.log("barra: \"ocultar automaticamente\" ligado")
-        return ok
+        self.vigiar()
 
     def manter(self):
-        """A conferência periódica: esconde o que voltou e, se falta, liga o "ocultar
-        automaticamente" (só com o Explorer já aberto de vez). Devolve True se o Explorer
-        acabou de voltar (barra nova escondida agora)."""
-        voltou = self.vigiar()
-        if self.religar and self._explorer_pronto() and self.ocultar_automaticamente():
-            self.religar = False
-        return voltou
+        """A conferência periódica. Devolve True se o Explorer acabou de voltar."""
+        return self.vigiar()
 
     def explorer_voltou(self):
-        """O "TaskbarCreated": esconde a barra nova; o autohide volta quando der."""
-        self.religar = True
-        self.manter()
+        """O "TaskbarCreated": esconde a barra nova já."""
+        self.vigiar()
 
     def vigiar(self):
         """Esconde de novo o que reapareceu (Explorer reiniciado, outra tela ligada).
@@ -257,7 +134,6 @@ class Barra:
                     if havia:
                         # já havia escondido outra: é a barra de um Explorer novo
                         nova = True
-                        self.religar = True
                         self.log("barra: Explorer voltou; escondida de novo")
                     else:
                         self.log("barra: escondida")
@@ -268,40 +144,14 @@ class Barra:
         if not self.ativa:
             return
         self.ativa = False
-        if self.original is not None:
-            self.api.definir_estado(self.original)
         for janela in self.api.barras():
             self.api.mostrar(janela)
         self.escondidas.clear()
-        if self.original is not None:
-            self.conferir_registro(bool(self.original & ABS_AUTOHIDE))
         try:
             os.unlink(self.arquivo)
         except OSError:
             pass
         self.log("barra: devolvida")
-
-    def conferir_registro(self, querido):
-        """Depois de devolver: o registro precisa ficar com a preferência do usuário. Se o
-        Explorer gravou o "ocultar automaticamente" do Benikids, acerta o bit e reinicia o
-        Explorer: a cópia que ele grava está errada, e ele a gravaria de novo (ao desligar o
-        PC, por exemplo). O Explorer novo lê o registro já certo."""
-        errado = False
-        for _ in range(int(CONFERIR_REGISTRO_S / 0.25) + 1):
-            dados = self.api.registro()
-            gravado = autohide_no_registro(dados)
-            if gravado is None:
-                return
-            if gravado != querido:
-                self.api.gravar_registro(com_autohide_no_registro(dados, querido))
-                if not errado:
-                    self.log("barra: o Explorer gravou o \"ocultar automaticamente\" do Benikids; "
-                             "preferência devolvida no registro")
-                errado = True
-            self.dormir(0.25)
-        if errado:
-            self.log("barra: reiniciando o Explorer para ele ler a preferência certa")
-            self.api.reiniciar_explorer()
 
 
 class Foco:
@@ -338,37 +188,11 @@ def _api_windows():
     from ctypes import wintypes
 
     user32 = ctypes.WinDLL("user32", use_last_error=True)
-    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
-    kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
-    kernel32.GetSystemTimeAsFileTime.argtypes = [ctypes.POINTER(wintypes.FILETIME)]
-    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     user32.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR]
     user32.FindWindowExW.restype = wintypes.HWND
-    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-    user32.FindWindowW.restype = wintypes.HWND
     user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
-
-    class APPBARDATA(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uCallbackMessage", wintypes.UINT),
-                    ("uEdge", wintypes.UINT), ("rc", wintypes.RECT), ("lParam", wintypes.LPARAM)]
-
-    shell32.SHAppBarMessage.argtypes = [wintypes.DWORD, ctypes.POINTER(APPBARDATA)]
-    shell32.SHAppBarMessage.restype = ctypes.c_size_t
-    ABM_GETSTATE, ABM_SETSTATE = 0x4, 0xA
     SW_HIDE, SW_SHOWNA = 0, 8
-
-    def dados():
-        d = APPBARDATA()
-        d.cbSize = ctypes.sizeof(d)
-        d.hWnd = user32.FindWindowW("Shell_TrayWnd", None)
-        return d
 
     class Api:
         def barras(self):
@@ -391,81 +215,6 @@ def _api_windows():
 
         def mostrar(self, h):
             user32.ShowWindowAsync(h, SW_SHOWNA)
-
-        def estado(self):
-            d = dados()
-            if not d.hWnd:
-                return None
-            return int(shell32.SHAppBarMessage(ABM_GETSTATE, ctypes.byref(d))) & 0xF
-
-        def definir_estado(self, estado):
-            d = dados()
-            if not d.hWnd:
-                return
-            d.lParam = int(estado)
-            shell32.SHAppBarMessage(ABM_SETSTATE, ctypes.byref(d))
-
-        def registro(self):
-            import winreg
-
-            try:
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STUCKRECTS) as chave:
-                    valor, tipo = winreg.QueryValueEx(chave, "Settings")
-            except OSError:
-                return None
-            return bytes(valor) if tipo == winreg.REG_BINARY else None
-
-        def gravar_registro(self, valor):
-            import winreg
-
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STUCKRECTS, 0, winreg.KEY_SET_VALUE) as chave:
-                winreg.SetValueEx(chave, "Settings", 0, winreg.REG_BINARY, bytes(valor))
-
-        def _pid_do_explorer(self):
-            h = user32.FindWindowW("Shell_TrayWnd", None)
-            if not h:
-                return None
-            pid = wintypes.DWORD()
-            user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
-            return pid.value or None
-
-        def idade_do_explorer(self):
-            pid = self._pid_do_explorer()
-            if not pid:
-                return None
-            h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-            if not h:
-                return None
-            try:
-                criado, x1, x2, x3 = (wintypes.FILETIME() for _ in range(4))
-                if not kernel32.GetProcessTimes(h, ctypes.byref(criado), ctypes.byref(x1),
-                                                ctypes.byref(x2), ctypes.byref(x3)):
-                    return None
-            finally:
-                kernel32.CloseHandle(h)
-            agora = wintypes.FILETIME()
-            kernel32.GetSystemTimeAsFileTime(ctypes.byref(agora))
-
-            def n(ft):
-                return (ft.dwHighDateTime << 32) | ft.dwLowDateTime
-
-            return max(0.0, (n(agora) - n(criado)) / 1e7)
-
-        def reiniciar_explorer(self):
-            pid = self._pid_do_explorer()
-            if pid:
-                h = kernel32.OpenProcess(0x0001, False, pid)  # PROCESS_TERMINATE
-                if h:
-                    kernel32.TerminateProcess(h, 1)
-                    kernel32.CloseHandle(h)
-            # o Windows reabre o shell sozinho (AutoRestartShell); se não reabrir, abre
-            for _ in range(20):
-                time.sleep(0.25)
-                if user32.FindWindowW("Shell_TrayWnd", None):
-                    return
-            from queda_windows import popen_fora_do_job
-
-            popen_fora_do_job(["explorer.exe"], close_fds=True)
 
     return Api()
 
