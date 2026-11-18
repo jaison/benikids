@@ -231,6 +231,27 @@ def format_remaining(seconds):
     return f"{seconds} s"
 
 
+TIMER_COR_AVISO = "#fde047"
+TIMER_COR_FIM = "#fca5a5"
+
+
+def rotulo_da_pilula(uso, timer, cor_padrao):
+    """O que a pílula mostra: o tempo que acaba PRIMEIRO, entre o limite da categoria e o
+    timer da sessão (roteiro 26: mostrava "28 min" de Aprender com o timer em 3 min).
+    uso: None ou {"restante", "limite", "emoji"}; timer: None ou {"restante", "expirado",
+    "aviso"}. Devolve (texto, cor) ou ("", None)."""
+    if timer and timer.get("expirado"):
+        return "⏰ Acabou!", TIMER_COR_FIM
+    t = timer.get("restante") if timer else None
+    u = uso.get("restante") if uso else None
+    if t is not None and (u is None or t < u):
+        return f"⏱️ {format_remaining(t)}", (TIMER_COR_AVISO if timer.get("aviso") else cor_padrao)
+    if u is not None:
+        band = USAGE_COLORS[usage_band(u, uso.get("limite"))]
+        return f"{uso.get('emoji') or '⏳'} {format_remaining(u)}", band["pill_fg"]
+    return "", None
+
+
 def tile_is_blocked(status, tile_id):
     if not tile_id or not isinstance(status, dict):
         return False
@@ -530,6 +551,8 @@ class AppOverlay:
         # Limites diários por categoria
         self.usage_active = None
         self.usage_label = None
+        self.uso_pilula = None  # {"restante", "limite", "emoji"} do limite da categoria
+        self.timer_pilula = None  # {"fim" (monotonic), "expirado", "aviso"} do timer
         self.countdown_window = None
         self.countdown_deadline = None
         self.countdown_number = None
@@ -802,20 +825,26 @@ class AppOverlay:
                 self.hide_countdown()
         else:
             self.usage_active = None
-            if self.usage_label:
-                self.usage_label = None
-                self.set_timer_text("")
+            self.uso_pilula = None
+            self.atualizar_pilula()
             if self.countdown_window is not None:
                 self.hide_countdown()
         self.root.after(1000, self.poll_usage)
 
     def update_usage_label(self, active, remaining):
-        band = USAGE_COLORS[usage_band(remaining, active.get("limitSeconds"))]
-        emoji = active.get("categoryEmoji") or "⏳"
-        text = f"{emoji} {format_remaining(remaining)}"
-        if text != self.usage_label:
-            self.usage_label = text
-            self.set_timer_text(text, band["pill_fg"])
+        self.uso_pilula = {"restante": remaining, "limite": active.get("limitSeconds"),
+                           "emoji": active.get("categoryEmoji")}
+        self.atualizar_pilula()
+
+    def atualizar_pilula(self):
+        timer = None
+        if self.timer_pilula:
+            timer = dict(self.timer_pilula)
+            timer["restante"] = max(0, int(round(timer.pop("fim") - time.monotonic())))
+        texto, cor = rotulo_da_pilula(self.uso_pilula, timer, PILL_TEXT)
+        if texto != self.usage_label:
+            self.usage_label = texto
+            self.set_timer_text(texto, cor or PILL_TEXT)
 
     def show_countdown(self, active):
         window = tk.Toplevel(self.root)
@@ -945,20 +974,13 @@ class AppOverlay:
             self.on_close()
             return
         data = api("/api/timer/status")
-        if self.usage_label:
-            pass  # o limite por categoria tem prioridade no rótulo
-        elif data.get("active"):
-            remaining = data.get("remainingSeconds", 0)
-            mins = max(0, remaining // 60)
-            if data.get("expired"):
-                self.set_timer_text("⏰ Acabou!", "#fca5a5")
-            elif data.get("warning"):
-                self.set_timer_text(f"⏱️ {mins} min", "#fde047")
-            else:
-                self.set_timer_text(f"⏱️ {mins} min")
-        elif self.timer_lbl.cget("text"):
-            self.set_timer_text("")
-        self.root.after(10000, self.poll_timer)
+        if isinstance(data, dict) and data.get("active"):
+            self.timer_pilula = {"fim": time.monotonic() + int(data.get("remainingSeconds") or 0),
+                                 "expirado": bool(data.get("expired")), "aviso": bool(data.get("warning"))}
+        else:
+            self.timer_pilula = None
+        self.atualizar_pilula()  # o poll_usage (a cada 1 s) também atualiza, com a conta local
+        self.root.after(5000, self.poll_timer)
 
     def run(self):
         try:

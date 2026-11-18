@@ -25,6 +25,26 @@ def carregar():
 overlay = carregar()
 
 
+class PilulaTests(unittest.TestCase):
+    # roteiro 26: a pílula mostrava "28 min" do limite de Aprender com o timer em 3 min
+    def test_shows_whatever_ends_first(self):
+        uso = {"restante": 28 * 60, "limite": 30 * 60, "emoji": "📚"}
+        timer = {"restante": 3 * 60, "expirado": False, "aviso": False}
+        self.assertEqual(overlay.rotulo_da_pilula(uso, timer, "cor")[0], "⏱️ 3 min")
+        timer["restante"] = 40 * 60
+        self.assertEqual(overlay.rotulo_da_pilula(uso, timer, "cor")[0], "📚 28 min")
+        self.assertEqual(overlay.rotulo_da_pilula(None, timer, "cor"), ("⏱️ 40 min", "cor"))
+        self.assertEqual(overlay.rotulo_da_pilula(uso, None, "cor")[0], "📚 28 min")
+        self.assertEqual(overlay.rotulo_da_pilula(None, None, "cor"), ("", None))
+
+    def test_timer_warning_and_end(self):
+        aviso = {"restante": 4 * 60 + 10, "expirado": False, "aviso": True}
+        self.assertEqual(overlay.rotulo_da_pilula(None, aviso, "cor"), ("⏱️ 5 min", overlay.TIMER_COR_AVISO))
+        fim = {"restante": 0, "expirado": True, "aviso": False}
+        uso = {"restante": 600, "limite": 1800, "emoji": "🎮"}
+        self.assertEqual(overlay.rotulo_da_pilula(uso, fim, "cor"), ("⏰ Acabou!", overlay.TIMER_COR_FIM))
+
+
 class PrimeiraJanelaTests(unittest.TestCase):
     def test_waits_for_the_window_then_brings_it_once(self):
         p = overlay.PrimeiraJanela()
