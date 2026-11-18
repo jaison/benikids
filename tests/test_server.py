@@ -1296,6 +1296,18 @@ class ServerApiTests(unittest.TestCase):
                 },
             )
 
+    def test_parent_exit_ends_the_session_timer(self):
+        # roteiro 25: depois de Sair com PIN, o Benikids reabria com "Acabou o tempo!"
+        self.enable_pin()
+        cookie = self.authenticate()
+        server_module.save_timer({"end_time": int(time.time()) - 5, "totalMinutes": 2})
+        status, _, _ = self.request("/exit-kids", method="POST", body={}, origin=self.base_url)
+        self.assertEqual(status, 403)
+        self.assertTrue(os.path.exists(server_module.TIMER_FILE))
+        status, _, _ = self.request("/exit-kids", method="POST", body={}, cookie=cookie, origin=self.base_url)
+        self.assertEqual(status, 204)
+        self.assertFalse(os.path.exists(server_module.TIMER_FILE))
+
     def test_diagnostics_require_parent_access_and_exclude_family_values(self):
         self.enable_pin()
         status, _, _ = self.request("/api/diagnostics")

@@ -2201,6 +2201,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not self.require_admin():
                 return
             reset_active_tile()
+            # Sair com PIN encerra o timer da sessão: senão o Benikids reabria já com
+            # "Acabou o tempo!" (roteiro 25). Uma queda ou reinício não passam por aqui,
+            # e aí o timer continua valendo.
+            try:
+                clear_timer()
+            except OSError:
+                pass
             # Signal launcher.sh to exit its while-true loop
             try:
                 write_lifecycle_request(LIFECYCLE_REQUEST_FILE, "parent-exit")
