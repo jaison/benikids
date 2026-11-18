@@ -137,6 +137,23 @@ def _log_windows(texto):
         pass
 
 
+def codigo_legivel(codigo):
+    """0xC0000005 em vez de 3221225477 (NTSTATUS de erro); o resto em decimal."""
+    if not isinstance(codigo, int):
+        return "?"
+    codigo &= 0xFFFFFFFF
+    return f"0x{codigo:08X}" if codigo >= 0xC0000000 else str(codigo)
+
+
+def codigo_de_saida(codigo):
+    """O código do app como código de saída deste processo. O Windows guarda 32 bits sem
+    sinal; o Python precisa do número com sinal para sair com 0xC0000005 de verdade."""
+    if not isinstance(codigo, int):
+        return 0
+    codigo &= 0xFFFFFFFF
+    return codigo - 0x100000000 if codigo >= 0x80000000 else codigo
+
+
 def supervise_windows(
     command,
     record_path,
@@ -164,8 +181,10 @@ def supervise_windows(
             # só o supervisor sobrou no job: o app (e o que ele abriu) acabou
             if child.poll() is not None and trabalho.ativos() <= 1:
                 _log_windows(f"app: {activity_tile or os.path.basename(str(command[0]))} fechou "
-                             f"(código {child.returncode}); o supervisor sai junto")
-                return 0
+                             f"(código {codigo_legivel(child.returncode)}); o supervisor sai junto")
+                # o servidor lê o código do app no do supervisor (roteiro 33: o crash
+                # 0xC0000005 do Tux Paint chegou à telemetria sem o código)
+                return codigo_de_saida(child.returncode)
             time.sleep(0.2)
     finally:
         remove_process_record(record_path, expected_pid=os.getpid())

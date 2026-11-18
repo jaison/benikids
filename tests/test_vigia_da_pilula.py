@@ -63,6 +63,7 @@ class DecisaoTests(unittest.TestCase):
         acoes += v.passo(40.0, S, True, True, False, False)
         self.assertEqual(acoes[0], ("app_parou",))
         self.assertEqual([a for a in acoes if a[0] == "app_travado"], [("app_travado", 15.0)])
+        self.assertEqual([a for a in acoes if a[0] == "fechar_app"], [("fechar_app", 30.0)])  # roteiro 33
         self.assertEqual(acoes[-1], ("app_voltou", 40.0))
 
 
@@ -74,6 +75,10 @@ class LauncherFalso:
 
     def stop_existing_overlay(self):
         self.chamadas.append("parar")
+
+    def stop_active_tile(self):
+        self.chamadas.append("fechar o app")
+        return True
 
     def start_overlay(self, mode, url="", tile_id=""):
         self.chamadas.append(("abrir", mode, url, tile_id))
@@ -96,9 +101,11 @@ class VigiaWindowsTests(unittest.TestCase):
         self.uso = mock.Mock()
         self.uso.retomar.return_value = 412.0
         self.uso.parado_agora.return_value = 30.0
-        return vp.VigiaWindows(win, lambda: self.launcher, lambda: (app, pilula), uso=self.uso,
+        self.fechados = []
+        self.app = app
+        return vp.VigiaWindows(win, lambda: self.launcher, lambda: (self.app, pilula), uso=self.uso,
                                relatar=lambda *a: self.relatos.append(a), log=self.linhas.append,
-                               relogio=lambda: self.agora[0])
+                               relogio=lambda: self.agora[0], ao_fechar=self.fechados.append)
 
     def rodar(self, v, segundos):
         for _ in range(segundos):
@@ -123,11 +130,38 @@ class VigiaWindowsTests(unittest.TestCase):
         self.rodar(v, 17)
         self.uso.pausar.assert_called_once()
         self.assertIn("app: tuxpaint não responde há 15 s", self.linhas)
-        self.assertEqual(self.relatos, [("app.travou", "tile=tuxpaint sem responder há 15 s", "app.travou:tuxpaint")])
+        self.assertEqual(self.relatos, [])  # vai quando se sabe se fechou
         self.estado["app"] = False
         self.rodar(v, 1)
         self.assertIn("app: tuxpaint voltou a responder ou fechou; 412 s não contados", self.linhas)
-        self.assertEqual(self.launcher.chamadas, [])  # o app NÃO é fechado sozinho
+        self.assertEqual(self.relatos, [("app.travou", "tile=tuxpaint sem responder há 17 s fechado=False",
+                                         "app.travou:tuxpaint")])
+        self.assertEqual(self.launcher.chamadas, [])  # voltou antes dos 30 s: NÃO é fechado
+
+    def test_app_hung_for_30_s_is_closed_and_the_menu_warns(self):
+        """Roteiro 33: com o app travado, o fantasma do DWM fica na frente e o ✕ não
+        recebe o clique. Com 30 s seguidos, o vigia fecha o app."""
+        v = self.montar(pilula_travada=False, app_travado=True)
+        self.rodar(v, 30)
+        self.assertEqual(self.launcher.chamadas, [])
+        self.rodar(v, 1)
+        self.assertEqual(self.launcher.chamadas, ["parar", "fechar o app"])
+        self.assertIn("app: tuxpaint travado há 30 s; fechado", self.linhas)
+        self.assertEqual(self.relatos, [("app.travou", "tile=tuxpaint sem responder há 30 s fechado=True",
+                                         "app.travou:tuxpaint")])
+        self.assertEqual(self.fechados, ["tuxpaint"])
+        self.app = None  # o supervisor saiu
+        self.rodar(v, 3)
+        self.uso.retomar.assert_called_once()  # o tempo travado não conta
+        self.assertEqual(len(self.relatos), 1)
+        self.assertEqual(self.launcher.chamadas, ["parar", "fechar o app"])
+
+    def test_another_app_opened_meanwhile_is_not_closed(self):
+        v = self.montar(pilula_travada=False, app_travado=True)
+        self.rodar(v, 30)
+        self.app = {"pid": 300, "startTime": 9}  # a criança abriu outro (mesmo instante)
+        self.assertFalse(v.fechar({}))
+        self.assertEqual(self.launcher.chamadas, [])
 
 
 class TempoParadoTests(unittest.TestCase):

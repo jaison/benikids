@@ -60,6 +60,20 @@ def _validate_role(role):
     return role
 
 
+def _com_paciencia(funcao, *args, tentativas=20, espera=0.025):
+    """No Windows, trocar ou apagar um arquivo que outro processo está lendo naquele
+    instante dá PermissionError (o servidor e o vigia leem o overlay.pid e o
+    tile-process.pid a cada segundo). Roteiro 33: excecao:overlay:PermissionError.
+    Tenta de novo por até ~0,5 s antes de desistir."""
+    for tentativa in range(tentativas):
+        try:
+            return funcao(*args)
+        except PermissionError:
+            if tentativa == tentativas - 1:
+                raise
+            time.sleep(espera)
+
+
 def _atomic_write(path, data):
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, mode=0o700, exist_ok=True)
@@ -75,7 +89,7 @@ def _atomic_write(path, data):
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_path, path)
+        _com_paciencia(os.replace, temp_path, path)
     except Exception:
         try:
             os.unlink(temp_path)
@@ -166,10 +180,12 @@ def remove_process_record(path, expected_pid=None):
         if not record or record["pid"] != expected_pid:
             return False
     try:
-        os.unlink(path)
+        _com_paciencia(os.unlink, path)
         return True
     except FileNotFoundError:
         return False
+    except OSError:
+        return False  # quem sai não pode cair por isso; o registro velho é conferido pelo PID
 
 
 def terminate_owned_process(

@@ -436,6 +436,19 @@ def maximizar_no_inicio(tile_id):
         return False
 
 
+def sem_moldura_no_inicio(tile_id):
+    """A tela cheia sem moldura vale para todo app, menos os com "sem_moldura": false no
+    catálogo do Windows. Roteiro 33: o Pingus (SDL) a desfazia 4 vezes e o overlay
+    desistia; o desfaz-refaz de 5 s é feio. Esses ficam só maximizados."""
+    try:
+        import catalogo_windows
+
+        item = catalogo_windows.por_id(tile_id or "")
+        return not (item and item.get("sem_moldura") is False)
+    except Exception:  # noqa: BLE001
+        return True
+
+
 class PrimeiraJanela:
     """Traz o app para a frente quando a janela dele aparece (Windows).
 
@@ -728,7 +741,8 @@ class AppOverlay:
             self.root.after(500, lambda: self.maximize_app(120))
         if WINDOWS:
             self.root.after(300, lambda: self.trazer_app_quando_abrir(PrimeiraJanela()))
-            self.root.after(1000, lambda: self.esticar_app(TelaCheia()))
+            if sem_moldura_no_inicio(tile_id):
+                self.root.after(1000, lambda: self.esticar_app(TelaCheia()))
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -1199,7 +1213,7 @@ class AppOverlay:
         """Erro numa função agendada do Tk: log e telemetria (o Tk só imprimiria no stderr,
         que no pythonw não vai a lugar nenhum)."""
         self.log_uma_vez(f"overlay: erro no Tk: {tipo.__name__}: {valor}")
-        telemetria.relatar_excecao("overlay", tipo, valor, tb)
+        telemetria.relatar_excecao("overlay", tipo, valor, tb, log=self.log_uma_vez)
 
     def trazer_app(self, pid):
         """Na thread de trabalho: traz o app para a frente, se a janela já está de pé, e

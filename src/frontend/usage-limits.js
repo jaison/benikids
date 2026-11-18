@@ -142,6 +142,17 @@ function renderUsageMeters(){
   host.hidden=false;
 }
 
+// Roteiro 33: o servidor fechou um app travado (30 s sem responder); avisa uma vez.
+let travadoVisto=0;
+function maybeShowAppTravado(data){
+  const aviso=data&&data.appTravadoFechado;
+  const seq=aviso&&Number(aviso.seq);
+  if(!seq||seq<=travadoVisto) return false;
+  travadoVisto=seq;
+  showUsageMessage('😕 O jogo travou','O jogo travou e foi fechado.');
+  return true;
+}
+
 async function pollUsage(){
   try{
     const response=await fetch('/api/usage/status',{cache:'no-store'});
@@ -154,6 +165,7 @@ async function pollUsage(){
     if(typeof escolhaOnUsage==='function') escolhaOnUsage();
     if((data.blockedTileIds||[]).join('\n')!==before&&typeof pollAvailability==='function') pollAvailability();
     maybeShowUsageExpiry();
+    maybeShowAppTravado(data);
     if(!document.getElementById('admin').classList.contains('hidden')) renderUsageLimitSettingsStatus();
   }catch(e){}
 }

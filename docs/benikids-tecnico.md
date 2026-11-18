@@ -274,8 +274,14 @@ um app aberto.
     - uma janela comum do tamanho do monitor com o título para fora da tela (o Tux Paint
       com `--windowsize`, porque o `--fullscreen` e o `--fullscreen --native` saem com
       código 52 no Intel HD 4000) fica como está. No roteiro 31 ela virava tela cheia sem
-      moldura, mas o SDL desfazia 4 vezes, e o roteiro 32 tirou a regra: era a 1ª suspeita
-      do Tux Paint que travava no splash só quando aberto pelo Benikids;
+      moldura, mas o SDL desfazia 4 vezes, e o roteiro 32 tirou a regra. O travamento no
+      splash era o Direct3D 9 do driver NVIDIA numa GPU híbrida (roteiro 33: também
+      0xC0000005 em `nvd3dumx.dll`, mesmo à mão). O catálogo agora roda o Tux Paint com
+      `SDL_RENDER_DRIVER=opengl` (campo `"env"` do catálogo: só no processo daquele app; se
+      o OpenGL falhar, o SDL tenta os outros renderizadores na ordem normal) e com
+      `--nolockfile` (sem ele, abrir de novo menos de 30 s depois sai sem janela);
+    - `"sem_moldura": false` no catálogo deixa o app só maximizado, sem a tela cheia sem
+      moldura (Pingus: o SDL a desfazia 4 vezes, e o desfaz-refaz era feio);
     - se o app desfizer isso 5 vezes, o overlay devolve a moldura e a janela como era
       (maximizada, ou no retângulo de antes) e desiste daquela janela. O log diz "overlay:
       app em tela cheia sem moldura…", "o app desfez…; refeita" e "devolvida a janela como era".
@@ -308,9 +314,14 @@ um app aberto.
       por 6 s: encerra o overlay e abre de novo com os mesmos argumentos ("overlay: pílula
       travada; reaberta"). No máximo 3 vezes por app aberto;
     - app "Não respondendo": o tempo de uso para de contar ("app: … não responde; o tempo
-      de uso não conta"). Depois de 15 s, loga "app: … não responde há N s" e manda para
-      a telemetria. Não fecha sozinho: o ✕ da pílula encerra o supervisor, e o Job Object
-      dele leva a árvore inteira do app, mesmo travada;
+      de uso não conta"). Depois de 15 s, loga "app: … não responde há N s". Com 30 s
+      seguidos, FECHA o app (roteiro 33, decisão do mantenedor: com o app travado, o
+      Windows põe a janela-fantasma do DWM na frente, ativa, e o ✕ da pílula não recebe o
+      clique, nem pelo vigia do ✕). Encerra a pílula e o supervisor (o Job Object leva a
+      árvore), traz o menu e loga "app: … travado há 30 s; fechado". O menu nativo e o web
+      mostram "O jogo travou e foi fechado." uma vez (`appTravadoFechado` no
+      `/api/usage/status`, por 2 min). A telemetria `app.travou:<tile>` vai com
+      `fechado=True`, ou `fechado=False` se ele voltou a responder entre 15 e 30 s;
     - o ✕ (roteiro 32: com o Tux Paint travado, 6 cliques não chegaram ao Tk). O
       `on_close` loga "overlay: ✕ tocado" antes de tudo e encerra o supervisor
       (`TerminateProcess`; o Job Object leva a árvore). Cada aperto e soltura no botão vai
@@ -318,6 +329,14 @@ um app aberto.
       (`GetAsyncKeyState`, `GetCursorPos`, `WindowFromPoint`) a cada 30 ms; se um clique
       no ✕ não virou `on_close` em 0,8 s, ele fecha o app e a pílula sozinho e manda
       `overlay.x_sem_tk:<tile>` para a telemetria;
+    - app que fecha logo ao abrir: o supervisor sai com o código do app, e o servidor
+      manda `app.caiu:<tile>` (NTSTATUS de erro, de 0xC0000000 para cima, com o código em
+      hexa no detalhe) ou `app.fechou_sozinho:<tile>`, 1 por dia;
+    - toda exceção que vai para a telemetria vai também para o `beni-windows.log`, com o
+      traceback. A marca "já mandei hoje" só é gravada depois de o problema entrar na fila,
+      e o envio troca o nome da fila antes de ler (o que chega no meio não se perde).
+      O `overlay.pid` e o `tile-process.pid` são trocados e apagados com novas tentativas
+      por até 0,5 s: o Windows recusa (WinError 32) enquanto outro processo os lê;
     - telemetria, no máximo 1 por assinatura por dia: `overlay.travou:<tile>`,
       `overlay.caiu:<tile>`, `app.travou:<tile>` e `excecao:<processo>:<Tipo>` (exceção
       não tratada no iniciador, no overlay, no servidor e no vigia, com o traceback limpo).

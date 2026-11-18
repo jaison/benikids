@@ -887,8 +887,18 @@ def iniciar_vigia_da_pilula():
     def relatar(etapa, detalhe, assinatura):
         telemetria.relatar_problema(etapa, detalhe, assinatura, por_dia=True)
 
+    def ao_fechar(tile):
+        # roteiro 33: o app travado foi fechado pelo vigia; o menu avisa a criança
+        avisar_app_travado(tile)
+        usage_tracker().clear_active()
+        menu = owned_process(BROWSER_PIDFILE, "browser")
+        if menu:
+            import janelas_seguras
+
+            janelas_seguras.rodar_com_limite(plataforma_windows.ativar_processo, 1.0, menu["pid"], True)
+
     vigia = vigia_da_pilula.VigiaWindows(plataforma_windows, application_launcher, registros,
-                                         uso=usage_tracker(), relatar=relatar)
+                                         uso=usage_tracker(), relatar=relatar, ao_fechar=ao_fechar)
     threading.Thread(target=vigia.rodar, args=(threading.Event(),), name="vigia-da-pilula",
                      daemon=True).start()
 
@@ -1047,10 +1057,37 @@ def controles_service():
         return _controles
 
 
+# Roteiro 33: o vigia fechou um app travado; o menu (nativo e web) mostra "O jogo travou
+# e foi fechado." uma vez. Vai junto do /api/usage/status, que os dois já consultam a
+# cada 5 s: {"seq": n, "tileId": ...} por 2 min; o menu guarda o último seq mostrado.
+APP_TRAVADO_AVISO_S = 120
+_app_travado_aviso = {"seq": 0, "tileId": "", "em": 0.0}
+_app_travado_lock = threading.Lock()
+
+
+def avisar_app_travado(tile_id, agora=None):
+    with _app_travado_lock:
+        _app_travado_aviso["seq"] += 1
+        _app_travado_aviso["tileId"] = str(tile_id or "")
+        _app_travado_aviso["em"] = time.monotonic() if agora is None else agora
+
+
+def aviso_app_travado(agora=None):
+    agora = time.monotonic() if agora is None else agora
+    with _app_travado_lock:
+        if not _app_travado_aviso["seq"] or agora - _app_travado_aviso["em"] > APP_TRAVADO_AVISO_S:
+            return None
+        return {"seq": _app_travado_aviso["seq"], "tileId": _app_travado_aviso["tileId"]}
+
+
 def usage_status(cfg):
     profile_id = cfg.get("activeProfileId", "")
     profile = stored_profiles_cached().get(profile_id) or cfg
-    return usage_tracker().status(profile_id, profile)
+    payload = usage_tracker().status(profile_id, profile)
+    aviso = aviso_app_travado()
+    if aviso and isinstance(payload, dict):
+        payload = dict(payload, appTravadoFechado=aviso)
+    return payload
 
 
 def tile_availability(cfg, tile_id, when=None):
@@ -1091,6 +1128,18 @@ def app_fechou_sozinho(supervisor, espera=None):
     return True
 
 
+def como_o_app_saiu(codigo):
+    """(etapa da telemetria, código para o detalhe). No Windows o supervisor sai com o
+    código do app; de 0xC0000000 para cima é um NTSTATUS de erro (0xC0000005: acesso
+    inválido à memória), ou seja, o app CAIU: "app.caiu". Senão, "app.fechou_sozinho"."""
+    if not isinstance(codigo, int):
+        return "app.fechou_sozinho", "?"
+    codigo &= 0xFFFFFFFF
+    if codigo >= 0xC0000000:
+        return "app.caiu", f"{codigo:#010X}".replace("0X", "0x")
+    return "app.fechou_sozinho", str(codigo)
+
+
 PORTAO_DE_ABERTURA = PortaoDeAbertura()
 
 
@@ -1102,6 +1151,7 @@ def launch_owned_tile(
     profile_id="",
     track_activity=False,
     path_extra="",
+    env_extra=None,
 ):
     process = application_launcher().launch_owned_tile(
         command,
@@ -1111,6 +1161,7 @@ def launch_owned_tile(
         profile_id=profile_id,
         track_activity=track_activity,
         path_extra=path_extra,
+        env_extra=env_extra,
     )
     PORTAO_DE_ABERTURA.abriu_app()
     profile = stored_profiles_cached().get(profile_id) or {}
@@ -2503,6 +2554,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.end_headers()
                     return
                 path_extra = ""
+                env_extra = {}
                 if clean[0].startswith(catalogo_windows.PREFIXO):
                     resolved = catalogo_windows.comando(clean)
                     if not resolved:
@@ -2511,6 +2563,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         self.json_response({"status": "missing", "message": "App not installed"}, 404)
                         return
                     path_extra = catalogo_windows.pasta_no_path(clean, resolved)
+                    env_extra = catalogo_windows.ambiente(clean)
                     clean = resolved
                 clean = direct_app_command(clean)
                 try:
@@ -2522,6 +2575,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         profile_id=cfg.get("activeProfileId", ""),
                         track_activity=cfg.get("activityTrackingEnabled", False),
                         path_extra=path_extra,
+                        env_extra=env_extra,
                     )
                 except OSError:
                     log_runtime_event(
@@ -2538,8 +2592,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if app_fechou_sozinho(supervisor):
                     reset_active_tile()
                     log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
+                    etapa, codigo = como_o_app_saiu(getattr(supervisor, "returncode", None))
                     telemetria.relatar_problema(
-                        "app.fechou_sozinho", f"tile={tile_id} cmd={clean}", assinatura=f"app.fechou_sozinho:{tile_id}"
+                        etapa, f"tile={tile_id} codigo={codigo} cmd={clean}", assinatura=f"{etapa}:{tile_id}",
+                        por_dia=True,
                     )
                     self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
                     return

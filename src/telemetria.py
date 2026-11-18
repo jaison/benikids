@@ -112,21 +112,27 @@ def limpar(texto, limite=4000):
 MARCAS_DO_DIA = os.path.join(os.path.dirname(FILA_PROBLEMAS), "problemas-do-dia.json")
 
 
-def ja_relatado_hoje(assinatura, marcas=None, hoje=None):
-    """True se esta assinatura já foi guardada hoje; senão, marca e devolve False.
-    Os vigias (pílula travada, app travado, exceções) mandam no máximo 1 por dia cada."""
-    marcas = marcas or MARCAS_DO_DIA
-    hoje = hoje or time.strftime("%Y-%m-%d")
+def _marcas_de_hoje(marcas, hoje):
     try:
         with open(marcas, encoding="utf-8") as f:
             dados_ = json.load(f)
         if not isinstance(dados_, dict):
-            dados_ = {}
+            return {}
     except (OSError, ValueError):
-        dados_ = {}
+        return {}
+    return {k: v for k, v in dados_.items() if v == hoje}  # o de ontem não serve mais
+
+
+def ja_relatado_hoje(assinatura, marcas=None, hoje=None, marcar=True):
+    """True se esta assinatura já foi guardada hoje; senão, marca (se marcar) e devolve
+    False. Os vigias (pílula travada, app travado, exceções) mandam no máximo 1 por dia."""
+    marcas = marcas or MARCAS_DO_DIA
+    hoje = hoje or time.strftime("%Y-%m-%d")
+    dados_ = _marcas_de_hoje(marcas, hoje)
     if dados_.get(assinatura) == hoje:
         return True
-    dados_ = {k: v for k, v in dados_.items() if v == hoje}  # o de ontem não serve mais
+    if not marcar:
+        return False
     dados_[assinatura] = hoje
     try:
         os.makedirs(os.path.dirname(marcas), exist_ok=True)
@@ -142,8 +148,11 @@ def ja_relatado_hoje(assinatura, marcas=None, hoje=None):
 def relatar_problema(etapa, detalhe, assinatura=None, fila=None, por_dia=False, marcas=None):
     """Guarda um problema para o servidor enviar (se a telemetria estiver ligada).
     Pode ser chamado de qualquer processo: instalador, iniciador, servidor.
-    por_dia: no máximo 1 por assinatura por dia (o resto é descartado aqui)."""
-    if por_dia and ja_relatado_hoje(str(assinatura or etapa)[:120], marcas):
+    por_dia: no máximo 1 por assinatura por dia (o resto é descartado aqui). A marca do
+    dia só é gravada DEPOIS de o problema entrar na fila (roteiro 33: marcar antes e
+    falhar ao gravar perdia o problema do dia inteiro)."""
+    chave = str(assinatura or etapa)[:120]
+    if por_dia and ja_relatado_hoje(chave, marcas, marcar=False):
         return False
     item = {
         "etapa": str(etapa)[:60],
@@ -158,12 +167,30 @@ def relatar_problema(etapa, detalhe, assinatura=None, fila=None, por_dia=False, 
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
     except OSError:
         return False
+    if por_dia:
+        ja_relatado_hoje(chave, marcas)
     return True
 
 
-def relatar_excecao(processo, tipo, valor, tb, fila=None, marcas=None):
+LOG_WINDOWS = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher", "beni-windows.log")
+
+
+def log_windows(texto, arquivo=None):
+    """Uma linha (ou mais) no beni-windows.log. Nunca lança exceção."""
+    try:
+        agora = time.time()
+        with open(arquivo or LOG_WINDOWS, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(agora))
+                    + f".{int(agora * 1000) % 1000:03d} " + str(texto) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def relatar_excecao(processo, tipo, valor, tb, fila=None, marcas=None, log=None):
     """Exceção não tratada num processo Python do Windows: "excecao:<processo>:<Tipo>",
-    com o fim do traceback já limpo (sem pasta nem nome do usuário). 1 por dia."""
+    com o fim do traceback já limpo (sem pasta nem nome do usuário). 1 por dia na
+    telemetria; no beni-windows.log, SEMPRE, com o traceback (roteiro 33: um
+    PermissionError do overlay foi para a telemetria sem deixar linha no log)."""
     import traceback
 
     try:
@@ -171,6 +198,7 @@ def relatar_excecao(processo, tipo, valor, tb, fila=None, marcas=None):
     except Exception:  # noqa: BLE001
         texto = f"{getattr(tipo, '__name__', tipo)}: {valor}"
     nome = getattr(tipo, "__name__", "Erro")
+    (log or log_windows)(f"{processo}: exceção não tratada {nome}: {valor}\n{texto.rstrip()}")
     return relatar_problema(f"excecao.{processo}", limpar(texto, 1500), f"excecao:{processo}:{nome}",
                             fila=fila, por_dia=True, marcas=marcas)
 
@@ -207,11 +235,17 @@ def instalar_excepthook(processo, sistema_nt=None):
 
 
 def tirar_da_fila(fila=None, maximo=20):
+    """Tira os problemas da fila para enviar. Primeiro troca o nome do arquivo (atômico):
+    o que outro processo acrescentar depois vai para uma fila nova e não se perde entre
+    o ler e o apagar. Uma troca que sobrou de antes (queda no meio) é lida primeiro."""
     fila = fila or FILA_PROBLEMAS
+    enviando = fila + ".enviando"
     try:
-        with open(fila, encoding="utf-8") as f:
+        if not os.path.exists(enviando):
+            os.replace(fila, enviando)
+        with open(enviando, encoding="utf-8") as f:
             linhas = f.readlines()
-        os.remove(fila)
+        os.remove(enviando)
     except OSError:
         return []
     itens = []

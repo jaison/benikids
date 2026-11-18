@@ -70,6 +70,27 @@ fn minutos_do_timer(segundos: f64) -> i64 {
     dados::minutos(segundos)
 }
 
+/// Roteiro 33: o servidor fechou um app travado e põe {"seq", "tileId"} em
+/// "appTravadoFechado" no /api/usage/status por 2 min. Devolve o seq novo, se ainda não
+/// foi mostrado.
+fn aviso_de_travado(uso: &Value, visto: u64) -> Option<u64> {
+    let seq = uso.get("appTravadoFechado")?.get("seq")?.as_u64()?;
+    (seq > visto).then_some(seq)
+}
+
+#[cfg(test)]
+mod testes_travado {
+    use super::*;
+
+    #[test]
+    fn mostra_cada_app_travado_uma_vez() {
+        let uso = serde_json::json!({"appTravadoFechado": {"seq": 2, "tileId": "tuxpaint"}});
+        assert_eq!(aviso_de_travado(&uso, 0), Some(2));
+        assert_eq!(aviso_de_travado(&uso, 2), None);
+        assert_eq!(aviso_de_travado(&serde_json::json!({}), 0), None);
+    }
+}
+
 /// Título do aviso de minutos (o mesmo número no título e no texto).
 fn texto_do_aviso(minutos: i64) -> String {
     if minutos <= 1 { "Falta 1 minuto!".into() } else { format!("Faltam {minutos} minutos!") }
@@ -203,6 +224,8 @@ pub struct Menu {
     abrindo_desde: Option<Instant>,
     geracao: u64,
     aviso_timer_mostrado: bool,
+    /// roteiro 33: o último "O jogo travou e foi fechado." já mostrado (seq do servidor)
+    travado_visto: u64,
     /// Aviso "Faltam N minutos!": um balão no alto que some em 6 s e NÃO bloqueia
     /// (antes era uma janela modal que escurecia a tela e engolia o 1º clique).
     aviso_timer: Option<(i64, u64)>,
@@ -252,6 +275,7 @@ impl Menu {
             abrindo_desde: None,
             geracao: 0,
             aviso_timer_mostrado: false,
+            travado_visto: 0,
             aviso_timer: None,
             fim_do_timer: 0,
             ultimo_expiry: 0.,
@@ -373,6 +397,14 @@ impl Menu {
     fn atualizar_uso(&mut self, cx: &mut Context<Self>) {
         self.tarefa(cx, |api| api.get_json("/api/usage/status"), |m, r, cx| {
             let Some(v) = r else { return };
+            if let Some(seq) = aviso_de_travado(&v, m.travado_visto) {
+                m.travado_visto = seq;
+                if m.janela.is_none() {
+                    m.mostrar_aviso("😕", "O jogo travou".into(), "O jogo travou e foi fechado.".into());
+                    m.agendar_fechar_mensagem(cx);
+                    m.redesenhar(cx);
+                }
+            }
             if v == m.uso {
                 return;
             }
@@ -1239,6 +1271,7 @@ impl Menu {
             .or_else(|| (k.len() == 1 && k.as_bytes()[0].is_ascii_digit()).then_some(k))
             .map(str::to_string);
         if self.inicio.is_some() {
+            log::info!("tecla {k} ignorada: tela de abertura na frente");
             return;
         }
         let confirmar = matches!(k, "enter" | "space" | "kp_enter");
@@ -1246,6 +1279,9 @@ impl Menu {
             return; // Enter segurado não fecha o aviso e abre o app na sequência
         }
         if let Some(j) = self.janela.clone() {
+            if matches!(k, "left" | "right" | "up" | "down") {
+                log::info!("seta {k} foi para a janela aberta por cima do menu");
+            }
             self.tecla_janela(j, k, digito, cx);
             cx.notify();
             return;
@@ -2470,6 +2506,8 @@ impl Menu {
             return;
         }
         self.ativa = ativa;
+        // roteiro 33: depois da área dos pais, uma seta não mudou o destaque
+        log::info!("janela do menu {}", if ativa { "ativa" } else { "inativa" });
         self.sujo = false;
         if ativa {
             self.atualizar_uso(cx);
@@ -2740,11 +2778,13 @@ pub(crate) fn trazer_janela_para_frente(h: windows_sys::Win32::Foundation::HWND)
         ShowWindowAsync(h, SW_SHOW);
         SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
         if SetForegroundWindow(h) != 0 {
+            log::info!("janela para a frente: direto");
             return;
         }
         keybd_event(VK_MENU as u8, 0, KEYEVENTF_EXTENDEDKEY, 0);
-        SetForegroundWindow(h);
+        let ok = SetForegroundWindow(h) != 0;
         keybd_event(VK_MENU as u8, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
+        log::info!("janela para a frente: {}", if ok { "com Alt" } else { "o Windows recusou" });
     }
 }
 

@@ -406,6 +406,18 @@ def pasta_no_path(cmd, resolvido):
     return os.path.dirname(resolvido[0])
 
 
+def ambiente(cmd):
+    """Variáveis de ambiente só deste app ("env" no catálogo), ou {}. Roteiro 33: o Tux
+    Paint com SDL_RENDER_DRIVER=opengl, porque o Direct3D 9 do driver NVIDIA (GPU híbrida)
+    travava no splash ou caía (0xC0000005 em nvd3dumx.dll). Só textos simples."""
+    item = por_id(cmd[0][len(PREFIXO):]) if cmd and cmd[0].startswith(PREFIXO) else None
+    env = item.get("env") if item else None
+    if not isinstance(env, dict):
+        return {}
+    return {str(k): str(v) for k, v in env.items()
+            if isinstance(k, str) and k and "=" not in k and isinstance(v, (str, int))}
+
+
 def gravar_config_inicial(item, exe=None):
     """Config pronta na pasta de dados do app, se ainda não existe (ex.: SuperTux sem a
     pergunta "conectar à Internet?": o ✕ fecha o jogo à força e ele nunca grava a resposta).
