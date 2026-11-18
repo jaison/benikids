@@ -8,6 +8,9 @@ Sobe o servidor (server.py), o vigia do timer (timer_watchdog.py) e o menu nativ
   pelo menu web num navegador em modo quiosque.
 Enquanto roda, a tecla Windows e a barra de tarefas ficam presas (trava_windows.py),
 com o menu, com um app aberto e na área dos pais; tudo volta quando ele sai.
+Ele e todos os filhos ficam num Job Object: se ele cair, o Windows encerra o resto
+(nada de menu órfão em tela cheia por cima de tudo). O que sobrou de uma queda de
+antes disso é encerrado na abertura seguinte (queda_windows.py).
 
 Roda com o pythonw.exe que vem no pacote (sem janela de console).
 """
@@ -23,6 +26,7 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_ROOT)
 
 import plataforma_windows as win  # noqa: E402
+import queda_windows  # noqa: E402
 import telemetria  # noqa: E402
 import trava_windows  # noqa: E402
 from app_detection import browser_family, find_browser  # noqa: E402
@@ -44,6 +48,7 @@ OVERLAY_PIDFILE = os.path.join(CACHE, "overlay.pid")
 LOG = os.path.join(CACHE, "beni-windows.log")
 MENU_LOG = os.path.join(CACHE, "menu-nativo.log")
 BARRA_ESCONDIDA = os.path.join(CACHE, "barra-escondida.json")
+SESSAO = os.path.join(CACHE, "sessao.json")
 SEM_GPU = 75
 SEM_CONSOLE = 0x08000000
 
@@ -238,6 +243,35 @@ def procurar_atualizacao_depois(espera=120):
     threading.Thread(target=trabalhar, daemon=True).start()
 
 
+def limpar_queda():
+    """A sessão anterior caiu (o sessao.json ou a barra-escondida.json ficaram): encerra
+    o menu, o servidor, o vigia, o overlay e o Edge que sobraram dela. Esta é a única
+    instância (o mutex já é nosso), então nada disso pertence a um Benikids vivo."""
+    if not queda_windows.caiu_antes(SESSAO, (BARRA_ESCONDIDA,)):
+        return
+    eu, minha_sessao = os.getpid(), win.sessao_do_processo(os.getpid())
+    lista = []
+    for pid in win.processos():
+        if pid in (0, 4, eu):
+            continue
+        exe = win.caminho_do_exe(pid)
+        if not exe:
+            continue
+        lista.append({"pid": pid, "exe": exe, "argv": win.process_command(pid),
+                      "sessao": win.sessao_do_processo(pid)})
+    pids = queda_windows.restos(lista, APP_ROOT, CACHE, eu, minha_sessao)
+    for pid in pids:
+        win.terminar(pid)
+    for pidfile in (BROWSER_PIDFILE, TILE_PIDFILE, OVERLAY_PIDFILE):
+        try:
+            os.unlink(pidfile)
+        except OSError:
+            pass
+    log(f"a sessão anterior caiu; encerrados {len(pids)} processos que sobraram dela")
+    if pids:
+        time.sleep(1)  # o Windows solta os arquivos (beni-menu.exe) antes de uma atualização
+
+
 def main():
     os.makedirs(CACHE, exist_ok=True)
     if "--autostart" in sys.argv[1:]:
@@ -256,7 +290,19 @@ def main():
     except OSError:
         pass
     log(f"início (python {sys.version.split()[0]}, {APP_ROOT})")
+    try:
+        limpar_queda()
+    except Exception as erro:  # noqa: BLE001 — a limpeza nunca impede o Benikids de abrir
+        log(f"limpeza da queda: {erro}")
+    # Daqui em diante, tudo o que abrir fica no job desta sessão e morre com ela.
+    try:
+        win.prender_a_sessao()
+    except OSError as erro:
+        log(f"sem o job da sessão ({erro}); numa queda, sobram processos")
+    queda_windows.marcar_sessao(SESSAO, os.getpid())
+    atexit.register(queda_windows.fim_da_sessao, SESSAO)
     if atualizacao_pendente():
+        queda_windows.fim_da_sessao(SESSAO)
         return 0  # o instalador da versão nova abre o Benikids de novo quando terminar
     procurar_atualizacao_depois()
 
@@ -342,6 +388,7 @@ def main():
     finally:
         encerrar_tudo(servidor, vigia, menu)
         trava.desligar()
+        queda_windows.fim_da_sessao(SESSAO)
         log("fim")
 
 

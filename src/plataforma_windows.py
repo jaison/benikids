@@ -40,6 +40,10 @@ kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWS
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                ctypes.POINTER(wintypes.DWORD)]
+kernel32.ProcessIdToSessionId.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
 shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
 ntdll.NtQueryInformationProcess.argtypes = [
@@ -208,6 +212,7 @@ def arvore(pid_raiz):
 JobObjectBasicAccountingInformation = 1
 JobObjectExtendedLimitInformation = 9
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
 
 
 class _IO_COUNTERS(ctypes.Structure):
@@ -258,12 +263,15 @@ class Trabalho:
     """Job Object: todo processo que o app abrir entra junto, e fechar o handle
     (inclusive quando este processo morre) encerra a árvore inteira."""
 
-    def __init__(self):
+    def __init__(self, permitir_saida=False):
         self.h = kernel32.CreateJobObjectW(None, None)
         if not self.h:
             raise OSError(ctypes.get_last_error(), "CreateJobObject")
         info = _EXTENDED_LIMIT()
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if permitir_saida:
+            # quem pedir (CREATE_BREAKAWAY_FROM_JOB) sai do job e sobrevive a ele
+            info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK
         if not kernel32.SetInformationJobObject(
             self.h, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)
         ):
@@ -288,6 +296,48 @@ class Trabalho:
         if self.h:
             kernel32.CloseHandle(self.h)
             self.h = None
+
+
+_job_da_sessao = []
+
+
+def prender_a_sessao():
+    """Põe este processo (o iniciador) num job que encerra tudo quando ele acaba.
+
+    Os filhos (servidor, vigia, menu, e por eles os apps, o overlay e o Edge da área
+    dos pais) entram junto, por herança. O handle fica só aqui e não é herdado:
+    quando o iniciador morre, mesmo à força, o Windows fecha o handle e encerra o
+    resto. Os jobs próprios do supervisor de apps e do menu ficam aninhados neste
+    (Windows 8+). Quem precisa sobreviver ao Benikids sai com queda_windows.popen_fora_do_job."""
+    job = Trabalho(permitir_saida=True)
+    if not kernel32.AssignProcessToJobObject(job.h, kernel32.GetCurrentProcess()):
+        erro = ctypes.get_last_error()
+        job.fechar()
+        raise OSError(erro, "AssignProcessToJobObject")
+    _job_da_sessao.append(job)
+    return job
+
+
+def caminho_do_exe(pid):
+    """Caminho completo do programa do processo, ou None (de outro usuário, protegido)."""
+    try:
+        with _Aberto(pid) as h:
+            if not h:
+                return None
+            buf = ctypes.create_unicode_buffer(1024)
+            tamanho = wintypes.DWORD(len(buf))
+            if not kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(tamanho)):
+                return None
+            return buf.value
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def sessao_do_processo(pid):
+    sessao = wintypes.DWORD()
+    if not kernel32.ProcessIdToSessionId(int(pid), ctypes.byref(sessao)):
+        return None
+    return sessao.value
 
 
 # ---------------------------------------------------------------- janelas

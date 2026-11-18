@@ -247,23 +247,50 @@ um app aberto.
   Ctrl+Shift+Esc passam; Ctrl+Alt+Del o Windows não deixa bloquear. Não usa política
   (`NoWinKeys`), que pede administrador e logoff. O gancho é posto de novo a cada 30 s,
   porque o Windows tira em silêncio um gancho que demorou a responder.
-- **Barra de tarefas:** `Shell_TrayWnd` e `Shell_SecondaryTrayWnd` ficam escondidas
-  (`ShowWindowAsync(SW_HIDE)`), e a área de trabalho da tela principal vira a tela inteira
-  (`SPI_SETWORKAREA`, sem gravar nas configurações). Sem isso, um app maximizado deixaria
-  vazia a faixa da barra. A cada 0,5 s a trava confere de novo, porque um Explorer
-  reiniciado cria uma barra visível.
+- **Barra de tarefas** (outra thread, para a do gancho nunca esperar o Explorer):
+  - `Shell_TrayWnd` e `Shell_SecondaryTrayWnd` ficam escondidas (`ShowWindowAsync(SW_HIDE)`).
+  - A barra fica também em "ocultar automaticamente" (`SHAppBarMessage(ABM_SETSTATE)`). Assim o
+    próprio Explorer anuncia a tela inteira como área de trabalho, e os apps maximizados vão
+    até embaixo. Gravar a área com `SPI_SETWORKAREA` não segurava: no roteiro 24 o Explorer a
+    reescrevia em 36 de 40 medições.
+  - Uma janela invisível recebe o `TaskbarCreated` do Explorer reiniciado, esconde a barra nova
+    na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms fica de reserva.
+  - Se o foco ficar na área de trabalho (`Progman`/`WorkerW`) ou na barra por duas voltas,
+    volta para a última janela que estava na frente (menu ou app).
 - **Saída:** no Sair com PIN, no `exit-kids`, quando o menu fecha e antes de instalar uma
-  atualização, o `finally` do iniciador desfaz o gancho e devolve a barra e a área de
-  trabalho. O `atexit` repete isso; a segunda chamada não faz nada.
-- **Queda do iniciador:** o Windows desfaz o gancho sozinho quando o processo acaba, então a
-  tecla Windows volta na hora. A barra fica escondida até uma destas coisas:
-  - o Benikids abrir e fechar de novo. A área de trabalho original fica guardada em
-    `~/.cache/cozy-kids-launcher/barra-escondida.json`, e é ela que volta, não a tela inteira;
-  - o Explorer reiniciar;
-  - a pessoa sair e entrar de novo no Windows.
-- **Como o adulto recupera a barra:** Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos,
-  "Windows Explorer" → Reiniciar. Também resolve sair e entrar de novo no Windows, ou
-  reiniciar o computador.
+  atualização, o `finally` do iniciador desfaz o gancho, mostra a barra e devolve o estado de
+  antes (com ou sem "ocultar automaticamente"). O `atexit` repete isso; a segunda chamada não
+  faz nada.
+- **Job da sessão:** o iniciador entra num Job Object com `KILL_ON_JOB_CLOSE`, e tudo o que ele
+  abre entra junto, por herança: servidor, vigia, menu e, por eles, os apps da criança, o
+  overlay e o Edge da área dos pais.
+  - Se o iniciador cair, o Windows encerra tudo. Sem servidor nem vigia, um app aberto não
+    teria mais limite de tempo, e o menu ficaria em tela cheia por cima da barra.
+  - Os jobs do supervisor de apps e do menu ficam aninhados neste (Windows 8+).
+  - Só o instalador da atualização e a instalação de apps pedida pelos pais saem do job
+    (`CREATE_BREAKAWAY_FROM_JOB`), para continuar depois que o Benikids fecha.
+- **Limpeza na abertura** (`queda_windows.py`): se o `sessao.json` ou a `barra-escondida.json`
+  ficaram da vez anterior, ela caiu. A nova instância encerra o que sobrou, reconhecido pelo
+  caminho e não pelo nome:
+  - `<instalação>\beni-menu.exe`;
+  - os scripts `server.py`, `timer_watchdog.py`, `overlay.py` e `process_supervisor.py` da
+    instalação;
+  - o navegador com perfil em `~/.cache/cozy-kids-launcher/menu-*`.
+  Só conta o que é da mesma sessão do Windows. Isso acontece antes de instalar uma atualização,
+  para o `beni-menu.exe` não ficar preso.
+- **Queda do iniciador:** o Windows desfaz o gancho e encerra o job, então a tecla Windows volta
+  na hora e nenhum menu fica por cima. A barra continua escondida e em "ocultar
+  automaticamente", que o Windows grava como preferência. Isso só se desfaz de um destes jeitos:
+  - o Benikids abrir e fechar de novo: o estado original fica guardado em
+    `~/.cache/cozy-kids-launcher/barra-escondida.json`, e é ele que volta;
+  - o Explorer reiniciar ou a pessoa sair e entrar no Windows: a barra volta, mas em
+    "ocultar automaticamente".
+- **Como o adulto recupera a barra:**
+  1. Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos, "Windows Explorer" → Reiniciar.
+     A barra volta e aparece ao levar o mouse à borda de baixo.
+  2. Para ela ficar sempre visível: Configurações → Personalização → Barra de tarefas →
+     desligar "Ocultar automaticamente a barra de tarefas no modo área de trabalho". Abrir e
+     fechar o Benikids também desfaz isso.
 
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:

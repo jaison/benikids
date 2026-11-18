@@ -1934,7 +1934,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.json_response({"status": "error", "message": "Windows only"}, 404)
                 return
             try:
-                subprocess.Popen(
+                # fora do job da sessão: a instalação continua se os pais saírem do Benikids
+                from queda_windows import popen_fora_do_job
+
+                popen_fora_do_job(
                     [sys.executable, os.path.join(APP_ROOT, "instalar_apps.py")],
                     cwd=APP_ROOT, close_fds=True,
                 )
