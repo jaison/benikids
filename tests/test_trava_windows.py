@@ -14,14 +14,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import trava_windows as trava  # noqa: E402
 
-TELA = [0, 0, 2560, 1080]
-COM_BARRA = [0, 0, 2560, 1040]
+NORMAL = trava.ABS_ALWAYSONTOP  # barra comum, sempre visível
 
 
 class WindowsDeMentira:
-    def __init__(self, barras=("principal",), area=COM_BARRA):
+    def __init__(self, barras=("principal",), estado=NORMAL):
         self.visiveis = {b: True for b in barras}
-        self.area = list(area)
+        self.bits = estado
         self.chamadas = []
 
     def barras(self):
@@ -38,15 +37,12 @@ class WindowsDeMentira:
         self.chamadas.append(("mostrar", janela))
         self.visiveis[janela] = True
 
-    def area_de_trabalho(self):
-        return list(self.area)
+    def estado(self):
+        return self.bits
 
-    def definir_area(self, area):
-        self.chamadas.append(("area", list(area)))
-        self.area = list(area)
-
-    def tela(self):
-        return list(TELA)
+    def definir_estado(self, bits):
+        self.chamadas.append(("estado", bits))
+        self.bits = bits
 
 
 class TeclasTests(unittest.TestCase):
@@ -74,54 +70,83 @@ class BarraTests(unittest.TestCase):
     def tearDown(self):
         self.pasta.cleanup()
 
-    def test_hides_every_taskbar_and_gives_apps_the_whole_screen(self):
+    def test_hides_every_taskbar_and_turns_on_autohide(self):
+        # roteiro 24: gravar a área de trabalho não segurava (o Explorer a reescrevia);
+        # com "ocultar automaticamente" é o próprio Explorer que dá a tela toda aos apps
         win = WindowsDeMentira(barras=("principal", "segunda tela"))
         barra = trava.Barra(win, self.arquivo)
         barra.esconder()
         self.assertEqual(win.visiveis, {"principal": False, "segunda tela": False})
-        self.assertEqual(win.area, TELA)
-        self.assertEqual(json.loads(Path(self.arquivo).read_text())["area"], COM_BARRA)
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+        self.assertEqual(json.loads(Path(self.arquivo).read_text())["estado"], NORMAL)
 
-    def test_exit_brings_back_the_taskbar_and_the_original_work_area(self):
+    def test_exit_brings_back_the_taskbar_and_the_users_setting(self):
         win = WindowsDeMentira()
         barra = trava.Barra(win, self.arquivo)
         barra.esconder()
         barra.restaurar()
         self.assertEqual(win.visiveis, {"principal": True})
-        self.assertEqual(win.area, COM_BARRA)
+        self.assertEqual(win.bits, NORMAL)
         self.assertFalse(os.path.exists(self.arquivo))
         # de novo (finally + atexit): não faz nada
         chamadas = len(win.chamadas)
         barra.restaurar()
         self.assertEqual(len(win.chamadas), chamadas)
 
+    def test_user_who_already_hid_the_taskbar_keeps_it_that_way(self):
+        win = WindowsDeMentira(estado=trava.ABS_AUTOHIDE)
+        barra = trava.Barra(win, self.arquivo)
+        barra.esconder()
+        self.assertNotIn(("estado", trava.ABS_AUTOHIDE), win.chamadas[:1])
+        barra.restaurar()
+        self.assertEqual(win.bits, trava.ABS_AUTOHIDE)
+
     def test_taskbar_that_comes_back_is_hidden_again(self):
         win = WindowsDeMentira()
         barra = trava.Barra(win, self.arquivo)
         barra.esconder()
-        # Explorer reiniciado: barra nova, visível, e a área de trabalho recalculada
+        # Explorer reiniciado: barra nova, visível
         win.visiveis = {"nova": True}
-        win.area = list(COM_BARRA)
-        barra.vigiar()
+        self.assertTrue(barra.vigiar())
         self.assertEqual(win.visiveis, {"nova": False})
-        self.assertEqual(win.area, TELA)
+        self.assertFalse(barra.vigiar())
+        # e se ele voltou sem o "ocultar automaticamente", liga de novo
+        win.bits = NORMAL
+        barra.ocultar_automaticamente()
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
 
-    def test_after_a_crash_the_next_start_restores_the_saved_area(self):
-        Path(self.arquivo).write_text(json.dumps({"area": COM_BARRA}))
-        win = WindowsDeMentira(area=TELA)  # o anterior caiu e deixou a tela inteira
+    def test_after_a_crash_the_next_start_restores_the_saved_setting(self):
+        Path(self.arquivo).write_text(json.dumps({"estado": NORMAL}))
+        win = WindowsDeMentira(estado=NORMAL | trava.ABS_AUTOHIDE)  # o anterior caiu com ele ligado
         barra = trava.Barra(win, self.arquivo)
         barra.esconder()
         barra.restaurar()
-        self.assertEqual(win.area, COM_BARRA)
+        self.assertEqual(win.bits, NORMAL)
         self.assertEqual(win.visiveis, {"principal": True})
 
-    def test_broken_saved_file_falls_back_to_the_current_area(self):
-        Path(self.arquivo).write_text("{quebrado")
-        win = WindowsDeMentira()
+    def test_broken_or_old_saved_file_falls_back_to_the_current_setting(self):
+        for conteudo in ("{quebrado", json.dumps({"area": [0, 0, 2560, 1040]}), json.dumps({"estado": True})):
+            Path(self.arquivo).write_text(conteudo)
+            win = WindowsDeMentira()
+            barra = trava.Barra(win, self.arquivo)
+            barra.esconder()
+            barra.restaurar()
+            self.assertEqual(win.bits, NORMAL, conteudo)
+
+    def test_explorer_missing_at_start_is_saved_when_it_arrives(self):
+        win = WindowsDeMentira(barras=())
+        win.bits = None
         barra = trava.Barra(win, self.arquivo)
         barra.esconder()
+        self.assertFalse(os.path.exists(self.arquivo))
+        win.bits = NORMAL  # TaskbarCreated
+        win.visiveis = {"nova": True}
+        barra.vigiar()
+        barra.ocultar_automaticamente()
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+        self.assertEqual(json.loads(Path(self.arquivo).read_text())["estado"], NORMAL)
         barra.restaurar()
-        self.assertEqual(win.area, COM_BARRA)
+        self.assertEqual(win.bits, NORMAL)
 
     def test_nothing_to_restore_when_it_never_hid(self):
         win = WindowsDeMentira()
@@ -132,8 +157,39 @@ class BarraTests(unittest.TestCase):
         t = trava.Trava(self.arquivo)
         if os.name != "nt":
             t.ligar()
-            self.assertIsNone(t.thread)
+            self.assertEqual(t.threads, {})
         t.desligar()
+
+
+class FocoTests(unittest.TestCase):
+    def test_focus_stuck_on_the_desktop_goes_back_to_the_last_window(self):
+        # roteiro 24: depois do Explorer reiniciar, o foco ficava no Progman atrás do menu
+        foco = trava.Foco()
+        existe = lambda _j: True  # noqa: E731
+        self.assertIsNone(foco.passo("menu", "Zed::Window", existe))
+        self.assertIsNone(foco.passo("desk", "Progman", existe))  # espera uma volta
+        self.assertEqual(foco.passo("desk", "Progman", existe), "menu")
+
+    def test_taskbar_and_workerw_count_as_outside(self):
+        for classe in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd", "WorkerW"):
+            foco = trava.Foco()
+            foco.passo("app", "SDL_app", lambda _j: True)
+            foco.passo("x", classe, lambda _j: True)
+            self.assertEqual(foco.passo("x", classe, lambda _j: True), "app", classe)
+
+    def test_quick_switch_and_closed_windows_are_left_alone(self):
+        foco = trava.Foco()
+        foco.passo("app", "SDL_app", lambda _j: True)
+        self.assertIsNone(foco.passo("desk", "Progman", lambda _j: True))
+        self.assertIsNone(foco.passo("menu", "Zed::Window", lambda _j: True))  # foi só de passagem
+        self.assertIsNone(foco.passo("desk", "Progman", lambda _j: True))
+        # a última janela fechou: não há para onde devolver
+        self.assertIsNone(foco.passo("desk", "Progman", lambda _j: False))
+        # nada na frente (troca em andamento) não conta
+        foco2 = trava.Foco()
+        foco2.passo("app", "SDL_app", lambda _j: True)
+        self.assertIsNone(foco2.passo(None, "", lambda _j: True))
+        self.assertIsNone(foco2.passo(None, "", lambda _j: True))
 
 
 class IniciadorTests(unittest.TestCase):
