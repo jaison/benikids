@@ -115,6 +115,45 @@ class BarraTests(unittest.TestCase):
         barra.ocultar_automaticamente()
         self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
 
+    def test_new_explorer_is_hidden_again_and_autohide_comes_back_by_itself(self):
+        # roteiro 25: o Explorer novo volta com a barra fixa (ABM_GETSTATE 0); a
+        # conferência periódica precisa esconder e religar mesmo sem o TaskbarCreated
+        log = []
+        win = WindowsDeMentira()
+        barra = trava.Barra(win, self.arquivo, log.append)
+        barra.esconder()
+        self.assertFalse(barra.manter())  # nada mudou
+        win.visiveis = {"nova": True}
+        win.bits = None  # o Explorer novo ainda não responde
+        self.assertTrue(barra.manter())
+        self.assertEqual(win.visiveis, {"nova": False})
+        self.assertIn("barra: Explorer voltou; escondida de novo", log)
+        self.assertTrue(barra.religar)
+        win.bits = NORMAL  # respondeu, com o "ocultar automaticamente" desligado
+        self.assertFalse(barra.manter())
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+        self.assertFalse(barra.religar)
+        chamadas = len(win.chamadas)
+        barra.manter()
+        self.assertEqual(len(win.chamadas), chamadas)  # e não fica mexendo à toa
+        barra.restaurar()
+        self.assertEqual(win.bits, NORMAL)
+
+    def test_taskbar_created_turns_autohide_back_on_right_away(self):
+        win = WindowsDeMentira()
+        barra = trava.Barra(win, self.arquivo)
+        barra.esconder()
+        win.visiveis, win.bits = {"nova": True}, NORMAL
+        barra.explorer_voltou()
+        self.assertEqual(win.visiveis, {"nova": False})
+        self.assertEqual(win.bits, NORMAL | trava.ABS_AUTOHIDE)
+
+    def test_second_screen_at_start_is_not_taken_for_a_new_explorer(self):
+        log = []
+        barra = trava.Barra(WindowsDeMentira(barras=("principal", "segunda")), self.arquivo, log.append)
+        barra.esconder()
+        self.assertNotIn("barra: Explorer voltou; escondida de novo", log)
+
     def test_after_a_crash_the_next_start_restores_the_saved_setting(self):
         Path(self.arquivo).write_text(json.dumps({"estado": NORMAL}))
         win = WindowsDeMentira(estado=NORMAL | trava.ABS_AUTOHIDE)  # o anterior caiu com ele ligado
@@ -190,6 +229,54 @@ class FocoTests(unittest.TestCase):
         foco2.passo("app", "SDL_app", lambda _j: True)
         self.assertIsNone(foco2.passo(None, "", lambda _j: True))
         self.assertIsNone(foco2.passo(None, "", lambda _j: True))
+
+
+    def test_right_after_explorer_restarts_no_window_in_front_also_counts(self):
+        foco = trava.Foco()
+        foco.passo("menu", "Zed::Window", lambda _j: True)
+        self.assertIsNone(foco.passo(None, "", lambda _j: True, vazio_conta=True))
+        self.assertEqual(foco.passo(None, "", lambda _j: True, vazio_conta=True), "menu")
+
+
+class ThreadsTests(unittest.TestCase):
+    def test_thread_timer_reads_the_real_msg_field(self):
+        # pacote 22: msg.hwnd não existe no wintypes.MSG (é hWnd); o AttributeError no
+        # primeiro WM_TIMER matava a thread da barra sem deixar rastro
+        from ctypes import wintypes
+
+        msg = wintypes.MSG()
+        msg.message = trava.WM_TIMER
+        self.assertTrue(trava.timer_da_thread(msg))
+        msg.hWnd = 1234
+        self.assertFalse(trava.timer_da_thread(msg))
+        msg.hWnd, msg.message = None, 0x0100
+        self.assertFalse(trava.timer_da_thread(msg))
+        codigo = Path(trava.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("msg.hwnd", codigo)
+
+    def test_a_thread_that_dies_leaves_its_reason_in_the_log(self):
+        import threading
+
+        log = []
+        t = trava.Trava("x", log.append)
+        t.threads["barra"] = [None, 0]
+        pronta = threading.Event()
+
+        def quebra(_pronta):
+            raise AttributeError("hwnd")
+
+        t._rodar("barra", quebra, pronta)
+        self.assertTrue(pronta.is_set())
+        self.assertTrue(any("a thread caiu: AttributeError: hwnd" in linha for linha in log))
+        self.assertIn("trava (barra): parou", log)
+
+    def test_the_same_error_is_logged_once(self):
+        log = []
+        erro_de = trava.LogDeErro(log.append)
+        for _ in range(3):
+            erro_de("barra", OSError(5, "negado"))
+        erro_de("foco", OSError(5, "negado"))
+        self.assertEqual(len(log), 2)
 
 
 class IniciadorTests(unittest.TestCase):

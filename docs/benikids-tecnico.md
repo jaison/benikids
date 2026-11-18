@@ -254,9 +254,17 @@ um app aberto.
     até embaixo. Gravar a área com `SPI_SETWORKAREA` não segurava: no roteiro 24 o Explorer a
     reescrevia em 36 de 40 medições.
   - Uma janela invisível recebe o `TaskbarCreated` do Explorer reiniciado, esconde a barra nova
-    na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms fica de reserva.
+    na hora e confere a cada 50 ms por 5 s. A conferência a cada 250 ms é a reserva: ela
+    também reconhece a barra nova (outra janela `Shell_TrayWnd`), esconde e religa o "ocultar
+    automaticamente", porque o Explorer novo volta com ele desligado.
   - Se o foco ficar na área de trabalho (`Progman`/`WorkerW`) ou na barra por duas voltas,
-    volta para a última janela que estava na frente (menu ou app).
+    volta para a última janela que estava na frente (menu ou app). Logo depois de o Explorer
+    voltar, "nenhuma janela na frente" também conta.
+  - No `beni-windows.log`: "barra: vigiando", "barra: Explorer voltou; escondida de novo",
+    "barra: \"ocultar automaticamente\" ligado", "foco: … devolvido ao menu/app". Uma thread
+    da trava que cair deixa "trava (barra): a thread caiu" com o erro: no `pythonw` não há
+    stderr, e no pacote 22 a thread da barra morria no primeiro timer sem deixar rastro (lia
+    `msg.hwnd`, mas o campo do `wintypes.MSG` é `hWnd`).
 - **Saída:** no Sair com PIN, no `exit-kids`, quando o menu fecha e antes de instalar uma
   atualização, o `finally` do iniciador desfaz o gancho, mostra a barra e devolve o estado de
   antes (com ou sem "ocultar automaticamente"). O `atexit` repete isso; a segunda chamada não
@@ -269,15 +277,20 @@ um app aberto.
   - Os jobs do supervisor de apps e do menu ficam aninhados neste (Windows 8+).
   - Só o instalador da atualização e a instalação de apps pedida pelos pais saem do job
     (`CREATE_BREAKAWAY_FROM_JOB`), para continuar depois que o Benikids fecha.
-- **Limpeza na abertura** (`queda_windows.py`): se o `sessao.json` ou a `barra-escondida.json`
-  ficaram da vez anterior, ela caiu. A nova instância encerra o que sobrou, reconhecido pelo
-  caminho e não pelo nome:
+- **Limpeza na abertura** (`queda_windows.py`): a nova instância (dona do mutex
+  `Local\BeniLauncher`) encerra sempre o que sobrou de um Benikids anterior, reconhecido pelo
+  caminho e não pelo nome. Sempre, e não só quando o `sessao.json` ou a
+  `barra-escondida.json` ficaram: as versões até a 1.0.6 não deixavam marcador.
   - `<instalação>\beni-menu.exe`;
   - os scripts `server.py`, `timer_watchdog.py`, `overlay.py` e `process_supervisor.py` da
     instalação;
   - o navegador com perfil em `~/.cache/cozy-kids-launcher/menu-*`.
   Só conta o que é da mesma sessão do Windows. Isso acontece antes de instalar uma atualização,
   para o `beni-menu.exe` não ficar preso.
+- **Instalador com o Benikids aberto:** se o `beni-menu.exe` está rodando, mas nenhum iniciador
+  segura o mutex, é resto de uma queda (sem servidor, o Sair não funciona). O "Instalar
+  Benikids.cmd" e a atualização automática encerram esses restos pelo mesmo critério e seguem.
+  Com o iniciador vivo, o instalador continua pedindo "Pais → Sair".
 - **Queda do iniciador:** o Windows desfaz o gancho e encerra o job, então a tecla Windows volta
   na hora e nenhum menu fica por cima. A barra continua escondida e em "ocultar
   automaticamente", que o Windows grava como preferência. Isso só se desfaz de um destes jeitos:

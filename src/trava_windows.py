@@ -31,6 +31,7 @@ import json
 import os
 import threading
 import time
+import traceback
 
 VK_ESCAPE = 0x1B
 VK_LWIN = 0x5B
@@ -52,6 +53,29 @@ RAPIDO_SEGUNDOS = 5.0
 # O Windows tira em silêncio um gancho que demora a responder (LowLevelHooksTimeout).
 # Pôr um novo de tempos em tempos garante que ele volta mesmo que isso aconteça.
 REGANCHAR_MS = 30000
+WM_TIMER = 0x0113
+
+
+def timer_da_thread(msg):
+    """WM_TIMER do SetTimer(NULL, ...): sem janela. O campo do wintypes.MSG é hWnd (com W
+    maiúsculo): ler o campo "hwnd" dava AttributeError no primeiro timer e matava a thread da
+    barra em silêncio (pacote 22: Explorer reiniciado deixava a barra à mostra)."""
+    return msg.message == WM_TIMER and not msg.hWnd
+
+
+class LogDeErro:
+    """Loga cada erro diferente uma vez (a conferência roda 4 vezes por segundo)."""
+
+    def __init__(self, log):
+        self.log = log
+        self.vistos = set()
+
+    def __call__(self, onde, erro):
+        chave = (onde, type(erro).__name__, str(erro))
+        if chave in self.vistos:
+            return
+        self.vistos.add(chave)
+        self.log(f"{onde}: erro {type(erro).__name__}: {erro}")
 
 
 def engolir_tecla(vk, ctrl=False, shift=False, alt=False):
@@ -81,6 +105,7 @@ class Barra:
         self.ativa = False
         self.original = None
         self.escondidas = set()
+        self.religar = False  # Explorer novo: falta religar o "ocultar automaticamente"
 
     def _ler_salvo(self):
         try:
@@ -111,38 +136,65 @@ class Barra:
             if self.original is not None:
                 self._salvar()
         self.ativa = True
-        self.ocultar_automaticamente()
+        self.religar = not self.ocultar_automaticamente()
         self.vigiar()
 
     def ocultar_automaticamente(self):
         """Liga o "ocultar automaticamente" se estiver desligado (também depois de o
-        Explorer reiniciar, que relê a preferência)."""
+        Explorer reiniciar: o Explorer novo volta com ele desligado). Devolve True se
+        ficou ligado; False se o Explorer ainda não respondeu (tenta de novo depois)."""
         if not self.ativa:
-            return
+            return True
         atual = self.api.estado()
         if not isinstance(atual, int):
-            return
+            return False
         if self.original is None:
             # o Explorer ainda não existia quando o Benikids abriu: guarda agora
             self.original = atual
             self._salvar()
-        if not atual & ABS_AUTOHIDE:
-            self.api.definir_estado(estado_com_ocultar(atual))
+        if atual & ABS_AUTOHIDE:
+            return True
+        self.api.definir_estado(estado_com_ocultar(atual))
+        depois = self.api.estado()
+        ok = isinstance(depois, int) and bool(depois & ABS_AUTOHIDE)
+        if ok:
+            self.log("barra: \"ocultar automaticamente\" ligado")
+        return ok
+
+    def manter(self):
+        """A conferência periódica: esconde o que voltou e, se o Explorer é novo, religa o
+        "ocultar automaticamente" (até o Explorer novo aceitar). Devolve True se o
+        Explorer acabou de voltar (barra nova escondida agora)."""
+        voltou = self.vigiar()
+        if self.religar and self.ocultar_automaticamente():
+            self.religar = False
+        return voltou
+
+    def explorer_voltou(self):
+        """O "TaskbarCreated": esconde a barra nova e religa o autohide já."""
+        self.religar = True
+        self.manter()
 
     def vigiar(self):
         """Esconde de novo o que reapareceu (Explorer reiniciado, outra tela ligada).
         Devolve True se escondeu alguma barra agora."""
         if not self.ativa:
             return False
-        escondeu = False
+        nova = False
+        havia = bool(self.escondidas)
         for janela in self.api.barras():
             if self.api.visivel(janela):
                 self.api.esconder(janela)
-                escondeu = True
                 if janela not in self.escondidas:
+                    if havia:
+                        # já havia escondido outra: é a barra de um Explorer novo
+                        nova = True
+                        self.religar = True
+                        self.log("barra: Explorer voltou; escondida de novo")
+                    else:
+                        self.log("barra: escondida")
                     self.escondidas.add(janela)
-                    self.log("barra: escondida")
-        return escondeu
+        return nova
 
     def restaurar(self):
         if not self.ativa:
@@ -169,14 +221,16 @@ class Foco:
         self.ultima = None
         self.fora = 0
 
-    def passo(self, janela, classe, existe):
+    def passo(self, janela, classe, existe, vazio_conta=False):
         """janela/classe da frente agora; existe(j) diz se a janela ainda está aberta.
+        vazio_conta: logo depois de o Explorer voltar, "nenhuma janela na frente" também
+        é foco perdido (fora disso é só uma troca de janela no meio).
         Devolve a janela que deve voltar para a frente, ou None."""
         if janela and classe not in CLASSES_FORA:
             self.ultima = janela
             self.fora = 0
             return None
-        if not janela or classe not in CLASSES_FORA:
+        if not janela and not vazio_conta:
             return None
         self.fora += 1
         if self.fora < 2 or not self.ultima or not existe(self.ultima):
@@ -271,7 +325,7 @@ class Trava:
             return
         for nome, alvo in (("tecla", self._rodar_tecla), ("barra", self._rodar_barra)):
             pronta = threading.Event()
-            t = threading.Thread(target=alvo, args=(pronta,), name=f"trava-{nome}", daemon=True)
+            t = threading.Thread(target=self._rodar, args=(nome, alvo, pronta), name=f"trava-{nome}", daemon=True)
             self.threads[nome] = [t, 0]
             t.start()
             pronta.wait(3)
@@ -294,6 +348,20 @@ class Trava:
                 self.barra.restaurar()
             except Exception as erro:  # noqa: BLE001 — sair do Benikids nunca pode travar aqui
                 self.log(f"barra: não deu para devolver ({erro})")
+
+    def _rodar(self, nome, alvo, pronta):
+        """Roda a thread logando o que a derrubar: no pythonw não há stderr, e uma exceção
+        numa thread sumia sem deixar rastro (foi assim que a da barra morreu no pacote 22)."""
+        try:
+            alvo(pronta)
+        except BaseException as erro:  # noqa: BLE001
+            self.log(f"trava ({nome}): a thread caiu: {type(erro).__name__}: {erro}\n"
+                     + "".join(traceback.format_exc()[-1500:]))
+        finally:
+            pronta.set()
+            if self.threads.get(nome):
+                # caiu sozinha (não foi o desligar): ninguém mais vigia
+                self.log(f"trava ({nome}): parou")
 
     @staticmethod
     def _base():
@@ -365,7 +433,7 @@ class Trava:
         msg = wintypes.MSG()
         try:
             while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-                if msg.message != 0x0113:  # WM_TIMER
+                if not timer_da_thread(msg):
                     continue
                 novo = enganchar()
                 if novo:
@@ -416,10 +484,12 @@ class Trava:
         user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
         user32.IsWindow.argtypes = [wintypes.HWND]
         user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.ChangeWindowMessageFilterEx.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.DWORD, ctypes.c_void_p]
 
+        erro_de = LogDeErro(self.log)
         taskbar_created = user32.RegisterWindowMessageW("TaskbarCreated")
         foco = Foco()
-        rapido = {"ate": 0.0, "timer": 0}
+        rapido = {"ate": 0.0, "timer": 0, "janela": None}
         TIMER_RAPIDO = 2
 
         def classe_de(h):
@@ -429,32 +499,41 @@ class Trava:
         def existe(h):
             return bool(user32.IsWindow(h)) and bool(user32.IsWindowVisible(h))
 
+        def acelerar(hwnd):
+            # Explorer de volta: confere bem de perto por alguns segundos (ele mostra a
+            # barra mais de uma vez ao subir e pode levar o foco para a área de trabalho)
+            rapido["ate"] = time.monotonic() + RAPIDO_SEGUNDOS
+            if hwnd and not rapido["timer"]:
+                rapido["timer"] = user32.SetTimer(hwnd, TIMER_RAPIDO, RAPIDO_MS, None)
+
         def conferir():
             try:
-                self.barra.vigiar()
+                if self.barra.manter():
+                    acelerar(rapido["janela"])
+            except Exception as erro:  # noqa: BLE001
+                erro_de("barra", erro)
+            try:
                 frente = user32.GetForegroundWindow()
-                volta = foco.passo(frente, classe_de(frente), existe)
+                classe_frente = classe_de(frente)
+                volta = foco.passo(frente, classe_frente, existe,
+                                   vazio_conta=time.monotonic() < rapido["ate"])
                 if volta:
-                    self.log(f"foco: estava na {classe_de(frente) or 'área de trabalho'}; devolvido")
-                    win.trazer_para_frente(volta)
-            except Exception:  # noqa: BLE001
-                pass
+                    ok = win.trazer_para_frente(volta)
+                    self.log(f"foco: estava na {classe_frente or 'área de trabalho (nenhuma janela)'}; "
+                             f"{'devolvido ao menu/app' if ok else 'não deu para devolver'} ({classe_de(volta)})")
+            except Exception as erro:  # noqa: BLE001
+                erro_de("foco", erro)
 
         def proc(hwnd, msg, wparam, lparam):
             if msg == taskbar_created and taskbar_created:
-                # Explorer reiniciado: barra nova; esconde já e confere bem de perto
-                # por alguns segundos (ele mostra a barra mais de uma vez ao subir)
-                self.log("barra: o Explorer reiniciou")
+                self.log("barra: o Explorer reiniciou (TaskbarCreated)")
                 try:
-                    self.barra.vigiar()
-                    self.barra.ocultar_automaticamente()
-                except Exception:  # noqa: BLE001
-                    pass
-                rapido["ate"] = time.monotonic() + RAPIDO_SEGUNDOS
-                if not rapido["timer"]:
-                    rapido["timer"] = user32.SetTimer(hwnd, TIMER_RAPIDO, RAPIDO_MS, None)
+                    self.barra.explorer_voltou()
+                except Exception as erro:  # noqa: BLE001
+                    erro_de("barra (TaskbarCreated)", erro)
+                acelerar(hwnd)
                 return 0
-            if msg == 0x0113 and wparam == TIMER_RAPIDO:  # WM_TIMER
+            if msg == WM_TIMER and wparam == TIMER_RAPIDO:
                 conferir()
                 if time.monotonic() > rapido["ate"]:
                     user32.KillTimer(hwnd, TIMER_RAPIDO)
@@ -475,12 +554,19 @@ class Trava:
                                         0, 0, 0, 0, None, None, modulo, None)
         if not janela:
             self.log(f"barra: sem a janela do TaskbarCreated (erro {ctypes.get_last_error()})")
-        user32.SetTimer(None, 0, INTERVALO_MS, None)
+        else:
+            rapido["janela"] = janela
+            # deixa o aviso do Explorer (integridade média) passar mesmo se o Benikids
+            # estiver rodando como administrador (filtro de mensagens do UIPI)
+            user32.ChangeWindowMessageFilterEx(janela, taskbar_created, 1, None)  # MSGFLT_ALLOW
+        if not user32.SetTimer(None, 0, INTERVALO_MS, None):
+            self.log(f"barra: sem a conferência periódica (erro {ctypes.get_last_error()})")
+        self.log("barra: vigiando (TaskbarCreated e a cada 250 ms)")
         pronta.set()
         msg = wintypes.MSG()
         try:
             while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-                if msg.message == 0x0113 and not msg.hwnd:  # WM_TIMER da thread
+                if timer_da_thread(msg):
                     conferir()
                     continue
                 user32.TranslateMessage(ctypes.byref(msg))
