@@ -103,8 +103,8 @@ async function apagar(corpo, env) {
 
 // ---------- Problemas → Issues no GitHub ----------
 // Uma vez por dia: cada assinatura nova vira uma Issue (no máximo NOVAS_POR_DIA); uma
-// assinatura que já tem Issue ganha um comentário com as ocorrências do dia. O repositório
-// é público, então a Issue nunca leva o detalhe (fim de log) nem o id da instalação.
+// assinatura que já tem Issue ganha um comentário com as ocorrências do dia (e é reaberta,
+// se estava fechada). O repositório é público, então a Issue nunca leva o detalhe (fim de log) nem o id da instalação.
 const NOVAS_POR_DIA = 5;
 const REPO = "jaison/benikids";
 
@@ -181,6 +181,9 @@ export async function issues(env, chamar = github) {
     try {
       if (existente) {
         await chamar(env, "POST", `/issues/${existente.numero}/comments`, { body: `Novas ocorrências:\n\n${resumo}` });
+        // Uma Issue fechada que volta a acontecer é reaberta: só o comentário passava
+        // despercebido (ex.: fechada por ter sido algo de um dia, e o problema volta).
+        await chamar(env, "PATCH", `/issues/${existente.numero}`, { state: "open" });
         comentadas++;
         continue;
       }
