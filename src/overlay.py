@@ -281,6 +281,40 @@ def maximizar_no_inicio(tile_id):
         return False
 
 
+class PrimeiraJanela:
+    """Traz o app para a frente quando a janela dele aparece (Windows).
+
+    Um app que demora a abrir (o SuperTuxKart leva uns 3 s, e mais na 1ª vez, quando
+    compila os shaders) às vezes nasce atrás do menu: o Windows não deixa um processo
+    tomar a frente se o usuário mexeu em outra janela nesse meio-tempo. Roteiro 24:
+    só a pílula aparecia. Cada passo recebe se a janela já existe e se o app (ou esta
+    pílula) está na frente; devolve "esperar", "trazer" ou "fim". Para de insistir
+    quando o app ficou na frente por 3 passos, depois de 5 tentativas ou no limite."""
+
+    def __init__(self, limite=180, tentativas=5, confirmacoes=3):
+        self.limite = limite
+        self.tentativas = tentativas
+        self.confirmacoes = confirmacoes
+        self.voltas = 0
+        self.trazidas = 0
+        self.na_frente = 0
+
+    def passo(self, tem_janela, app_na_frente):
+        self.voltas += 1
+        if self.voltas > self.limite:
+            return "fim"
+        if not tem_janela:
+            return "esperar"
+        if app_na_frente:
+            self.na_frente += 1
+            return "fim" if self.na_frente >= self.confirmacoes else "esperar"
+        self.na_frente = 0
+        if self.trazidas >= self.tentativas:
+            return "fim"
+        self.trazidas += 1
+        return "trazer"
+
+
 def load_corner(tile_id):
     try:
         with open(CORNER_FILE, encoding="utf-8") as handle:
@@ -508,6 +542,8 @@ class AppOverlay:
         self.root.after(0, self.poll_timer)
         if WINDOWS and maximizar_no_inicio(tile_id):
             self.root.after(500, lambda: self.maximize_app(120))
+        if WINDOWS:
+            self.root.after(300, lambda: self.trazer_app_quando_abrir(PrimeiraJanela()))
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -877,6 +913,21 @@ class AppOverlay:
             pass
         if tentativas > 1:
             self.root.after(500, lambda: self.maximize_app(tentativas - 1))
+
+    def trazer_app_quando_abrir(self, estado):
+        acao = "esperar"
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        try:
+            pids = win.arvore(record["pid"]) if record else []
+            frente = win.pid_da_janela_ativa()
+            acao = estado.passo(bool(pids) and bool(win.janelas_de(pids)),
+                                frente in pids or frente == os.getpid())
+            if acao == "trazer":
+                win.ativar_processo(record["pid"], com_filhos=True)
+        except (OSError, TypeError, KeyError):
+            acao = estado.passo(False, False)  # conta a volta: o limite vale mesmo com erro
+        if acao != "fim":
+            self.root.after(500, lambda: self.trazer_app_quando_abrir(estado))
 
     def poll_process(self):
         if not owned_process_alive(
