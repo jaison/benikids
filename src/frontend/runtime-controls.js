@@ -1,8 +1,18 @@
 // Timer logic
 let timerWarningShown=false;
+// Minutos que faltam, arredondados para cima (59 s ainda é "1 minuto"), no singular
+// ou no plural do idioma (roteiro 25: aparecia "Faltam 1 minutes").
+function timerMinutesLeft(sec){
+  return sec>0?Math.ceil(sec/60):0;
+}
 function formatTime(sec){
-  const m=Math.max(0,Math.floor(sec/60));
-  return m+' minutes';
+  const m=timerMinutesLeft(sec);
+  if(m===1) return uiText.timerOneMinute||'1 minute';
+  return (uiText.timerManyMinutes||'{count} minutes').replace('{count}',String(m));
+}
+function formatTimeLeft(sec){
+  const modelo=timerMinutesLeft(sec)===1?(uiText.timerRemainingOne||uiText.timerRemaining):uiText.timerRemaining;
+  return (modelo||'{time} left').replace('{time}',formatTime(sec));
 }
 async function pollTimer(){
   try{
@@ -63,7 +73,7 @@ function atualizarBotaoTimer(){
   btn.dataset.acao=ligado?'parar':'iniciar';
   setIconLabel(btn,'timer',ligado?(uiText.timerStop||'Stop'):(uiText.timerStart||'Start'));
   const st=document.getElementById('timerStatus');
-  if(st) st.textContent=ligado?(uiText.timerRemaining||'Noch {time}').replace('{time}',formatTime(lastTimerStatus.remainingSeconds)):'';
+  if(st) st.textContent=ligado?formatTimeLeft(lastTimerStatus.remainingSeconds):'';
 }
 async function toggleTimer(){
   const btn=document.getElementById('timerToggleBtn');
