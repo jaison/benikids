@@ -24,9 +24,16 @@ CACHE = os.path.join(HOME, ".cache", "cozy-kids-launcher")
 NOME = "Benikids"
 
 
+MB_SETFOREGROUND = 0x00010000
+MB_TOPMOST = 0x00040000
+
+
 def aviso(texto, titulo="Benikids", estilo=0x40):
+    """Caixa de mensagem sempre por cima e na frente: com o Benikids aberto, o menu fica
+    em tela cheia por cima de tudo (topmost) e o aviso "Feche (Pais → Sair)" ficava atrás
+    dele, onde ninguém via (roteiro 27)."""
     try:
-        return ctypes.windll.user32.MessageBoxW(None, texto, titulo, estilo)
+        return ctypes.windll.user32.MessageBoxW(None, texto, titulo, estilo | MB_TOPMOST | MB_SETFOREGROUND)
     except (AttributeError, OSError):
         print(texto)
         return 0

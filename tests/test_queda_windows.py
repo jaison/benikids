@@ -130,6 +130,16 @@ class InstaladorTests(unittest.TestCase):
         fechar.assert_called_once()
         aviso.assert_not_called()
 
+    def test_every_installer_message_comes_on_top_of_the_menu(self):
+        inst = self.inst
+        caixa = mock.Mock(return_value=6)
+        with mock.patch.object(inst.ctypes, "windll", create=True,
+                               new=mock.Mock(user32=mock.Mock(MessageBoxW=caixa))):
+            self.assertEqual(inst.aviso("oi", estilo=0x30), 6)
+        estilo = caixa.call_args[0][3]
+        self.assertEqual(estilo & 0x30, 0x30)
+        self.assertTrue(estilo & inst.MB_TOPMOST and estilo & inst.MB_SETFOREGROUND)
+
     def test_installer_still_asks_to_close_a_live_benikids(self):
         inst = self.inst
         for situacao, fechou in (("esperar", True), ("limpar", False)):
