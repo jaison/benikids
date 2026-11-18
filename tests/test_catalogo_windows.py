@@ -207,5 +207,89 @@ class PrepararXmotoTests(unittest.TestCase):
             self.assertEqual(catalogo_windows.preparar_xmoto([caminho]), [])
 
 
+class PrepararLuantiTests(unittest.TestCase):
+    def portatil(self, raiz):
+        exe = Path(raiz) / "luanti-5.18.0-win64" / "bin" / "luanti.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_text("")
+        (exe.parent.parent / "builtin").mkdir()
+        return exe
+
+    def test_portable_winget_build_gets_the_missing_keys_next_to_builtin(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = self.portatil(raiz)
+            gravados = catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
+            conf = exe.parent.parent / "minetest.conf"
+            self.assertEqual(gravados, [str(conf)])
+            self.assertEqual(conf.read_text(encoding="utf-8"),
+                             "update_information_url = \nlanguage = pt_BR\nfullscreen = true\n")
+            self.assertFalse((Path(raiz) / "Luanti").exists())
+
+    def test_keys_the_parents_changed_are_kept(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = self.portatil(raiz)
+            conf = exe.parent.parent / "minetest.conf"
+            conf.write_text("fullscreen = false\r\nname = Bia", encoding="utf-8")
+            catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
+            self.assertEqual(conf.read_bytes().decode("utf-8"),
+                             "fullscreen = false\r\nname = Bia\nupdate_information_url = \nlanguage = pt_BR\n")
+            antes = conf.read_text(encoding="utf-8")
+            catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
+            self.assertEqual(conf.read_text(encoding="utf-8"), antes)
+
+    def test_links_shortcut_falls_back_to_the_package_folder(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = self.portatil(raiz)
+            atalho = Path(raiz) / "Links" / "luanti.exe"
+            atalho.parent.mkdir()
+            atalho.write_text("")  # cópia, não link: o caminho real não leva ao jogo
+            confs = catalogo_windows.confs_luanti(str(atalho), appdata=raiz, pacotes=[str(exe)])
+            self.assertEqual(confs, [str(exe.parent.parent / "minetest.conf")])
+
+    def test_installed_build_uses_appdata(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz) / "Programs" / "Luanti" / "bin" / "luanti.exe"
+            self.assertEqual(catalogo_windows.confs_luanti(str(exe), appdata=raiz, pacotes=[]),
+                             [os.path.join(raiz, "Luanti", "minetest.conf")])
+
+    def test_catalog_asks_for_the_luanti_preparation(self):
+        self.assertEqual(catalogo_windows.por_id("luanti")["preparar"], "luanti")
+
+
+class PrepararSuperTuxKartTests(unittest.TestCase):
+    CONFIG = ('<?xml version="1.0"?>\n<stkconfig version="12" >\n    <Video\n'
+              '        fullscreen="false"\n        prev_fullscreen="false"\n'
+              '        width="1040"\n        height="807"\n        real_width="1040"\n'
+              '        real_height="807"\n        prev_real_width="1024"\n        prev_real_height="768"\n'
+              '        max_texture_size="512"\n    />\n</stkconfig>\n')
+
+    def test_existing_config_goes_fullscreen_at_the_current_resolution(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            arquivo = Path(raiz) / "config.xml"
+            arquivo.write_text(self.CONFIG, encoding="utf-8")
+            self.assertTrue(catalogo_windows.preparar_supertuxkart("2560x1080", str(arquivo)))
+            texto = arquivo.read_text(encoding="utf-8")
+            for chave, valor in (("fullscreen", "true"), ("width", "2560"), ("height", "1080"),
+                                 ("real_width", "2560"), ("real_height", "1080"),
+                                 ("prev_real_width", "2560"), ("prev_real_height", "1080")):
+                self.assertIn(f'\n        {chave}="{valor}"', texto)
+            self.assertIn('prev_fullscreen="false"', texto)
+            self.assertIn('max_texture_size="512"', texto)
+            self.assertFalse(catalogo_windows.preparar_supertuxkart("2560x1080", str(arquivo)))
+
+    def test_first_run_without_config_relies_on_the_command_line(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            self.assertFalse(catalogo_windows.preparar_supertuxkart("1366x768", os.path.join(raiz, "config.xml")))
+        item = catalogo_windows.por_id("supertuxkart")
+        self.assertEqual(item["args"], ["--fullscreen", "--screensize={tela}"])
+        self.assertEqual(item["preparar"], "supertuxkart")
+        with mock.patch.object(catalogo_windows, "tamanho_da_tela", return_value="1366x768"):
+            self.assertEqual(catalogo_windows.preencher("--screensize={tela}", item), "--screensize=1366x768")
+
+    def test_config_lives_in_appdata(self):
+        self.assertEqual(catalogo_windows.config_supertuxkart(appdata="A"),
+                         os.path.join("A", "supertuxkart", "config-0.10", "config.xml"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -319,7 +319,8 @@ O endereço do repositório e a janela da madrugada ficam em `/etc/beni-launcher
 | Nenhum app abria (o ❌ por cima falhava) | `python3-tk` passa a ser instalado |
 | GCompris não abria (`gcompris` × `gcompris-qt`) | atalho `beni/bin/gcompris` |
 | TuxMath, Pingus etc. **prendiam o mouse** e o ❌ não funcionava | `nograb.so` (LD_PRELOAD) anula o "prender mouse" do SDL 1.2/SDL2 |
-| SuperTuxKart trocava a resolução e **a tela ficava apagada** ao fechar | os atalhos sempre usam a resolução atual da tela |
+| SuperTuxKart trocava a resolução e **a tela ficava apagada** ao fechar | os atalhos sempre usam a resolução atual da tela (no Windows também `--fullscreen --screensize=<tela>` e o `config.xml` em `%APPDATA%\supertuxkart\config-0.10`) |
+| Luanti mostrava "Uma nova versão está disponível" (com "Visitar site") e abria em janela | antes de abrir, o `minetest.conf` ganha só as chaves que faltam: `update_information_url` vazio, `language = pt_BR`, `fullscreen = true` (Linux: `beni/bin/luanti`; Windows: ao lado da pasta `builtin` do Luanti portátil do winget) |
 | Apps que abrem em janela (Scratch, Klavaro, Klotski) | `cozy-fullscreen` coloca em tela cheia via `wmctrl` |
 | Depois de fechar um app pelo ❌, o próximo abria **escondido atrás do menu** | o launcher só fica "por cima" por um instante |
 | Ctrl+Alt+Del bloqueava a tela, e ao voltar ficava preta | atalho e bloqueios automáticos desligados |
