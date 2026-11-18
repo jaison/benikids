@@ -12,7 +12,10 @@ Regras daqui para a frente:
 - só chamadas assíncronas (ShowWindowAsync, SetWindowPos com SWP_ASYNCWINDOWPOS);
 - o que não tem versão assíncrona (SetWindowLongPtr num estilo, que manda
   WM_STYLECHANGING ao app) só depois de o app responder a um SendMessageTimeout curto,
-  e numa thread de trabalho (Trabalhador), nunca na thread do Tk.
+  e numa thread de trabalho (Trabalhador), nunca na thread do Tk;
+- roteiro 32: nada numa janela que acabou de aparecer. Só depois que ela está "de pé"
+  (DePe: respondendo a SendMessageTimeout há 2 s seguidos e com o processo ocioso pelo
+  WaitForInputIdle). O Tux Paint travava no splash, só quando aberto pelo Benikids.
 
 Este módulo não usa ctypes: a lógica é testável fora do Windows. O plataforma_windows
 entrega as chamadas de verdade.
@@ -62,6 +65,70 @@ def pode_mexer(api, h, ms=300):
     """Antes de uma chamada que espera o app (SetWindowLongPtr): ele não está travado e
     respondeu a um WM_NULL em até `ms` (SendMessageTimeout com SMTO_ABORTIFHUNG)."""
     return bool(h) and not api.travada(h) and api.responde(h, ms)
+
+
+DE_PE_S = 2.0
+
+
+class DePe:
+    """Uma janela de outro app só é tocada depois de estar de pé: não travada,
+    respondendo a um WM_NULL (300 ms) em todas as conferências de pelo menos `segundos`
+    seguidos, e com o processo ocioso (WaitForInputIdle com espera 0). Uma vez de pé,
+    fica (cada ação ainda confere se está travada). Só a thread de trabalho chama.
+
+    api: travada(h), responde(h, ms), ocioso(h)."""
+
+    def __init__(self, segundos=DE_PE_S, relogio=time.monotonic):
+        self.segundos = segundos
+        self.relogio = relogio
+        self._desde = {}
+        self._firmes = set()
+
+    def firme(self, h):
+        return h in self._firmes
+
+    def pronta(self, api, h):
+        if not h or api.travada(h):
+            self._desde.pop(h, None)
+            return False
+        if h in self._firmes:
+            return True
+        if not api.responde(h, 300):
+            self._desde.pop(h, None)
+            return False
+        agora = self.relogio()
+        desde = self._desde.setdefault(h, agora)
+        if agora - desde >= self.segundos and api.ocioso(h):
+            self._firmes.add(h)
+            self._desde.pop(h, None)
+            return True
+        return False
+
+
+def dentro(pos, ret):
+    """pos (x, y) dentro do retângulo (esquerda, topo, direita, baixo)."""
+    return bool(pos and ret) and ret[0] <= pos[0] < ret[2] and ret[1] <= pos[1] < ret[3]
+
+
+class CliqueNoBotao:
+    """Roteiro 32: com o Tux Paint travado, 6 cliques no ✕ não chegaram ao Tk. O vigia
+    do ✕ olha o botão do mouse direto (GetAsyncKeyState, GetCursorPos, WindowFromPoint),
+    sem depender das mensagens da janela. Cada passo recebe o estado de agora e devolve
+    True quando um clique terminou: apertou e soltou dentro do botão, sobre a pílula."""
+
+    def __init__(self):
+        self.estava = False
+        self.comecou_dentro = False
+
+    def passo(self, apertado, pos, ret, sobre_a_pilula):
+        clicou = False
+        if apertado and not self.estava:
+            self.comecou_dentro = sobre_a_pilula and dentro(pos, ret)
+        elif not apertado and self.estava:
+            clicou = self.comecou_dentro and sobre_a_pilula and dentro(pos, ret)
+            self.comecou_dentro = False
+        self.estava = apertado
+        return clicou
 
 
 class Trabalhador:

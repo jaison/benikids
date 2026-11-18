@@ -75,6 +75,14 @@ user32.GetWindowLongW.restype = ctypes.c_long
 user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetAncestor.restype = wintypes.HWND
 user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t]
+user32.WaitForInputIdle.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+user32.WaitForInputIdle.restype = wintypes.DWORD
+user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+user32.GetAsyncKeyState.restype = ctypes.c_short
+user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.WindowFromPoint.restype = wintypes.HWND
+user32.GetSystemMetrics.argtypes = [ctypes.c_int]
 
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -390,11 +398,50 @@ def responde(h, ms=300):
     return bool(user32.SendMessageTimeoutW(h, 0, 0, 0, SMTO_ABORTIFHUNG, int(ms), ctypes.byref(resultado)))
 
 
+PROCESS_QUERY_INFORMATION = 0x0400
+WAIT_TIMEOUT = 258
+
+
+def pid_da_janela(h):
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+    return pid.value or None
+
+
+def ocioso(h):
+    """O processo da janela já terminou de iniciar e espera entrada (WaitForInputIdle com
+    espera 0: não bloqueia). Na dúvida (sem acesso, processo sem janela), True."""
+    pid = pid_da_janela(h)
+    if not pid:
+        return True
+    with _Aberto(pid, PROCESS_QUERY_INFORMATION | SYNCHRONIZE) as hp:
+        if not hp:
+            return True
+        return user32.WaitForInputIdle(hp, 0) != WAIT_TIMEOUT
+
+
+VK_LBUTTON, VK_RBUTTON, SM_SWAPBUTTON = 0x01, 0x02, 23
+
+
+def estado_do_mouse():
+    """(apertado, (x, y), pid da janela sob o cursor), lidos direto do sistema, sem
+    depender de mensagem nenhuma chegar à janela. O botão "esquerdo" é o principal
+    (com os botões trocados, é o direito físico: o GetAsyncKeyState olha o físico)."""
+    vk = VK_RBUTTON if user32.GetSystemMetrics(SM_SWAPBUTTON) else VK_LBUTTON
+    apertado = bool(user32.GetAsyncKeyState(vk) & 0x8000)
+    pt = wintypes.POINT()
+    if not user32.GetCursorPos(ctypes.byref(pt)):
+        return apertado, None, None
+    h = user32.WindowFromPoint(pt)
+    return apertado, (pt.x, pt.y), (pid_da_janela(raiz_da_janela(h)) if h else None)
+
+
 class _Janelas:
     """As chamadas de verdade para o janelas_seguras (todas sem esperar o outro app)."""
 
     travada = staticmethod(travada)
     responde = staticmethod(responde)
+    ocioso = staticmethod(ocioso)
 
     @staticmethod
     def frente():
@@ -444,22 +491,26 @@ def ativar_processo(pid, com_filhos=False):
     return trazer_para_frente(janelas[0]) if janelas else False
 
 
-def maximizar_processo(pid):
-    """Maximiza a janela principal do app (e dos filhos). Devolve True quando ela existe
-    e ficou maximizada; False se ainda não apareceu.
+def janela_maximizavel(pid):
+    """A janela principal do app (e dos filhos) que pode ser maximizada, ou None se ainda
+    não apareceu.
 
     Só conta janela com botão de maximizar: uma caixa de aviso que abre antes (o Quatro
     em Linha avisa que falta o motor de IA) não é a janela principal, e forçar
     SW_MAXIMIZE numa janela de tamanho fixo deixa a tela preta (Quebra-cabeças)."""
     for h in janelas_de(arvore(pid)):
-        if not user32.GetWindowLongW(h, GWL_STYLE) & WS_MAXIMIZEBOX:
-            continue
-        if travada(h):
-            return False  # tenta na volta seguinte
-        if not user32.IsZoomed(h):
-            user32.ShowWindowAsync(h, SW_MAXIMIZE)
-        return True
-    return False
+        if user32.GetWindowLongW(h, GWL_STYLE) & WS_MAXIMIZEBOX:
+            return h
+    return None
+
+
+def maximizar(h):
+    """Maximiza (assíncrono). Devolve True se já está ou se o pedido foi feito."""
+    if travada(h):
+        return False
+    if not user32.IsZoomed(h):
+        user32.ShowWindowAsync(h, SW_MAXIMIZE)
+    return True
 
 
 class _MONITORINFO(ctypes.Structure):

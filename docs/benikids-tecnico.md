@@ -271,9 +271,11 @@ um app aberto.
       cegas. A tela cheia sem moldura vale para qualquer app maximizado;
     - janelas que não estão maximizadas (Klavaro, Quinze) e as que já cobrem a tela (menu,
       Edge dos pais, jogos em tela cheia) não mudam;
-    - uma janela comum do tamanho do monitor com o título e a moldura para fora da tela
-      (o Tux Paint com `--windowsize`, porque o `--fullscreen` sai com código 52 no Intel
-      HD 4000) também vira tela cheia sem moldura;
+    - uma janela comum do tamanho do monitor com o título para fora da tela (o Tux Paint
+      com `--windowsize`, porque o `--fullscreen` e o `--fullscreen --native` saem com
+      código 52 no Intel HD 4000) fica como está. No roteiro 31 ela virava tela cheia sem
+      moldura, mas o SDL desfazia 4 vezes, e o roteiro 32 tirou a regra: era a 1ª suspeita
+      do Tux Paint que travava no splash só quando aberto pelo Benikids;
     - se o app desfizer isso 5 vezes, o overlay devolve a moldura e a janela como era
       (maximizada, ou no retângulo de antes) e desiste daquela janela. O log diz "overlay:
       app em tela cheia sem moldura…", "o app desfez…; refeita" e "devolvida a janela como era".
@@ -292,6 +294,14 @@ um app aberto.
     - no overlay, tudo isso roda numa thread de trabalho (`janelas_seguras.Trabalhador`),
       nunca na thread do Tk. Se ela ficar presa, os pedidos novos são recusados, a pílula
       segue viva e o log diz "overlay: … preso há mais de 5 s numa janela de outro app".
+    - nada numa janela que acabou de aparecer (roteiro 32). Ela precisa estar de pé
+      (`janelas_seguras.DePe`): responder a um `SendMessageTimeout` de 300 ms em todas as
+      conferências por 2 s seguidos, com o processo ocioso pelo `WaitForInputIdle` (espera
+      0). Vale para trazer para a frente, maximizar e tirar a moldura. Nos KDE, a tela
+      cheia sem moldura passa de 0,4–0,8 s para uns 2,5–3,5 s depois de a janela aparecer;
+    - cada ação numa janela de outro app é logada ANTES, com milissegundos ("overlay: vou
+      trazer o app (hwnd …)", "vou tirar a moldura", "vou maximizar", "vou mandar Alt+←").
+      Num travamento, a última linha diz o que foi feito por último.
   - Vigia da pílula (`src/vigia_da_pilula.py`, uma thread do servidor no Windows), a cada 1 s
     enquanto um app está aberto:
     - pílula morta por 3 s, ou travada (sem responder a um `SendMessageTimeout` de 500 ms)
@@ -301,6 +311,13 @@ um app aberto.
       de uso não conta"). Depois de 15 s, loga "app: … não responde há N s" e manda para
       a telemetria. Não fecha sozinho: o ✕ da pílula encerra o supervisor, e o Job Object
       dele leva a árvore inteira do app, mesmo travada;
+    - o ✕ (roteiro 32: com o Tux Paint travado, 6 cliques não chegaram ao Tk). O
+      `on_close` loga "overlay: ✕ tocado" antes de tudo e encerra o supervisor
+      (`TerminateProcess`; o Job Object leva a árvore). Cada aperto e soltura no botão vai
+      para o log. Um vigia do ✕ (thread do overlay) lê o mouse direto do sistema
+      (`GetAsyncKeyState`, `GetCursorPos`, `WindowFromPoint`) a cada 30 ms; se um clique
+      no ✕ não virou `on_close` em 0,8 s, ele fecha o app e a pílula sozinho e manda
+      `overlay.x_sem_tk:<tile>` para a telemetria;
     - telemetria, no máximo 1 por assinatura por dia: `overlay.travou:<tile>`,
       `overlay.caiu:<tile>`, `app.travou:<tile>` e `excecao:<processo>:<Tipo>` (exceção
       não tratada no iniciador, no overlay, no servidor e no vigia, com o traceback limpo).

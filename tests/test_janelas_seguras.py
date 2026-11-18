@@ -83,6 +83,75 @@ class TrazerTests(unittest.TestCase):
         self.assertFalse(js.pode_mexer(Falso(), 0))
 
 
+class DePeTests(unittest.TestCase):
+    """Roteiro 32: o Tux Paint travava no splash só quando aberto pelo Benikids. Nada na
+    janela de outro app antes de ela estar de pé."""
+
+    def montar(self):
+        self.agora = [0.0]
+        self.f = Falso()
+        self.f.ocioso = lambda h: self.ocioso
+        self.ocioso = True
+        self.respostas = []
+        self.f.responde = lambda h, ms: self.respostas.pop(0) if self.respostas else True
+        return js.DePe(relogio=lambda: self.agora[0])
+
+    def test_needs_2_s_of_answers_in_a_row(self):
+        d = self.montar()
+        for self.agora[0] in (0.0, 0.5, 1.0, 1.5):
+            self.assertFalse(d.pronta(self.f, 0x10))
+        self.agora[0] = 2.0
+        self.assertTrue(d.pronta(self.f, 0x10))
+        self.assertTrue(d.firme(0x10))
+        self.respostas = [False]
+        self.assertTrue(d.pronta(self.f, 0x10))  # de pé uma vez, fica
+
+    def test_a_missed_answer_starts_the_count_again(self):
+        d = self.montar()
+        d.pronta(self.f, 0x10)
+        self.agora[0] = 1.5
+        self.respostas = [False]
+        self.assertFalse(d.pronta(self.f, 0x10))
+        self.agora[0] = 3.0
+        self.assertFalse(d.pronta(self.f, 0x10))  # recomeçou em 3,0
+        self.agora[0] = 5.0
+        self.assertTrue(d.pronta(self.f, 0x10))
+
+    def test_waits_for_input_idle_and_never_touches_a_hung_window(self):
+        d = self.montar()
+        self.ocioso = False
+        d.pronta(self.f, 0x10)
+        self.agora[0] = 10.0
+        self.assertFalse(d.pronta(self.f, 0x10))
+        self.ocioso = True
+        self.assertTrue(d.pronta(self.f, 0x10))
+        self.f._travada = True
+        self.assertFalse(d.pronta(self.f, 0x10))  # travada: nunca, nem de pé
+        self.assertFalse(d.pronta(self.f, 0))
+
+
+class CliqueNoBotaoTests(unittest.TestCase):
+    X = (20, 1017, 72, 1069)
+
+    def test_press_and_release_on_the_button_over_the_pill(self):
+        c = js.CliqueNoBotao()
+        self.assertFalse(c.passo(True, (46, 1037), self.X, True))
+        self.assertFalse(c.passo(True, (46, 1037), self.X, True))
+        self.assertTrue(c.passo(False, (46, 1037), self.X, True))
+        self.assertFalse(c.passo(False, (46, 1037), self.X, True))
+
+    def test_not_a_click_on_the_x(self):
+        c = js.CliqueNoBotao()
+        c.passo(True, (500, 500), self.X, True)
+        self.assertFalse(c.passo(False, (46, 1037), self.X, True))  # começou fora
+        c.passo(True, (46, 1037), self.X, True)
+        self.assertFalse(c.passo(False, (300, 1037), self.X, True))  # arrastou para fora
+        c.passo(True, (46, 1037), self.X, False)
+        self.assertFalse(c.passo(False, (46, 1037), self.X, False))  # outra janela por cima
+        c.passo(True, (46, 1037), None, True)
+        self.assertFalse(c.passo(False, (46, 1037), None, True))  # ✕ ainda sem posição
+
+
 class TrabalhadorTests(unittest.TestCase):
     def test_a_stuck_call_never_blocks_whoever_asked(self):
         solta = threading.Event()
@@ -140,10 +209,13 @@ class SemChamadaQuePrendeTests(unittest.TestCase):
 
     def test_overlay_only_touches_other_apps_from_the_worker(self):
         codigo = (RAIZ / "src" / "overlay.py").read_text(encoding="utf-8")
-        self.assertEqual(len(re.findall(r"win\.ativar_processo\(", codigo)), 1)  # só no trazer_app (na thread de trabalho)
+        self.assertNotRegex(codigo, r"win\.ativar_processo\(")
+        self.assertEqual(len(re.findall(r"win\.trazer_para_frente\(", codigo)), 1)  # só no trazer_app (na thread de trabalho)
+        self.assertEqual(len(re.findall(r"win\.maximizar\(", codigo)), 1)  # só no passo_maximizar (idem)
         self.assertIn("janelas_seguras.rodar_com_limite(win.ativar_processo, 1.0", codigo)
         self.assertIn('self.pedir_janela("tela cheia", self.passo_da_tela_cheia', codigo)
-        self.assertIn('self.pedir_janela("voltar", win.alt_esquerda', codigo)
+        self.assertIn('self.pedir_janela("voltar", self.voltar_no_app', codigo)
+        self.assertIn('self.pedir_janela("maximizar", self.passo_maximizar', codigo)
 
 
 if __name__ == "__main__":
