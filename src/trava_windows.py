@@ -495,13 +495,24 @@ class Trava:
         user32.SetWinEventHook.restype = wintypes.HANDLE
         user32.UnhookWinEvent.argtypes = [wintypes.HANDLE]
 
-        def evento(_gancho, ev, hwnd, id_objeto, id_filho, _thread, _tempo):
+        kernel32.GetTickCount.restype = wintypes.DWORD
+        aviso = {"escondeu": 0}
+
+        def evento(_gancho, ev, hwnd, id_objeto, id_filho, _thread, tempo):
             try:
                 if id_objeto != OBJID_WINDOW or not hwnd:
                     return
-                if evento_da_barra(ev, id_objeto, id_filho, classe_de(hwnd)):
-                    if self.barra.manter():
-                        acelerar(rapido["janela"])
+                if not evento_da_barra(ev, id_objeto, id_filho, classe_de(hwnd)):
+                    return
+                visivel = bool(user32.IsWindowVisible(hwnd))
+                if self.barra.manter():
+                    acelerar(rapido["janela"])
+                if visivel and self.barra.ativa:
+                    aviso["escondeu"] += 1
+                    if aviso["escondeu"] <= 3:  # as primeiras de cada sessão, com o atraso
+                        atraso = (kernel32.GetTickCount() - tempo) & 0xFFFFFFFF
+                        self.log(f"barra: aviso de janela escondeu a barra nova ({classe_de(hwnd)}, "
+                                 f"{atraso} ms depois de ela aparecer)")
             except Exception as erro:  # noqa: BLE001
                 erro_de("barra (WinEvent)", erro)
 
@@ -510,6 +521,8 @@ class Trava:
                                            0, 0, 0x0002)  # WINEVENT_OUTOFCONTEXT | SKIPOWNPROCESS
         if not gancho_ev:
             self.log(f"barra: sem o aviso de janela nova (erro {ctypes.get_last_error()}); fica a conferência")
+        else:
+            self.log("barra: aviso de janela ligado (SetWinEventHook)")
         if not user32.SetTimer(None, 0, INTERVALO_MS, None):
             self.log(f"barra: sem a conferência periódica (erro {ctypes.get_last_error()})")
         self.log("barra: vigiando (aviso de janela, TaskbarCreated e a cada 250 ms)")
