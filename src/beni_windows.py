@@ -263,6 +263,7 @@ def limpar_queda():
 
 def main():
     os.makedirs(CACHE, exist_ok=True)
+    telemetria.instalar_excepthook("iniciador")
     if "--autostart" in sys.argv[1:]:
         # ao entrar no Windows: deixa a área de trabalho e a rede subirem antes
         time.sleep(6)

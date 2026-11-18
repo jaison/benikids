@@ -109,9 +109,42 @@ def limpar(texto, limite=4000):
     return texto[-limite:]
 
 
-def relatar_problema(etapa, detalhe, assinatura=None, fila=None):
+MARCAS_DO_DIA = os.path.join(os.path.dirname(FILA_PROBLEMAS), "problemas-do-dia.json")
+
+
+def ja_relatado_hoje(assinatura, marcas=None, hoje=None):
+    """True se esta assinatura já foi guardada hoje; senão, marca e devolve False.
+    Os vigias (pílula travada, app travado, exceções) mandam no máximo 1 por dia cada."""
+    marcas = marcas or MARCAS_DO_DIA
+    hoje = hoje or time.strftime("%Y-%m-%d")
+    try:
+        with open(marcas, encoding="utf-8") as f:
+            dados_ = json.load(f)
+        if not isinstance(dados_, dict):
+            dados_ = {}
+    except (OSError, ValueError):
+        dados_ = {}
+    if dados_.get(assinatura) == hoje:
+        return True
+    dados_ = {k: v for k, v in dados_.items() if v == hoje}  # o de ontem não serve mais
+    dados_[assinatura] = hoje
+    try:
+        os.makedirs(os.path.dirname(marcas), exist_ok=True)
+        temp = marcas + ".tmp"
+        with open(temp, "w", encoding="utf-8") as f:
+            json.dump(dados_, f)
+        os.replace(temp, marcas)
+    except OSError:
+        pass
+    return False
+
+
+def relatar_problema(etapa, detalhe, assinatura=None, fila=None, por_dia=False, marcas=None):
     """Guarda um problema para o servidor enviar (se a telemetria estiver ligada).
-    Pode ser chamado de qualquer processo: instalador, iniciador, servidor."""
+    Pode ser chamado de qualquer processo: instalador, iniciador, servidor.
+    por_dia: no máximo 1 por assinatura por dia (o resto é descartado aqui)."""
+    if por_dia and ja_relatado_hoje(str(assinatura or etapa)[:120], marcas):
+        return False
     item = {
         "etapa": str(etapa)[:60],
         "assinatura": str(assinatura or etapa)[:120],
@@ -124,7 +157,53 @@ def relatar_problema(etapa, detalhe, assinatura=None, fila=None):
         with open(fila, "a", encoding="utf-8") as f:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
     except OSError:
-        pass
+        return False
+    return True
+
+
+def relatar_excecao(processo, tipo, valor, tb, fila=None, marcas=None):
+    """Exceção não tratada num processo Python do Windows: "excecao:<processo>:<Tipo>",
+    com o fim do traceback já limpo (sem pasta nem nome do usuário). 1 por dia."""
+    import traceback
+
+    try:
+        texto = "".join(traceback.format_exception(tipo, valor, tb))
+    except Exception:  # noqa: BLE001
+        texto = f"{getattr(tipo, '__name__', tipo)}: {valor}"
+    nome = getattr(tipo, "__name__", "Erro")
+    return relatar_problema(f"excecao.{processo}", limpar(texto, 1500), f"excecao:{processo}:{nome}",
+                            fila=fila, por_dia=True, marcas=marcas)
+
+
+def instalar_excepthook(processo, sistema_nt=None):
+    """sys.excepthook e threading.excepthook mandam a exceção para a telemetria (só no
+    Windows, onde o pythonw não tem console) e depois seguem o caminho de sempre."""
+    if not (os.name == "nt" if sistema_nt is None else sistema_nt):
+        return False
+    import sys
+
+    anterior_sys = sys.excepthook
+    anterior_thread = threading.excepthook
+
+    def gancho_sys(tipo, valor, tb):
+        if not issubclass(tipo, (KeyboardInterrupt, SystemExit)):
+            try:
+                relatar_excecao(processo, tipo, valor, tb)
+            except Exception:  # noqa: BLE001
+                pass
+        anterior_sys(tipo, valor, tb)
+
+    def gancho_thread(args):
+        if args.exc_type is not None and not issubclass(args.exc_type, SystemExit):
+            try:
+                relatar_excecao(processo, args.exc_type, args.exc_value, args.exc_traceback)
+            except Exception:  # noqa: BLE001
+                pass
+        anterior_thread(args)
+
+    sys.excepthook = gancho_sys
+    threading.excepthook = gancho_thread
+    return True
 
 
 def tirar_da_fila(fila=None, maximo=20):

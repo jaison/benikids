@@ -117,7 +117,7 @@ def janela_na_frente(janela, campo, plataforma=None):
     - No Windows, um processo de fundo não toma o primeiro plano só com o
       focus_force do Tk: o teclado continuava indo para a janela de baixo (um
       "5" foi para o PIN do menu nativo). trazer_para_frente usa o
-      AttachThreadInput + SetForegroundWindow, como o resto do Benikids."""
+      SetForegroundWindow (com o truque do Alt), sem AttachThreadInput (roteiro 31)."""
     if plataforma is None and os.name == "nt":
         try:
             import plataforma_windows as plataforma
@@ -483,6 +483,12 @@ def main():
     args = parser.parse_args()
     global BASE_URL
     BASE_URL = f"http://127.0.0.1:{args.port}"
+    try:
+        import telemetria
+
+        telemetria.instalar_excepthook("vigia")
+    except Exception:  # noqa: BLE001
+        pass
     app = WatchdogApp()
     app.run()
 
