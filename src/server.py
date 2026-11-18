@@ -25,6 +25,7 @@ from app_detection import (
 )
 from application_launcher import (
     ApplicationLauncher,
+    PortaoDeAbertura,
     direct_app_command,
     external_browser_command as build_external_browser_command,
     resolve_tile_action,
@@ -875,6 +876,23 @@ def _stop_tile_for_limit():
     application_launcher().reset_active_tile()
 
 
+def iniciar_vigia_da_pilula():
+    import plataforma_windows
+    import vigia_da_pilula
+
+    def registros():
+        return (owned_process(TILE_PROCESS_PIDFILE, "tile-process", PROCESS_SUPERVISOR),
+                owned_process(OVERLAY_PIDFILE, "overlay", OVERLAY_SCRIPT))
+
+    def relatar(etapa, detalhe, assinatura):
+        telemetria.relatar_problema(etapa, detalhe, assinatura, por_dia=True)
+
+    vigia = vigia_da_pilula.VigiaWindows(plataforma_windows, application_launcher, registros,
+                                         uso=usage_tracker(), relatar=relatar)
+    threading.Thread(target=vigia.rodar, args=(threading.Event(),), name="vigia-da-pilula",
+                     daemon=True).start()
+
+
 def usage_tracker():
     global _usage_tracker
     with _usage_lock:
@@ -1073,6 +1091,9 @@ def app_fechou_sozinho(supervisor, espera=None):
     return True
 
 
+PORTAO_DE_ABERTURA = PortaoDeAbertura()
+
+
 def launch_owned_tile(
     command,
     mode,
@@ -1091,6 +1112,7 @@ def launch_owned_tile(
         track_activity=track_activity,
         path_extra=path_extra,
     )
+    PORTAO_DE_ABERTURA.abriu_app()
     profile = stored_profiles_cached().get(profile_id) or {}
     usage_tracker().set_active(
         profile_id,
@@ -2329,196 +2351,204 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 return
-            cfg = load_cfg()
-            tile = next((t for t in cfg.get("tiles", []) if t.get("id") == tile_id and t.get("visible", True)), None)
-            if not tile:
-                self.send_response(404)
-                self.end_headers()
-                return
-            availability = tile_availability(cfg, tile_id)
-            if not availability["allowed"]:
-                self.json_response({
-                    "status": "blocked",
-                    "reason": availability["reason"],
-                }, 403)
+            if not PORTAO_DE_ABERTURA.entrar():
+                # roteiro 31: toques represados viravam dezenas de aberturas seguidas
+                log_runtime_event("launch.ignored", level="warning", reason="busy")
+                self.json_response({"status": "busy", "message": "Another app is opening"}, 429)
                 return
             try:
-                launch = resolve_tile_action(tile)
-            except ValueError as exc:
-                self.json_response({"status": "error", "message": str(exc)}, 400)
-                return
-            log_runtime_event("launch.started", actionType=launch["type"])
-
-            if launch["type"] == "media":
-                locations = media_locations()
-                if not locations:
-                    reset_active_tile()
-                    log_runtime_event(
-                        "launch.failed",
-                        level="warning",
-                        actionType="media",
-                        result="missing",
-                    )
-                    self.send_response(302)
-                    self.send_header("Location", "/no-media.html")
+                cfg = load_cfg()
+                tile = next((t for t in cfg.get("tiles", []) if t.get("id") == tile_id and t.get("visible", True)), None)
+                if not tile:
+                    self.send_response(404)
                     self.end_headers()
                     return
-                player = find_media_player()
-                command = (
-                    media_player_command(player, locations)
-                    if player
-                    else [abridor_do_sistema() or "xdg-open", locations[0]]
-                )
+                availability = tile_availability(cfg, tile_id)
+                if not availability["allowed"]:
+                    self.json_response({
+                        "status": "blocked",
+                        "reason": availability["reason"],
+                    }, 403)
+                    return
                 try:
-                    launch_owned_tile(
-                        command,
+                    launch = resolve_tile_action(tile)
+                except ValueError as exc:
+                    self.json_response({"status": "error", "message": str(exc)}, 400)
+                    return
+                log_runtime_event("launch.started", actionType=launch["type"])
+
+                if launch["type"] == "media":
+                    locations = media_locations()
+                    if not locations:
+                        reset_active_tile()
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="media",
+                            result="missing",
+                        )
+                        self.send_response(302)
+                        self.send_header("Location", "/no-media.html")
+                        self.end_headers()
+                        return
+                    player = find_media_player()
+                    command = (
+                        media_player_command(player, locations)
+                        if player
+                        else [abridor_do_sistema() or "xdg-open", locations[0]]
+                    )
+                    try:
+                        launch_owned_tile(
+                            command,
+                            "local",
+                            tile_id=tile_id,
+                            profile_id=cfg.get("activeProfileId", ""),
+                            track_activity=cfg.get("activityTrackingEnabled", False),
+                        )
+                    except OSError:
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="media",
+                            result="failure",
+                        )
+                        self.json_response(
+                            {"status": "error", "message": "Media process could not be started"},
+                            503,
+                        )
+                        return
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+
+                if launch["type"] == "web":
+                    url = launch["url"]
+                    if launch["mode"] == "embedded":
+                        reset_active_tile()
+                        activity_token = ""
+                        if cfg.get("activityTrackingEnabled", False):
+                            activity_token = embedded_activity_sessions().start(
+                                cfg.get("activeProfileId", ""),
+                                tile_id,
+                            )
+                        self.send_response(302)
+                        self.send_header(
+                            "Location",
+                            f"/browser.html?url={quote(url, safe='')}&tile={quote(tile_id, safe='')}"
+                            f"&activity={quote(activity_token, safe='')}",
+                        )
+                        self.end_headers()
+                        return
+                    browser = find_browser(cfg)
+                    command = None
+                    profile_id = cfg.get("activeProfileId", "")
+                    auto_login = site_login_for_launch(browser, url, profile_id)
+                    login_driver = site_login_driver(browser) if auto_login else None
+                    if browser:
+                        command = external_browser_command(
+                            browser, url, profile_id=profile_id,
+                            marionette_port=site_logins.MARIONETTE_PORT if login_driver == "marionette" else None,
+                            devtools_port=site_logins.DEVTOOLS_PORT if login_driver == "devtools" else None,
+                        )
+                    elif abridor_do_sistema():
+                        command = [abridor_do_sistema(), url]
+                    else:
+                        reset_active_tile()
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="web",
+                            result="missing",
+                        )
+                        self.json_response({"status": "error", "message": "No supported browser found"}, 503)
+                        return
+                    try:
+                        launch_owned_tile(
+                            command,
+                            "external",
+                            url=url,
+                            tile_id=tile_id,
+                            profile_id=cfg.get("activeProfileId", ""),
+                            track_activity=cfg.get("activityTrackingEnabled", False),
+                        )
+                    except OSError:
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="web",
+                            result="failure",
+                        )
+                        self.json_response(
+                            {"status": "error", "message": "Browser process could not be started"},
+                            503,
+                        )
+                        return
+                    if login_driver and command and (
+                        "--marionette" in command
+                        or any(arg.startswith("--remote-debugging-port=") for arg in command)
+                    ):
+                        site, login = auto_login
+                        site_logins.start_auto_login(
+                            site, login["username"], login["password"], url,
+                            log=log_runtime_event, driver=login_driver,
+                        )
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+
+                clean = launch.get("argv", [])
+                if launch["type"] == "none" or not clean:
+                    reset_active_tile()
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+                path_extra = ""
+                if clean[0].startswith(catalogo_windows.PREFIXO):
+                    resolved = catalogo_windows.comando(clean)
+                    if not resolved:
+                        reset_active_tile()
+                        log_runtime_event("launch.failed", level="warning", actionType="app", result="missing")
+                        self.json_response({"status": "missing", "message": "App not installed"}, 404)
+                        return
+                    path_extra = catalogo_windows.pasta_no_path(clean, resolved)
+                    clean = resolved
+                clean = direct_app_command(clean)
+                try:
+                    # The supervisor still launches argv directly and never invokes a shell.
+                    supervisor = launch_owned_tile(
+                        clean,
                         "local",
                         tile_id=tile_id,
                         profile_id=cfg.get("activeProfileId", ""),
                         track_activity=cfg.get("activityTrackingEnabled", False),
+                        path_extra=path_extra,
                     )
                 except OSError:
                     log_runtime_event(
                         "launch.failed",
                         level="warning",
-                        actionType="media",
+                        actionType="app",
                         result="failure",
                     )
                     self.json_response(
-                        {"status": "error", "message": "Media process could not be started"},
+                        {"status": "error", "message": "Application process could not be started"},
                         503,
                     )
                     return
+                if app_fechou_sozinho(supervisor):
+                    reset_active_tile()
+                    log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
+                    telemetria.relatar_problema(
+                        "app.fechou_sozinho", f"tile={tile_id} cmd={clean}", assinatura=f"app.fechou_sozinho:{tile_id}"
+                    )
+                    self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
+                    return
+
                 self.send_response(204)
                 self.end_headers()
                 return
-
-            if launch["type"] == "web":
-                url = launch["url"]
-                if launch["mode"] == "embedded":
-                    reset_active_tile()
-                    activity_token = ""
-                    if cfg.get("activityTrackingEnabled", False):
-                        activity_token = embedded_activity_sessions().start(
-                            cfg.get("activeProfileId", ""),
-                            tile_id,
-                        )
-                    self.send_response(302)
-                    self.send_header(
-                        "Location",
-                        f"/browser.html?url={quote(url, safe='')}&tile={quote(tile_id, safe='')}"
-                        f"&activity={quote(activity_token, safe='')}",
-                    )
-                    self.end_headers()
-                    return
-                browser = find_browser(cfg)
-                command = None
-                profile_id = cfg.get("activeProfileId", "")
-                auto_login = site_login_for_launch(browser, url, profile_id)
-                login_driver = site_login_driver(browser) if auto_login else None
-                if browser:
-                    command = external_browser_command(
-                        browser, url, profile_id=profile_id,
-                        marionette_port=site_logins.MARIONETTE_PORT if login_driver == "marionette" else None,
-                        devtools_port=site_logins.DEVTOOLS_PORT if login_driver == "devtools" else None,
-                    )
-                elif abridor_do_sistema():
-                    command = [abridor_do_sistema(), url]
-                else:
-                    reset_active_tile()
-                    log_runtime_event(
-                        "launch.failed",
-                        level="warning",
-                        actionType="web",
-                        result="missing",
-                    )
-                    self.json_response({"status": "error", "message": "No supported browser found"}, 503)
-                    return
-                try:
-                    launch_owned_tile(
-                        command,
-                        "external",
-                        url=url,
-                        tile_id=tile_id,
-                        profile_id=cfg.get("activeProfileId", ""),
-                        track_activity=cfg.get("activityTrackingEnabled", False),
-                    )
-                except OSError:
-                    log_runtime_event(
-                        "launch.failed",
-                        level="warning",
-                        actionType="web",
-                        result="failure",
-                    )
-                    self.json_response(
-                        {"status": "error", "message": "Browser process could not be started"},
-                        503,
-                    )
-                    return
-                if login_driver and command and (
-                    "--marionette" in command
-                    or any(arg.startswith("--remote-debugging-port=") for arg in command)
-                ):
-                    site, login = auto_login
-                    site_logins.start_auto_login(
-                        site, login["username"], login["password"], url,
-                        log=log_runtime_event, driver=login_driver,
-                    )
-                self.send_response(204)
-                self.end_headers()
-                return
-
-            clean = launch.get("argv", [])
-            if launch["type"] == "none" or not clean:
-                reset_active_tile()
-                self.send_response(204)
-                self.end_headers()
-                return
-            path_extra = ""
-            if clean[0].startswith(catalogo_windows.PREFIXO):
-                resolved = catalogo_windows.comando(clean)
-                if not resolved:
-                    reset_active_tile()
-                    log_runtime_event("launch.failed", level="warning", actionType="app", result="missing")
-                    self.json_response({"status": "missing", "message": "App not installed"}, 404)
-                    return
-                path_extra = catalogo_windows.pasta_no_path(clean, resolved)
-                clean = resolved
-            clean = direct_app_command(clean)
-            try:
-                # The supervisor still launches argv directly and never invokes a shell.
-                supervisor = launch_owned_tile(
-                    clean,
-                    "local",
-                    tile_id=tile_id,
-                    profile_id=cfg.get("activeProfileId", ""),
-                    track_activity=cfg.get("activityTrackingEnabled", False),
-                    path_extra=path_extra,
-                )
-            except OSError:
-                log_runtime_event(
-                    "launch.failed",
-                    level="warning",
-                    actionType="app",
-                    result="failure",
-                )
-                self.json_response(
-                    {"status": "error", "message": "Application process could not be started"},
-                    503,
-                )
-                return
-            if app_fechou_sozinho(supervisor):
-                reset_active_tile()
-                log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
-                telemetria.relatar_problema(
-                    "app.fechou_sozinho", f"tile={tile_id} cmd={clean}", assinatura=f"app.fechou_sozinho:{tile_id}"
-                )
-                self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
-                return
-
-            self.send_response(204)
-            self.end_headers()
-            return
+            finally:
+                PORTAO_DE_ABERTURA.sair()
         self.send_response(404)
         self.end_headers()
 
@@ -2540,6 +2570,7 @@ def main():
         configure_runtime_logging(LOG_FILE)
     except OSError:
         pass
+    telemetria.instalar_excepthook("servidor")
     server_marker = os.path.abspath(__file__)
     if owned_process_alive(PIDFILE, "server", server_marker):
         log_runtime_event("server.duplicate", level="warning")
@@ -2567,6 +2598,11 @@ def main():
                 telemetria_service().iniciar()
             except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor
                 pass
+            if os.name == "nt":
+                try:  # roteiro 31: pílula travada é reaberta; app travado não conta tempo
+                    iniciar_vigia_da_pilula()
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 if os.name != "nt":  # controles USB: só Linux (evdev) por enquanto
                     controles_service().aplicar()

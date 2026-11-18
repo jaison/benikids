@@ -126,6 +126,17 @@ def pasta_do_programa(command):
     return os.path.dirname(programa)
 
 
+def _log_windows(texto):
+    """Uma linha no beni-windows.log. Só a saída normal: quando o servidor encerra o
+    supervisor (TerminateProcess), quem loga é o servidor ("app: encerrado")."""
+    try:
+        caminho = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher", "beni-windows.log")
+        with open(caminho, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
 def supervise_windows(
     command,
     record_path,
@@ -152,6 +163,8 @@ def supervise_windows(
         while True:
             # só o supervisor sobrou no job: o app (e o que ele abriu) acabou
             if child.poll() is not None and trabalho.ativos() <= 1:
+                _log_windows(f"app: {activity_tile or os.path.basename(str(command[0]))} fechou "
+                             f"(código {child.returncode}); o supervisor sai junto")
                 return 0
             time.sleep(0.2)
     finally:

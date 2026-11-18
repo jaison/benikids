@@ -270,8 +270,62 @@ def direct_app_command(command):
     return command
 
 
+def _log_windows(texto):
+    try:
+        caminho = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher", "beni-windows.log")
+        with open(caminho, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
+class PortaoDeAbertura:
+    """Um app por vez, com folga (roteiro 31, a avalanche).
+
+    O menu travou junto com a pílula, e os toques da criança ficaram represados. Quando
+    ele destravou, mandou todos de uma vez: o servidor abriu o Kiddo Games ~32 vezes, uma
+    a cada ~2,5 s, cada uma matando a anterior. Agora um pedido de abertura é recusado
+    enquanto outro está abrindo e nos FOLGA segundos depois de um app ter sido aberto
+    (qualquer tile). Um pedido que não abriu nada (bloqueado, não instalado) não dá folga."""
+
+    FOLGA = 3.0
+
+    def __init__(self, folga=FOLGA, relogio=time.monotonic):
+        self.folga = folga
+        self.relogio = relogio
+        self._lock = threading.Lock()
+        self.ocupado = False
+        self.abriu = False
+        self.fim = None
+
+    def entrar(self):
+        with self._lock:
+            if self.ocupado:
+                return False
+            if self.fim is not None and self.relogio() - self.fim < self.folga:
+                return False
+            self.ocupado = True
+            self.abriu = False
+            return True
+
+    def abriu_app(self):
+        with self._lock:
+            self.abriu = True
+
+    def sair(self):
+        with self._lock:
+            if self.abriu:
+                self.fim = self.relogio()
+            self.ocupado = False
+            self.abriu = False
+
+
 class ApplicationLauncher:
     """Start and stop only process trees owned by one launcher tile."""
+
+    # argumentos da última pílula aberta (o servidor cria um ApplicationLauncher por
+    # pedido; o vigia da pílula precisa deles para reabri-la igual)
+    ultimo_overlay = None
 
     def __init__(
         self,
@@ -299,11 +353,17 @@ class ApplicationLauncher:
         )
 
     def stop_active_tile(self):
-        return terminate_owned_process(
+        parou = terminate_owned_process(
             self.tile_process_pidfile,
             "tile-process",
             self.process_supervisor,
         )
+        if parou and os.name == "nt":
+            # ✕ da pílula, outro app aberto, limite de tempo, Sair: o Job Object do
+            # supervisor leva a árvore inteira do app junto (mesmo travado)
+            ultimo = ApplicationLauncher.ultimo_overlay or {}
+            _log_windows(f"app: {ultimo.get('tile_id') or '?'} encerrado pelo servidor (com a árvore do app)")
+        return parou
 
     @staticmethod
     def _wait_for_owned_process(path, role, marker, process, timeout=1.5):
@@ -339,6 +399,7 @@ class ApplicationLauncher:
             command.extend(["--url", url])
         if tile_id:
             command.extend(["--tile-id", tile_id])
+        ApplicationLauncher.ultimo_overlay = {"mode": mode, "url": url, "tile_id": tile_id}
         process = subprocess.Popen(
             command,
             env=dict(os.environ),
