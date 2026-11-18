@@ -63,6 +63,13 @@ fn passo_do_timer(ativo: bool, esgotado: bool, aviso: bool, tela_aberta: bool, a
     PassoTimer::Nada
 }
 
+/// Minutos que faltam no timer, arredondados para cima: a mesma regra da pílula dos
+/// apps, da área dos pais e do "Falta 1 minuto" (roteiro 28: o selo dizia "2 min" com a
+/// pílula em "3 min"; com 2 min e 30 s, os dois dizem 3).
+fn minutos_do_timer(segundos: f64) -> i64 {
+    dados::minutos(segundos)
+}
+
 /// Título do aviso de minutos (o mesmo número no título e no texto).
 fn texto_do_aviso(minutos: i64) -> String {
     if minutos <= 1 { "Falta 1 minuto!".into() } else { format!("Faltam {minutos} minutos!") }
@@ -87,6 +94,11 @@ mod testes_timer {
         assert_eq!(texto_do_aviso(1), "Falta 1 minuto!");
         assert_eq!(texto_do_aviso(0), "Falta 1 minuto!");
         assert_eq!(texto_do_aviso(5), "Faltam 5 minutos!");
+        // o mesmo arredondamento da pílula (overlay.format_remaining) e da área dos pais
+        assert_eq!(minutos_do_timer(150.), 3);
+        assert_eq!(minutos_do_timer(120.), 2);
+        assert_eq!(minutos_do_timer(59.), 1);
+        assert_eq!(minutos_do_timer(300.), 5);
     }
 
     #[test]
@@ -400,7 +412,7 @@ impl Menu {
                 PassoTimer::Aviso => {
                     m.aviso_timer_mostrado = true;
                     let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
-                    m.mostrar_aviso_timer(dados::minutos_usados(restante), cx);
+                    m.mostrar_aviso_timer(minutos_do_timer(restante), cx);
                 }
                 PassoTimer::Desligado => {
                     m.aviso_timer_mostrado = false;
@@ -2156,7 +2168,7 @@ impl Menu {
         if dados::verdade(&self.timer, "active") {
             let esgotado = dados::verdade(&self.timer, "expired");
             let aviso = dados::verdade(&self.timer, "warning");
-            let resto = dados::minutos_usados(dados::numero(&self.timer, "remainingSeconds").unwrap_or(0.));
+            let resto = minutos_do_timer(dados::numero(&self.timer, "remainingSeconds").unwrap_or(0.));
             let (fundo, cor) = if esgotado {
                 (0xffebeeff, 0xcc0000)
             } else if aviso {

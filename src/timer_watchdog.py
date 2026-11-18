@@ -468,7 +468,7 @@ class WatchdogApp:
             if "bloquear" in acoes:
                 self.show_block()
             if "aviso" in acoes:
-                self.show_warning(max(1, remaining // 60))
+                self.show_warning(max(1, (remaining + 59) // 60))  # para cima, como a pílula e o menu
 
         self.root.after(self.poll_interval, self.tick)
 
