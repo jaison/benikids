@@ -244,30 +244,19 @@ def procurar_atualizacao_depois(espera=120):
 
 
 def limpar_queda():
-    """A sessão anterior caiu (o sessao.json ou a barra-escondida.json ficaram): encerra
-    o menu, o servidor, o vigia, o overlay e o Edge que sobraram dela. Esta é a única
-    instância (o mutex já é nosso), então nada disso pertence a um Benikids vivo."""
-    if not queda_windows.caiu_antes(SESSAO, (BARRA_ESCONDIDA,)):
-        return
-    eu, minha_sessao = os.getpid(), win.sessao_do_processo(os.getpid())
-    lista = []
-    for pid in win.processos():
-        if pid in (0, 4, eu):
-            continue
-        exe = win.caminho_do_exe(pid)
-        if not exe:
-            continue
-        lista.append({"pid": pid, "exe": exe, "argv": win.process_command(pid),
-                      "sessao": win.sessao_do_processo(pid)})
-    pids = queda_windows.restos(lista, APP_ROOT, CACHE, eu, minha_sessao)
-    for pid in pids:
-        win.terminar(pid)
-    for pidfile in (BROWSER_PIDFILE, TILE_PIDFILE, OVERLAY_PIDFILE):
-        try:
-            os.unlink(pidfile)
-        except OSError:
-            pass
-    log(f"a sessão anterior caiu; encerrados {len(pids)} processos que sobraram dela")
+    """Encerra o menu, o servidor, o vigia, o overlay e o Edge que sobraram de um Benikids
+    que caiu. Esta é a única instância (o mutex já é nosso), então nada disso pertence a
+    um Benikids vivo. Roda sempre, não só com o sessao.json: as versões até a 1.0.6 não
+    deixavam marcador e podem ter deixado um menu órfão antes de atualizar."""
+    caiu = queda_windows.caiu_antes(SESSAO, (BARRA_ESCONDIDA,))
+    pids = queda_windows.encerrar_restos(win, APP_ROOT, CACHE, os.getpid())
+    if pids or caiu:
+        for pidfile in (BROWSER_PIDFILE, TILE_PIDFILE, OVERLAY_PIDFILE):
+            try:
+                os.unlink(pidfile)
+            except OSError:
+                pass
+        log(f"a sessão anterior caiu; encerrados {len(pids)} processos que sobraram dela")
     if pids:
         time.sleep(1)  # o Windows solta os arquivos (beni-menu.exe) antes de uma atualização
 
@@ -277,7 +266,7 @@ def main():
     if "--autostart" in sys.argv[1:]:
         # ao entrar no Windows: deixa a área de trabalho e a rede subirem antes
         time.sleep(6)
-    if not win.instancia_unica("Local\\BeniLauncher"):
+    if not win.instancia_unica(queda_windows.MUTEX):
         # já está aberto: só traz o menu para a frente
         from process_state import owned_process
 

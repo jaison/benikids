@@ -20,6 +20,7 @@ PACOTE = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
 APP_ROOT = os.path.join(HOME, ".local", "share", "cozy-kids-launcher")
 CONFIG = os.path.join(HOME, ".config", "cozy-kids-launcher", "config.json")
+CACHE = os.path.join(HOME, ".cache", "cozy-kids-launcher")
 NOME = "Benikids"
 
 
@@ -40,6 +41,46 @@ def processo_rodando():
         return "beni-menu.exe" in saida.lower()
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def _app():
+    pasta = os.path.join(PACOTE, "app")
+    if pasta not in sys.path:
+        sys.path.insert(0, pasta)
+
+
+def menu_aberto():
+    """O que fazer com o Benikids aberto: "seguir", "esperar" (o iniciador está vivo e
+    fecha pelo Sair) ou "limpar" (só restos de uma queda, que ninguém fecha pelo Sair)."""
+    rodando = processo_rodando()
+    if not rodando:
+        return "seguir"
+    try:
+        _app()
+        import queda_windows
+
+        return queda_windows.o_que_fazer_com_menu_aberto(rodando, queda_windows.iniciador_vivo())
+    except ImportError:
+        return "esperar"
+
+
+def fechar_restos():
+    """Encerra o menu órfão, o servidor e o vigia que sobraram de uma queda (pelo caminho
+    da instalação, como a limpeza do iniciador) e espera o beni-menu.exe soltar."""
+    try:
+        _app()
+        import plataforma_windows
+        import queda_windows
+
+        pids = queda_windows.encerrar_restos(plataforma_windows, APP_ROOT, CACHE, os.getpid())
+        print(f"restos de uma queda encerrados: {len(pids)}")
+    except (ImportError, OSError) as e:
+        print(f"restos: {e}")
+    for _ in range(10):
+        if not processo_rodando():
+            return True
+        time.sleep(1)
+    return False
 
 
 def copiar_arvore(origem, destino):
@@ -87,8 +128,13 @@ def esperar_sair(pid, limite=60):
     except (AttributeError, OSError, ValueError):
         time.sleep(5)
     for _ in range(limite):
-        if not processo_rodando():
+        situacao = menu_aberto()
+        if situacao == "seguir":
             return True
+        if situacao == "limpar":
+            # o iniciador já saiu e o menu ficou: órfão de uma queda de antes (até a
+            # 1.0.6, sem o job da sessão); sem isso a atualização falharia para sempre
+            return fechar_restos()
         time.sleep(1)
     return False
 
@@ -97,7 +143,7 @@ def atualizar(pid):
     """--atualizacao: chamado pelo iniciador (atualizar_windows.aplicar_e_sair), com o
     Python deste pacote novo. Sem perguntas: guarda uma cópia, instala por cima e abre o
     Benikids de novo; se falhar, volta a cópia."""
-    sys.path.insert(0, os.path.join(PACOTE, "app"))
+    _app()
     import atualizar_windows
     import telemetria
 
@@ -130,7 +176,10 @@ def main():
     args = sys.argv[1:]
     if args[:1] == ["--atualizacao"]:
         return atualizar(args[1] if len(args) > 1 else 0)
-    if processo_rodando():
+    situacao = menu_aberto()
+    if situacao == "limpar" and not fechar_restos():
+        situacao = "esperar"
+    if situacao == "esperar":
         aviso("O Benikids está aberto. Feche (Pais → Sair) e rode o instalador de novo.", estilo=0x30)
         return 1
     copiar_pacote()

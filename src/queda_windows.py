@@ -55,6 +55,53 @@ def restos(processos, app_root, cache, meu_pid, minha_sessao):
     return [p["pid"] for p in achados]
 
 
+def encerrar_restos(win, app_root, cache, meu_pid):
+    """Lista os processos da mesma sessão do Windows e encerra os que são restos de um
+    Benikids (e_resto). win: plataforma_windows (nos testes, um falso). Devolve os PIDs."""
+    minha = win.sessao_do_processo(meu_pid)
+    lista = []
+    for pid in win.processos():
+        if pid in (0, 4, meu_pid) or win.sessao_do_processo(pid) != minha:
+            continue
+        exe = win.caminho_do_exe(pid)
+        if not exe:
+            continue
+        lista.append({"pid": pid, "exe": exe, "argv": win.process_command(pid), "sessao": minha})
+    pids = restos(lista, app_root, cache, meu_pid, minha)
+    for pid in pids:
+        win.terminar(pid)
+    return pids
+
+
+MUTEX = "Local\\BeniLauncher"
+
+
+def iniciador_vivo(nome=MUTEX):
+    """True se um iniciador (beni_windows.py) está rodando nesta sessão: é ele que segura o
+    mutex. Sem ele, um beni-menu aberto é resto de uma queda (versões antes do job)."""
+    try:
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenMutexW.restype = ctypes.c_void_p
+        h = kernel32.OpenMutexW(0x00100000, False, nome)  # SYNCHRONIZE
+    except (AttributeError, OSError):
+        return False
+    if not h:
+        return False
+    kernel32.CloseHandle(ctypes.c_void_p(h))
+    return True
+
+
+def o_que_fazer_com_menu_aberto(menu_rodando, iniciador):
+    """Instalador/atualização encontrou o Benikids: "seguir" (nada aberto), "esperar" (o
+    iniciador está vivo: a pessoa fecha pelo Sair) ou "limpar" (só restos, sem iniciador:
+    ninguém consegue fechar pelo Sair, então o instalador encerra)."""
+    if not menu_rodando:
+        return "seguir"
+    return "esperar" if iniciador else "limpar"
+
+
 def caiu_antes(marcador, outros=()):
     """A sessão anterior não terminou direito? (o marcador da sessão, ou a barra que
     ela escondeu, ficaram para trás)."""

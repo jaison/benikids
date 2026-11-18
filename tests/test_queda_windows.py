@@ -61,6 +61,108 @@ class RestosTests(unittest.TestCase):
             self.assertTrue(queda.caiu_antes(sessao, (barra,)))
 
 
+class EncerrarRestosTests(unittest.TestCase):
+    def test_lists_the_session_and_kills_only_the_leftovers(self):
+        app, cache = os.path.join("C:", "app"), os.path.join("C:", "cache")
+        tabela = {
+            10: (1, os.path.join(app, "beni-menu.exe"), []),
+            11: (1, "pythonw.exe", ["pythonw.exe", os.path.join(app, "server.py")]),
+            12: (2, os.path.join(app, "beni-menu.exe"), []),  # outro usuário logado
+            13: (1, "notepad.exe", ["notepad.exe"]),
+            14: (1, None, []),  # protegido
+            99: (1, "pythonw.exe", ["pythonw.exe", os.path.join(app, "instalar_windows.py")]),  # eu
+        }
+
+        class Win:
+            mortos = []
+
+            def processos(self):
+                return {pid: 0 for pid in tabela}
+
+            def sessao_do_processo(self, pid):
+                return tabela[pid][0]
+
+            def caminho_do_exe(self, pid):
+                return tabela[pid][1]
+
+            def process_command(self, pid):
+                return tabela[pid][2]
+
+            def terminar(self, pid):
+                self.mortos.append(pid)
+
+        win = Win()
+        self.assertEqual(queda.encerrar_restos(win, app, cache, 99), [10, 11])
+        self.assertEqual(win.mortos, [10, 11])
+
+
+class InstaladorDecideTests(unittest.TestCase):
+    def test_orphans_without_a_launcher_are_cleaned_and_a_live_one_is_respected(self):
+        # roteiro 25: menu órfão do pacote 21 (sem iniciador) fazia o instalador pedir
+        # "Pais → Sair", que não existe sem servidor
+        self.assertEqual(queda.o_que_fazer_com_menu_aberto(False, False), "seguir")
+        self.assertEqual(queda.o_que_fazer_com_menu_aberto(True, True), "esperar")
+        self.assertEqual(queda.o_que_fazer_com_menu_aberto(True, False), "limpar")
+
+    def test_launcher_is_detected_by_the_same_mutex(self):
+        codigo = Path(__file__).resolve().parents[1].joinpath("src", "beni_windows.py").read_text(encoding="utf-8")
+        self.assertIn("win.instancia_unica(queda_windows.MUTEX)", codigo)
+        self.assertFalse(queda.iniciador_vivo() if os.name != "nt" else False)
+
+
+class InstaladorTests(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+
+        caminho = Path(__file__).resolve().parents[1] / "scripts" / "windows" / "instalar_windows.py"
+        spec = importlib.util.spec_from_file_location("instalar_windows_teste", caminho)
+        self.inst = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.inst)
+
+    def test_installer_cleans_orphans_and_goes_on(self):
+        inst = self.inst
+        with mock.patch.object(inst, "menu_aberto", return_value="limpar"), \
+                mock.patch.object(inst, "fechar_restos", return_value=True) as fechar, \
+                mock.patch.object(inst, "aviso") as aviso, \
+                mock.patch.object(inst, "copiar_pacote", side_effect=RuntimeError("seguiu")):
+            with self.assertRaisesRegex(RuntimeError, "seguiu"):
+                inst.main()
+        fechar.assert_called_once()
+        aviso.assert_not_called()
+
+    def test_installer_still_asks_to_close_a_live_benikids(self):
+        inst = self.inst
+        for situacao, fechou in (("esperar", True), ("limpar", False)):
+            with mock.patch.object(inst, "menu_aberto", return_value=situacao), \
+                    mock.patch.object(inst, "fechar_restos", return_value=fechou), \
+                    mock.patch.object(inst, "aviso") as aviso, \
+                    mock.patch.object(inst, "copiar_pacote") as copiar:
+                self.assertEqual(inst.main(), 1)
+            self.assertIn("Pais → Sair", aviso.call_args[0][0])
+            copiar.assert_not_called()
+
+    def test_automatic_update_cleans_orphans_after_the_old_launcher_left(self):
+        inst = self.inst
+        with mock.patch.object(inst, "menu_aberto", side_effect=["esperar", "limpar"]), \
+                mock.patch.object(inst, "fechar_restos", return_value=True) as fechar, \
+                mock.patch.object(inst.time, "sleep"), \
+                mock.patch.object(inst.ctypes, "windll", create=True, new=None):
+            self.assertTrue(inst.esperar_sair(0, limite=5))
+        fechar.assert_called_once()
+
+    def test_menu_aberto_without_menu_does_not_touch_the_mutex(self):
+        inst = self.inst
+        with mock.patch.object(inst, "processo_rodando", return_value=False):
+            self.assertEqual(inst.menu_aberto(), "seguir")
+        with mock.patch.object(inst, "processo_rodando", return_value=True), \
+                mock.patch.object(queda, "iniciador_vivo", return_value=False):
+            inst._app()
+            import queda_windows
+
+            with mock.patch.object(queda_windows, "iniciador_vivo", return_value=False):
+                self.assertEqual(inst.menu_aberto(), "limpar")
+
+
 class ForaDoJobTests(unittest.TestCase):
     def test_breakaway_is_asked_and_falls_back_when_refused(self):
         with mock.patch.object(queda.subprocess, "Popen") as popen:
