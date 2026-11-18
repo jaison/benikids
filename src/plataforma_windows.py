@@ -64,6 +64,8 @@ user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctyp
 user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.GetWindowLongW.restype = ctypes.c_long
 user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetAncestor.restype = wintypes.HWND
 user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t]
 
 
@@ -338,6 +340,11 @@ def trazer_para_frente(h):
         if ligou:
             user32.AttachThreadInput(eu, t_frente, False)
     return ok
+
+
+def raiz_da_janela(h):
+    """A janela de nível superior que contém h (o Tk devolve a janela de dentro)."""
+    return user32.GetAncestor(h, 2) or h  # GA_ROOT
 
 
 def ativar_processo(pid, com_filhos=False):

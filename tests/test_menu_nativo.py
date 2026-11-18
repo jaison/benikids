@@ -127,6 +127,36 @@ class ClienteNativoWebTests(unittest.TestCase):
         self.assertIn("sessionStorage.setItem('beniCliente', '1')", html)
         self.assertIn("location.replace(ir)", html)
 
+    def test_instalador_antigo_copia_as_paginas_do_menu_nativo(self):
+        # scripts/install.sh (usado pelo teste de navegador) lista os arquivos um a
+        # um; sem estes dois, /cliente.html dá 404 e a área dos pais não abre.
+        script = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+        self.assertIn('install -m 0644 "$SRC_DIR/cliente.html" "$APP_ROOT/cliente.html"', script)
+        self.assertRegex(script, r"for beni_file in [^;]*\bcliente-nativo\.js\b[^;]*; do")
+
+    def test_cliente_html_guarda_a_espera_do_pin_do_menu(self):
+        html = (ROOT / "src" / "cliente.html").read_text(encoding="utf-8")
+        # o id vem depois do "#" (não vai ao servidor) e só com caracteres seguros
+        self.assertIn("/^#espera=([A-Za-z0-9_-]{16,64})$/.exec(location.hash)", html)
+        self.assertIn("sessionStorage.setItem('beniEspera', espera[1])", html)
+        self.assertIn("sessionStorage.removeItem('beniEspera')", html)
+        # segue sem o "#": location.replace(ir) usa só o caminho
+        self.assertLess(html.index("beniEspera"), html.index("location.replace(ir)"))
+
+    def test_pagina_escondida_espera_o_pin_do_menu_sem_abrir_a_area_dos_pais(self):
+        js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
+        self.assertIn("postJson('/api/pais/espera', { espera: esperaId })", js)
+        self.assertIn("postJson('/api/pais/entrar', { token: res.d.token })", js)
+        # antes do PIN não abre a área dos pais (nem o PIN da página)
+        self.assertIn("if (avisou || recarregando || aguardandoMenu || !temCfg()) return;", js)
+        self.assertIn("if (aguardandoMenu) { vazioDesde = 0; return; }", js)
+        # coberta com o fundo da marca, por cima de tudo
+        self.assertIn("capa.className = 'cliente-capa';", js)
+        self.assertIn(".cliente-capa { position:fixed; inset:0; z-index:2147483647;", js)
+        # cookie trocado: abre o painel direto; falhou: cai no PIN da página
+        self.assertIn("if (r.ok) entrarDepois = true;", js)
+        self.assertIn("esqueceEspera(); // espera desconhecida: PIN da página", js)
+
     def test_script_so_age_em_aba_aberta_pelo_menu_nativo(self):
         js = (ROOT / "src" / "frontend" / "cliente-nativo.js").read_text(encoding="utf-8")
         self.assertIn("sessionStorage.getItem('beniCliente') === '1'", js)

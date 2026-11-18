@@ -32,6 +32,7 @@ _SAFE_EVENT_FIELDS = {
     "launcher.recovered": {"attempt"},
     "launch.failed": {"actionType", "result"},
     "launch.started": {"actionType"},
+    "pais.espera_ocupada": set(),
     "pin.changed": set(),
     "pin.removed": set(),
     "profile.created": set(),

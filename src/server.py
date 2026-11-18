@@ -96,7 +96,12 @@ from parent_auth import (
     PIN_FAILURE_WINDOW_SECONDS,
     PIN_KDF_ITERATIONS,
     admin_session_cookie,
+    aguardar_espera,
+    cancelar_espera,
     clear_admin_sessions,
+    criar_espera,
+    liberar_espera,
+    trocar_token_pais,
     clear_pin_failures,
     create_admin_session,
     expired_admin_session_cookie,
@@ -918,6 +923,90 @@ def menu_na_frente():
         return False
 
 
+def pid_da_janela_ativa():
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return plataforma_windows.pid_da_janela_ativa()
+        except Exception:  # noqa: BLE001
+            return None
+    return controles.janela_ativa_pid()
+
+
+def pais_dos_processos():
+    """{pid: pid do pai}."""
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return plataforma_windows.processos()
+        except Exception:  # noqa: BLE001
+            return {}
+    tabela = {}
+    try:
+        nomes = os.listdir("/proc")
+    except OSError:
+        return tabela
+    for nome in nomes:
+        if not nome.isdigit():
+            continue
+        try:
+            with open(f"/proc/{nome}/stat", encoding="utf-8", errors="replace") as f:
+                campos = f.read().rsplit(")", 1)[1].split()
+            tabela[int(nome)] = int(campos[1])
+        except (OSError, IndexError, ValueError):
+            continue
+    return tabela
+
+
+def processo_descende_de(pid, ancestral, pais=None):
+    """pid é o próprio ancestral ou um descendente dele (ex.: o navegador que o
+    menu nativo abre para a área dos pais)."""
+    if not pid or not ancestral:
+        return False
+    if pid == ancestral:
+        return True
+    pais = pais_dos_processos() if pais is None else pais
+    vistos = set()
+    while pid and pid not in vistos and len(vistos) < 64:
+        vistos.add(pid)
+        pid = pais.get(pid)
+        if pid == ancestral:
+            return True
+    return False
+
+
+# Menu registrado há pouco (abrindo): ainda sem janela na frente, conta como menu.
+MENU_PARTIDA_SEGUNDOS = 15
+
+
+def menu_cobre_a_tela(agora=None):
+    """O menu está na frente e nenhum app/site está aberto: aí as telas do timer
+    ("Acabou o tempo!", "Faltam N minutos") são as do próprio menu, e o
+    timer_watchdog não mostra as dele (eram duas ao mesmo tempo, com o teclado
+    indo para a de baixo). Com um app ou jogo na frente, quem cobre é o watchdog.
+    - A área dos pais no navegador aberto pelo menu nativo conta como menu (o
+      navegador é processo filho dele e não é um app; o adulto está lá).
+    - Menu abrindo (registrado há menos de MENU_PARTIDA_SEGUNDOS) conta como
+      menu: ao reabrir com o tempo esgotado, a rosa aparecia antes do menu."""
+    browser = owned_process(BROWSER_PIDFILE, "browser")
+    if not browser:
+        return False
+    if owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
+        return False
+    try:
+        if usage_status(load_cfg()).get("active"):
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    agora = time.time() if agora is None else agora
+    try:
+        if agora - os.path.getmtime(BROWSER_PIDFILE) < MENU_PARTIDA_SEGUNDOS:
+            return True
+    except OSError:
+        pass
+    return processo_descende_de(pid_da_janela_ativa(), browser.get("pid"))
+
+
 def fechar_app_pelo_controle():
     """Start + Select seguros: fecha o app aberto como o ✕ do overlay e mostra o menu."""
     if not owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
@@ -1112,6 +1201,10 @@ def telemetria_service():
     return _TELEMETRIA[0]
 
 
+# Quanto um pedido da página escondida espera pelo PIN antes de voltar vazio.
+PAIS_ESPERA_POR_PEDIDO = 20.0
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     server_version = "CozyKidsLauncher"
     sys_version = ""
@@ -1221,6 +1314,72 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return True
         self.json_response({"status": "error", "message": "Parent authentication required"}, 403)
         return False
+
+    def pedido_do_proprio_computador(self):
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+    def area_dos_pais_nativa(self, passo):
+        """Área dos pais pelo menu nativo (PIN no menu, navegador já aberto e
+        escondido). Ver o fluxo em parent_auth.criar_espera. Nada daqui vai para
+        o log: nem o id da espera, nem o token, nem o PIN."""
+        if not self.pedido_do_proprio_computador():
+            self.json_response({"status": "error", "message": "Local requests only"}, 403)
+            return
+        data = self.read_json_body(required=passo != "preparar")
+        if data is None:
+            return
+        if passo == "preparar":
+            if not load_cfg().get("pinHash", ""):
+                self.json_response({"espera": None, "pinConfigured": False})
+                return
+            self.json_response({"espera": criar_espera(), "pinConfigured": True})
+            return
+        if passo == "liberar":
+            if pin_attempt_blocked():
+                log_runtime_event("auth.throttled", level="warning")
+                self.json_response({"valid": False, "message": "Too many attempts"}, 429)
+                return
+            cfg = load_cfg()
+            pin_hash = cfg.get("pinHash", "")
+            pin = data.get("pin", "")
+            if pin_hash and (not isinstance(pin, str) or not verify_pin(pin_hash, pin)):
+                record_pin_failure()
+                log_runtime_event("auth.failed", level="warning")
+                self.json_response({"valid": False}, 403)
+                return
+            clear_pin_failures()
+            if pin_hash and is_legacy_pin_hash(pin_hash):
+                cfg["pinHash"] = hash_pin(pin)
+                save_cfg(cfg)
+            entregue = liberar_espera(data.get("espera"))
+            log_runtime_event("auth.succeeded")
+            self.json_response({"valid": True, "entregue": entregue})
+            return
+        if passo == "espera":
+            # a página escondida fica aqui até o PIN (long polling: um pedido por vez)
+            estado, token = aguardar_espera(data.get("espera"), PAIS_ESPERA_POR_PEDIDO)
+            if estado == "ocupada":
+                # outro pedido já espera nesta espera: só a página do menu devia estar aqui
+                log_runtime_event("pais.espera_ocupada", level="warning")
+                self.json_response({"estado": estado}, 409)
+                return
+            resposta = {"estado": estado}
+            if token:
+                resposta["token"] = token
+            self.json_response(resposta, 404 if estado == "desconhecida" else 200)
+            return
+        if passo == "entrar":
+            if not trocar_token_pais(data.get("token")):
+                log_runtime_event("auth.failed", level="warning")
+                self.json_response({"status": "error"}, 403)
+                return
+            sessao = create_admin_session()
+            self.json_response({"status": "ok"}, headers={"Set-Cookie": self.admin_cookie(sessao)})
+            return
+        if passo == "cancelar":
+            self.json_response({"status": "ok" if cancelar_espera(data.get("espera")) else "ignored"})
+            return
+        self.json_response({"status": "error", "message": "Unknown action"}, 404)
 
     @staticmethod
     def admin_cookie(token):
@@ -1332,6 +1491,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # Menu nativo (beni-menu): quantas vezes uma página aberta por ele pediu
             # para voltar ao menu (ele fecha o navegador quando o número muda).
             return self.json_response({"voltar": cliente_voltar_contador()})
+        if self.path == "/api/timer/tela":
+            # timer_watchdog: quem mostra o "Acabou o tempo!" (o menu ou ele)
+            return self.json_response({"menuNaFrente": menu_cobre_a_tela()})
         if self.path == "/api/timer/status":
             return self.json_response(timer_status(load_cfg()))
         if self.path == "/api/availability/status":
@@ -1842,6 +2004,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 {"valid": True, "pinConfigured": True},
                 headers={"Set-Cookie": self.admin_cookie(token)},
             )
+            return
+        if action.startswith("api/pais/"):
+            self.area_dos_pais_nativa(action[len("api/pais/"):])
             return
         if action == "api/pin/set":
             cfg = load_cfg()
