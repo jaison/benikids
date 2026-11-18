@@ -51,6 +51,18 @@ RAPIDO_SEGUNDOS = 5.0
 # Pôr um novo de tempos em tempos garante que ele volta mesmo que isso aconteça.
 REGANCHAR_MS = 30000
 WM_TIMER = 0x0113
+EVENT_OBJECT_CREATE = 0x8000
+EVENT_OBJECT_SHOW = 0x8002
+OBJID_WINDOW = 0
+CHILDID_SELF = 0
+
+
+def evento_da_barra(evento, id_objeto, id_filho, classe):
+    """WinEvent de uma barra de tarefas sendo criada ou aparecendo (a janela em si, não
+    um pedaço dela). Roteiro 28: sem o autohide, a barra do Explorer reiniciado ficava
+    visível até 2 s por cima do jogo; o aviso do próprio Windows chega na hora."""
+    return (evento in (EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW) and id_objeto == OBJID_WINDOW
+            and id_filho == CHILDID_SELF and classe in CLASSES_DA_BARRA)
 
 
 def timer_da_thread(msg):
@@ -101,7 +113,9 @@ class Barra:
         self.escondidas = set()
 
     def esconder(self):
-        if os.path.exists(self.arquivo):
+        if os.path.exists(self.arquivo) and any(not self.api.visivel(j) for j in self.api.barras()):
+            # sobrou de uma queda e a barra ainda está escondida (se o Explorer já
+            # reiniciou, ela voltou sozinha e não há o que avisar)
             self.log("barra: o Benikids anterior não mostrou a barra de volta (queda)")
         try:
             os.makedirs(os.path.dirname(self.arquivo), exist_ok=True)
@@ -471,9 +485,34 @@ class Trava:
             # deixa o aviso do Explorer (integridade média) passar mesmo se o Benikids
             # estiver rodando como administrador (filtro de mensagens do UIPI)
             user32.ChangeWindowMessageFilterEx(janela, taskbar_created, 1, None)  # MSGFLT_ALLOW
+        # Aviso do Windows quando uma janela é criada ou aparece (fora de contexto: chega
+        # na fila desta thread). A barra nova é escondida na hora; o TaskbarCreated e a
+        # conferência de 250 ms ficam de reserva.
+        WINEVENTPROC = ctypes.WINFUNCTYPE(None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, ctypes.c_long,
+                                          ctypes.c_long, wintypes.DWORD, wintypes.DWORD)
+        user32.SetWinEventHook.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.HMODULE, WINEVENTPROC,
+                                           wintypes.DWORD, wintypes.DWORD, wintypes.DWORD]
+        user32.SetWinEventHook.restype = wintypes.HANDLE
+        user32.UnhookWinEvent.argtypes = [wintypes.HANDLE]
+
+        def evento(_gancho, ev, hwnd, id_objeto, id_filho, _thread, _tempo):
+            try:
+                if id_objeto != OBJID_WINDOW or not hwnd:
+                    return
+                if evento_da_barra(ev, id_objeto, id_filho, classe_de(hwnd)):
+                    if self.barra.manter():
+                        acelerar(rapido["janela"])
+            except Exception as erro:  # noqa: BLE001
+                erro_de("barra (WinEvent)", erro)
+
+        self._evento_c = WINEVENTPROC(evento)  # precisa viver enquanto o gancho existir
+        gancho_ev = user32.SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, None, self._evento_c,
+                                           0, 0, 0x0002)  # WINEVENT_OUTOFCONTEXT | SKIPOWNPROCESS
+        if not gancho_ev:
+            self.log(f"barra: sem o aviso de janela nova (erro {ctypes.get_last_error()}); fica a conferência")
         if not user32.SetTimer(None, 0, INTERVALO_MS, None):
             self.log(f"barra: sem a conferência periódica (erro {ctypes.get_last_error()})")
-        self.log("barra: vigiando (TaskbarCreated e a cada 250 ms)")
+        self.log("barra: vigiando (aviso de janela, TaskbarCreated e a cada 250 ms)")
         pronta.set()
         msg = wintypes.MSG()
         try:
@@ -484,5 +523,7 @@ class Trava:
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
         finally:
+            if gancho_ev:
+                user32.UnhookWinEvent(gancho_ev)
             if janela:
                 user32.DestroyWindow(janela)

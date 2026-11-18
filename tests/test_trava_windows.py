@@ -113,12 +113,29 @@ class BarraTests(unittest.TestCase):
             Path(self.arquivo).write_text(conteudo)
             log = []
             win = WindowsDeMentira()
+            win.visiveis["principal"] = False  # a queda deixou a barra escondida
             barra = trava.Barra(win, self.arquivo, log.append)
             barra.esconder()
             self.assertTrue(any("não mostrou a barra" in linha for linha in log), conteudo)
             barra.restaurar()
             self.assertEqual(win.visiveis, {"principal": True})
             self.assertFalse(os.path.exists(self.arquivo))
+
+    def test_crash_marker_is_quiet_when_the_explorer_already_brought_the_bar_back(self):
+        Path(self.arquivo).write_text('{"escondida": true}')
+        log = []
+        win = WindowsDeMentira()  # Explorer reiniciado depois da queda: barra visível
+        trava.Barra(win, self.arquivo, log.append).esconder()
+        self.assertFalse(any("não mostrou a barra" in linha for linha in log))
+
+    def test_window_events_that_mean_a_taskbar_is_showing(self):
+        for ev in (trava.EVENT_OBJECT_CREATE, trava.EVENT_OBJECT_SHOW):
+            for classe in trava.CLASSES_DA_BARRA:
+                self.assertTrue(trava.evento_da_barra(ev, 0, 0, classe))
+        self.assertFalse(trava.evento_da_barra(0x8001, 0, 0, "Shell_TrayWnd"))  # DESTROY
+        self.assertFalse(trava.evento_da_barra(trava.EVENT_OBJECT_SHOW, -4, 0, "Shell_TrayWnd"))  # cursor, menu...
+        self.assertFalse(trava.evento_da_barra(trava.EVENT_OBJECT_SHOW, 0, 3, "Shell_TrayWnd"))  # um botão dela
+        self.assertFalse(trava.evento_da_barra(trava.EVENT_OBJECT_SHOW, 0, 0, "Qt662QWindowIcon"))
 
     def test_nothing_to_restore_when_it_never_hid(self):
         win = WindowsDeMentira()
