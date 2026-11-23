@@ -1234,6 +1234,15 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
             gender=crianca.get("icon"),
             telemetryId=os.urandom(16).hex(),
         )
+        # Menina recebe os jogos de vestir/maquiagem. Menino não fica com os
+        # que vieram copiados do perfil-modelo. Sem gender a configuração nem chega aqui.
+        import jogos_genero
+        jogos_genero.retirar_de_outros_generos(perfil)
+        jogos_genero.aplicar_perfil(
+            perfil,
+            "windows" if os.name == "nt" else "linux",
+            porta=PORT,
+        )
         if nascimento:
             perfil["birthMonth"] = nascimento
         else:

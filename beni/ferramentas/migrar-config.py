@@ -16,6 +16,10 @@ Operações (campo "op"); "perfis" = "todos" (padrão) ou lista de ids de perfil
   remover_tile    {id}
   atualizar_tile  {id, campos:{...}}           ex.: {"visible": false} ou um cmd novo
   definir         {caminho:"categoryLimits.categories.passatempo", valor, so_se_ausente?: true}
+  adicionar_por_genero
+                  acrescenta os jogos de src/jogos_por_genero.json do gender
+                  do perfil. Não faz nada sem gender, nem se o tile já existe
+                  (oculto continua oculto).
 """
 
 import copy
@@ -76,6 +80,9 @@ def apply_op(cfg, op):
                 if tile.get("id") == op["id"]:
                     tile.update(copy.deepcopy(op["campos"]))
                     changed += 1
+        elif kind == "adicionar_por_genero":
+            import jogos_genero
+            changed += jogos_genero.aplicar_perfil(profile, plataforma="linux")
         elif kind == "definir":
             node = profile
             *parents, last = op["caminho"].split(".")

@@ -396,21 +396,31 @@ def _sincronizar(caminhos, baixar, plataforma):
 
     if algum:
         gravar_json(caminhos.cache, cache)
-    if not por_perfil:
-        return 0
+
+    # Jogos por gênero (vestir/maquiagem) não dependem da página da coleção:
+    # entram mesmo sem internet. Tile que já existe não muda.
+    import jogos_genero
 
     mudou = False
+    acrescentou = 0
     for perfil in cfg.get("profiles", []):
-        if not isinstance(perfil, dict) or perfil.get("id") not in por_perfil:
+        if not isinstance(perfil, dict):
             continue
-        lista = mesclar_tiles(perfil.get("tiles", []), por_perfil[perfil["id"]])
-        if lista != perfil.get("tiles"):
-            perfil["tiles"] = lista
-            mudou = True
-    if mudou:
+        if perfil.get("id") in por_perfil:
+            lista = mesclar_tiles(perfil.get("tiles", []), por_perfil[perfil["id"]])
+            if lista != perfil.get("tiles"):
+                perfil["tiles"] = lista
+                mudou = True
+        novos = jogos_genero.aplicar_perfil(
+            perfil, plataforma, moldura=caminhos.moldura, porta=caminhos.porta,
+        )
+        if novos:
+            acrescentou += novos
+            log(caminhos.log, f"{perfil.get('id')}: {novos} jogo(s) por gênero acrescentado(s)")
+    if mudou or acrescentou:
         gravar_json(caminhos.config, cfg)
         log(caminhos.log, "config.json atualizado")
-    else:
+    elif por_perfil:
         log(caminhos.log, "nada mudou")
     return 0
 

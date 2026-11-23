@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPOSITORIO / "src"))
 
 import application_launcher  # noqa: E402
 import itch_sync  # noqa: E402
+import jogos_genero  # noqa: E402
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "itch"
 PAGINAS = {
@@ -93,10 +94,21 @@ class ItchSyncTests(unittest.TestCase):
             ["itch-mingle", "itch-pikwip", "itch-fossil-quest", "itch-serenitrove"],
         )
         for tile in ela["tiles"]:
+            if not str(tile["id"]).startswith("itch-"):
+                continue
             self.assertTrue(tile["visible"])
             self.assertEqual(tile["category"], "jogos")
             self.assertLessEqual(len(tile["emoji"]), 32)
             self.assertTrue(tile["emoji"].startswith("img:covers/"))
+        self.assertEqual(
+            [t["id"] for t in ela["tiles"] if t["id"] in jogos_genero.ids("menina")],
+            jogos_genero.ids("menina"),
+        )
+        self.assertTrue(all(
+            t["visible"] and t["category"] == "jogos"
+            for t in ela["tiles"] if t["id"] in jogos_genero.ids("menina")
+        ))
+        self.assertFalse(any(t["id"] in jogos_genero.ids("menina") for t in ele["tiles"]))
         self.assertTrue((self.dir / "covers" / "dog-wash.png").is_file())
         self.assertIn("ela: 2 jogo(s) de navegador na coleção (gênero menina)", log)
         self.assertIn("ele: 4 jogo(s) de navegador na coleção (gênero menino)", log)
@@ -139,6 +151,7 @@ class ItchSyncTests(unittest.TestCase):
         ]}
         novo, log, _, _ = self.rodar(cfg)
         self.assertEqual(novo["profiles"][0]["tiles"], [antigo, paint])
+        self.assertFalse(any(t["id"] in jogos_genero.ids("menina") for t in novo["profiles"][0]["tiles"]))
         self.assertIn("sem: sem gênero, nenhuma coleção", log)
         self.assertIn("itch-dog-wash", ids_itch(novo["profiles"][1]))
 
@@ -186,7 +199,7 @@ class ItchSyncTests(unittest.TestCase):
         novo, _, _, _ = self.rodar(cfg, paginas=paginas)
         self.assertEqual(
             [t["id"] for t in novo["profiles"][0]["tiles"]],
-            ["itch-little-chef-prototype", "paint"],
+            ["itch-little-chef-prototype", "paint", *jogos_genero.ids("menina")],
         )
 
     def test_sem_internet_nada_muda(self):
@@ -199,10 +212,17 @@ class ItchSyncTests(unittest.TestCase):
                        "cmd": ["tuxpaint"], "visible": True}],
         }]}
         novo, log, antes, depois = self.rodar(cfg, baixar=baixar)
-        self.assertEqual(antes, depois)
-        self.assertEqual(novo["profiles"][0]["tiles"], cfg["profiles"][0]["tiles"])
+        # a coleção não entra sem rede; os jogos por gênero não dependem dela
+        self.assertNotEqual(antes, depois)
+        self.assertEqual(novo["profiles"][0]["tiles"][0], cfg["profiles"][0]["tiles"][0])
+        self.assertEqual(
+            [t["id"] for t in novo["profiles"][0]["tiles"][1:]],
+            jogos_genero.ids("menina"),
+        )
+        self.assertFalse(any(str(t["id"]).startswith("itch-") for t in novo["profiles"][0]["tiles"]))
         self.assertIn("mantendo como está", log)
-        self.assertNotIn("config.json atualizado", log)
+        self.assertIn("jogo(s) por gênero acrescentado(s)", log)
+        self.assertIn("config.json atualizado", log)
         self.assertFalse((self.dir / "cache.json").exists())
 
     def test_pagina_inesperada_nao_apaga_os_jogos(self):
@@ -212,9 +232,12 @@ class ItchSyncTests(unittest.TestCase):
         tile = {"id": "itch-dog-wash", "label": "Dog Wash", "emoji": "🎮",
                 "cmd": ["navegador-jogos", "x"], "visible": True, "category": "jogos"}
         cfg = {"profiles": [{"id": "ela", "name": "Perfil", "gender": "menina", "tiles": [tile]}]}
-        novo, log, antes, depois = self.rodar(cfg, baixar=baixar)
-        self.assertEqual(antes, depois)
-        self.assertEqual(novo["profiles"][0]["tiles"], [tile])
+        novo, log, _, _ = self.rodar(cfg, baixar=baixar)
+        self.assertEqual(novo["profiles"][0]["tiles"][0], tile)
+        self.assertEqual(
+            [t["id"] for t in novo["profiles"][0]["tiles"][1:]],
+            jogos_genero.ids("menina"),
+        )
         self.assertIn("formato inesperado", log)
 
     def test_tile_do_windows_abre_no_edge_como_os_sites(self):
@@ -244,6 +267,11 @@ class ItchSyncTests(unittest.TestCase):
         self.assertIn("special:external-browser:", seren["cmd"][0])
         self.assertNotIn("navegador-jogos", dog["cmd"])
         self.assertNotIn("navegador-jogos", unity["cmd"])
+        boneca = tiles["bea-dollmaker"]
+        self.assertTrue(boneca["cmd"][0].startswith(
+            "special:external-browser:http://127.0.0.1:38431/jogo.html#w=960&h=540&u="
+        ))
+        self.assertNotIn("bea-dollmaker", [t["id"] for t in novo_b["profiles"][0]["tiles"]])
 
     def test_segunda_sincronizacao_nao_regrava(self):
         cfg = {"profiles": [{"id": "ela", "name": "Perfil", "gender": "menina", "tiles": []}]}
