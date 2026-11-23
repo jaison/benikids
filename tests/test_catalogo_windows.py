@@ -426,6 +426,17 @@ class AjustesDosAppsTests(unittest.TestCase):
             item = catalogo_windows.por_id("ps1")
             self.assertEqual(item["winget"], "Libretro.RetroArch")
             self.assertIs(item["sem_moldura"], False)
+            nucleos = catalogo_windows.nucleos_retroarch()
+            self.assertEqual(catalogo_windows.por_id("snes")["versao"], nucleos["versao"])
+            self.assertEqual(item["versao"], nucleos["versao"])
+            self.assertTrue(nucleos["url"].startswith(
+                "https://buildbot.libretro.com/stable/" + nucleos["versao"] + "/"))
+            for chave in ("sha256",):
+                self.assertEqual(len(nucleos[chave]), 64)
+            for sis in ("snes", "ps1"):
+                self.assertEqual(len(nucleos[sis]["sha256"]), 64)
+                self.assertTrue(nucleos[sis]["arquivo"].endswith("_libretro.dll"))
+            self.assertEqual(len(nucleos["extrator"]["sha256"]), 64)
 
 
 if __name__ == "__main__":

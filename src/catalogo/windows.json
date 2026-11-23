@@ -1,5 +1,6 @@
 {
   "_leia": "Catálogo do Benikids para Windows: apps livres para crianças, todos ligados por padrão (os pais desligam). winget = ID no winget; escopo user = instala sem administrador; machine = pede a senha de um administrador uma vez. exe = onde procurar o programa (glob, relativo a Program Files, Program Files (x86), LocalAppData, LocalAppData\\Programs). Para propor um app: abra um PR com o item e o porquê.",
+  "retroarch_nucleos": {"versao": "1.22.2", "url": "https://buildbot.libretro.com/stable/1.22.2/windows/x86_64/RetroArch_cores.7z", "sha256": "86b871e11b9b4772ac644b40a38f2c8e9449da1f355eae7da08aa061148547b0", "extrator": {"url": "https://github.com/ip7z/7zip/releases/download/24.09/7zr.exe", "arquivo": "7zr.exe", "sha256": "d2c0045523cf053a6b43f9315e9672fc2535f06aeadd4ffa53c729cd8b2b6dfe"}, "snes": {"arquivo": "snes9x_libretro.dll", "sha256": "d0ed1140957a30d893c5eaa573f9edb2ded7515a6a8c92e08c21e02c10432793"}, "ps1": {"arquivo": "pcsx_rearmed_libretro.dll", "sha256": "0605ed8fffacdccb8d3d01f77bf8a5c4b88f6dd8ab37bfcad54da36d8e7deb74"}},
   "apps": [
     {"id": "gcompris", "label": "GCompris", "emoji": "🧩", "category": "passatempo",
      "winget": "KDE.GCompris", "escopo": "machine", "instalador": "msi",
@@ -69,11 +70,11 @@
     {"id": "pencil2d", "label": "Desenho Animado", "emoji": "✏️", "category": "passatempo", "maximizar": true, "env": {"LANG": "pt_BR", "LC_ALL": "pt_BR", "LANGUAGE": "pt_BR"}, "winget": "Pencil2D.Pencil", "escopo": "user", "exe": ["Microsoft/WinGet/Packages/Pencil2D.Pencil*/**/pencil2d.exe"]},
     {"id": "xmoto", "label": "Motocross", "emoji": "🏍️", "category": "jogos", "gamepad": true, "winget": "XMoto.XMoto", "escopo": "machine", "instalador": "nullsoft", "registro": "XMoto", "args": ["-fs", "-res", "{tela}", "-p", "Benikids", "--nowww"], "preparar": "xmoto", "exe": ["XMoto*/xmoto.exe", "X-Moto*/xmoto.exe", "*Moto*/**/xmoto.exe"]},
     {"id": "snes", "label": "Super Nintendo", "emoji": "🎮", "category": "jogos", "gamepad": true,
-     "winget": "Libretro.RetroArch", "escopo": "machine", "instalador": "nullsoft", "registro": "RetroArch",
+     "winget": "Libretro.RetroArch", "escopo": "machine", "instalador": "nullsoft", "registro": "RetroArch", "versao": "1.22.2",
      "firewall": "bloquear", "preparar": "cozy", "sem_moldura": false,
      "exe": ["RetroArch/retroarch.exe", "RetroArch*/retroarch.exe", "RetroArch*/**/retroarch.exe"]},
     {"id": "ps1", "label": "PlayStation", "emoji": "🕹️", "category": "jogos", "gamepad": true,
-     "winget": "Libretro.RetroArch", "escopo": "machine", "instalador": "nullsoft", "registro": "RetroArch",
+     "winget": "Libretro.RetroArch", "escopo": "machine", "instalador": "nullsoft", "registro": "RetroArch", "versao": "1.22.2",
      "firewall": "bloquear", "preparar": "cozy", "sem_moldura": false,
      "exe": ["RetroArch/retroarch.exe", "RetroArch*/retroarch.exe", "RetroArch*/**/retroarch.exe"]},
     {"id": "vlc", "label": "VLC", "emoji": "🎬", "tile": false,

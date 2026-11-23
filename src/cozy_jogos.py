@@ -10,32 +10,24 @@ fica em Jogos\\PS1\\BIOS (senão o núcleo usa a BIOS simulada).
 Uso: cozy_jogos.py snes|ps1 <caminho do retroarch.exe>
 """
 
+import hashlib
+import hmac
 import io
 import os
 import queue
 import re
 import sys
 import threading
-import zipfile
+import time
 
 JOGOS_NOME = "Jogos"
 CFG_NOME = os.path.join("Benikids", "cozy-jogos")
-
-# Núcleos oficiais do buildbot. O zip "latest" muda todo dia, então não dá para
-# gravar um hash que continue valendo: a checagem é o zip conter só a DLL
-# esperada, começando com MZ. Sem BIOS proprietária.
-CORES = {
-    "snes": (
-        "snes9x_libretro.dll",
-        "https://buildbot.libretro.com/nightly/windows/x86_64/latest/snes9x_libretro.dll.zip",
-    ),
-    # pcsx_rearmed é o núcleo leve (o mesmo tipo de máquina do Linux: Celeron e
-    # Intel HD). O swanstation é mais fiel e mais pesado.
-    "ps1": (
-        "pcsx_rearmed_libretro.dll",
-        "https://buildbot.libretro.com/nightly/windows/x86_64/latest/pcsx_rearmed_libretro.dll.zip",
-    ),
-}
+# pcsx_rearmed é o núcleo leve (o mesmo tipo de máquina do Linux: Celeron e
+# Intel HD). O swanstation é mais fiel e mais pesado. Os dois vêm do pacote
+# estável gravado no catálogo, com sha256 — a pasta stable não publica o zip
+# de cada núcleo, só o RetroArch_cores.7z.
+TETO_PACOTE = 300 * 1024 * 1024
+TETO_EXTRATOR = 2 * 1024 * 1024
 
 SISTEMAS = {
     "snes": {
@@ -135,44 +127,192 @@ def achar_capa(rom):
     return None
 
 
-def extrair_dll(dados, nome):
-    """A DLL do núcleo, se o zip for o arquivo oficial (um só .dll com cabeçalho MZ)."""
-    if not dados or not dados.startswith(b"PK") or not nome or "/" in nome or "\\" in nome:
-        return None
+def log_nucleo(texto, arquivo=None):
+    """Uma linha no beni-windows.log. O hash que não confere fica registrado aqui."""
+    caminho = arquivo or os.path.join(
+        os.path.expanduser("~"), ".cache", "cozy-kids-launcher", "beni-windows.log")
     try:
-        with zipfile.ZipFile(io.BytesIO(dados)) as pacote:
-            nomes = [n for n in pacote.namelist() if not n.endswith("/")]
-            if len(nomes) != 1 or nomes[0].replace("\\", "/").rsplit("/", 1)[-1].lower() != nome.lower():
-                return None
-            dll = pacote.read(nomes[0])
-    except (zipfile.BadZipFile, OSError, ValueError):
-        return None
-    if not dll.startswith(b"MZ") or not (20 * 1024 <= len(dll) <= 40 * 1024 * 1024):
-        return None
-    return dll
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        with open(caminho, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
 
 
-def baixar_core(sistema, pasta, abrir=None):
-    """Grava a DLL do núcleo em `pasta` se ainda não existe. Devolve o caminho ou ""."""
-    nome, url = CORES[sistema]
-    destino = os.path.join(pasta, nome)
-    if os.path.isfile(destino):
-        return destino
+def info_nucleos():
+    import catalogo_windows
+
+    return catalogo_windows.nucleos_retroarch()
+
+
+def _sha256(caminho):
+    soma = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(1024 * 1024), b""):
+            soma.update(bloco)
+    return soma.hexdigest()
+
+
+def hash_confere(caminho, esperado):
+    if not isinstance(esperado, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", esperado):
+        return False
+    try:
+        return hmac.compare_digest(_sha256(caminho), esperado.lower())
+    except OSError:
+        return False
+
+
+def nucleo_de(sistema, info):
+    """(arquivo.dll, sha256) do catálogo, ou ("", "") se faltar ou o nome for caminho."""
+    item = info.get(sistema) if isinstance(info, dict) else None
+    if not isinstance(item, dict):
+        return "", ""
+    nome, sha = item.get("arquivo") or "", item.get("sha256") or ""
+    if not isinstance(nome, str) or not nome or "/" in nome or "\\" in nome or nome.startswith("."):
+        return "", ""
+    return nome, sha
+
+
+def baixar_conferindo(url, destino, sha256, abrir, teto, rotulo, log):
+    """Grava `destino` só se o sha256 bater. Devolve False e apaga o parcial se não bater."""
+    if not isinstance(url, str) or not url.startswith("https://"):
+        log(f"núcleo do RetroArch: sem endereço ({rotulo}); não instalei")
+        return False
+    if os.path.isfile(destino) and hash_confere(destino, sha256):
+        return True
     abrir = abrir or _abrir_url
+    temporario = destino + ".baixando"
+    soma = hashlib.sha256()
+    tamanho = 0
     try:
-        with abrir(url) as resposta:
-            dados = resposta.read(40 * 1024 * 1024)
-        dll = extrair_dll(dados, nome)
-        if not dll:
-            return ""
-        os.makedirs(pasta, exist_ok=True)
-        temporario = destino + ".baixando"
-        with open(temporario, "wb") as f:
-            f.write(dll)
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        with abrir(url) as resposta, open(temporario, "wb") as f:
+            while True:
+                bloco = resposta.read(1024 * 1024)
+                if not bloco:
+                    break
+                tamanho += len(bloco)
+                if tamanho > teto:
+                    raise ValueError("grande")
+                soma.update(bloco)
+                f.write(bloco)
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", sha256 or "") or not hmac.compare_digest(
+                soma.hexdigest(), sha256.lower()):
+            log(f"núcleo do RetroArch: hash não confere ({rotulo}); não instalei")
+            return False
         os.replace(temporario, destino)
-    except (OSError, ValueError):
+        return True
+    except (OSError, ValueError) as erro:
+        log(f"núcleo do RetroArch: não deu para baixar {rotulo} ({erro.__class__.__name__})")
+        return False
+    finally:
+        if os.path.isfile(temporario):
+            try:
+                os.remove(temporario)
+            except OSError:
+                pass
+
+
+def extrair_com_7zr(pacote, pasta_saida, nomes, extrator):
+    """Tira só os .dll pedidos. O 7zr já foi conferido pelo hash."""
+    import subprocess
+
+    os.makedirs(pasta_saida, exist_ok=True)
+    # -r: no pacote estável a DLL fica em RetroArch-Win64/cores/, e o "e" tira a pasta.
+    argv = [extrator, "e", "-y", "-r", "-bso0", "-bsp0", "-o" + pasta_saida, pacote, *nomes]
+    kwargs = {"capture_output": True, "timeout": 900}
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x08000000
+    try:
+        proc = subprocess.run(argv, **kwargs)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
+
+
+def _limpar_pasta(caminho):
+    import shutil
+
+    shutil.rmtree(caminho, ignore_errors=True)
+
+
+def baixar_core(sistema, pasta, abrir=None, extrair=None, log=None, info=None):
+    """Grava a DLL se o sha256 do pacote e o da DLL baterem. Senão não instala e loga."""
+    log = log or log_nucleo
+    info = info_nucleos() if info is None else info
+    nome, sha_dll = nucleo_de(sistema, info)
+    if not nome:
+        log("núcleo do RetroArch: o catálogo não tem este núcleo; não instalei")
         return ""
-    return destino
+    try:
+        os.makedirs(pasta, exist_ok=True)
+    except OSError:
+        return ""
+    destino = os.path.join(pasta, nome)
+    if os.path.isfile(destino) and hash_confere(destino, sha_dll):
+        return destino
+    if os.path.isfile(destino):
+        try:
+            os.remove(destino)
+        except OSError:
+            return ""
+    url, sha_pacote = info.get("url"), info.get("sha256")
+    pacote = os.path.join(pasta, "RetroArch_cores.7z")
+    if not baixar_conferindo(url, pacote, sha_pacote, abrir, TETO_PACOTE, "pacote", log):
+        return ""
+    extrator_info = info.get("extrator") if isinstance(info.get("extrator"), dict) else {}
+    extrator = os.path.join(pasta, extrator_info.get("arquivo") or "7zr.exe")
+    if not baixar_conferindo(
+            extrator_info.get("url"), extrator, extrator_info.get("sha256"),
+            abrir, TETO_EXTRATOR, "extrator", log):
+        return ""
+    pedidos = []
+    for sis in ("snes", "ps1"):
+        nome_sis, sha_sis = nucleo_de(sis, info)
+        if nome_sis and sha_sis:
+            pedidos.append((nome_sis, sha_sis))
+    if not pedidos:
+        return ""
+    saida = os.path.join(pasta, ".extraidos")
+    _limpar_pasta(saida)
+    try:
+        os.makedirs(saida, exist_ok=True)
+    except OSError:
+        return ""
+    try:
+        ok = (extrair or extrair_com_7zr)(pacote, saida, [n for n, _ in pedidos], extrator)
+    except (OSError, ValueError):
+        ok = False
+    if not ok:
+        log("núcleo do RetroArch: não deu para extrair o pacote; não instalei")
+        _limpar_pasta(saida)
+        return ""
+    for nome_sis, sha_sis in pedidos:
+        origem = os.path.join(saida, nome_sis)
+        final = os.path.join(pasta, nome_sis)
+        if not hash_confere(origem, sha_sis):
+            log(f"núcleo do RetroArch: hash não confere ({nome_sis}); não instalei")
+            try:
+                os.remove(origem)
+            except OSError:
+                pass
+            continue
+        try:
+            os.replace(origem, final)
+        except OSError:
+            log(f"núcleo do RetroArch: não deu para gravar {nome_sis}; não instalei")
+    _limpar_pasta(saida)
+    # O .7z só sai do disco quando as duas DLLs conferiram. Se uma não bater,
+    # ele fica para a próxima tentativa não baixar 220 MB de novo.
+    if all(hash_confere(os.path.join(pasta, n), s) for n, s in pedidos):
+        try:
+            os.remove(pacote)
+        except OSError:
+            pass
+    if hash_confere(destino, sha_dll):
+        log(f"núcleo do RetroArch: instalei {nome} ({info.get('versao') or 'estável'})")
+        return destino
+    return ""
 
 
 def _abrir_url(url):
@@ -437,11 +577,25 @@ def main(argv=None):
     if sistema not in SISTEMAS:
         print("uso: cozy_jogos.py snes|ps1 retroarch.exe", file=sys.stderr)
         return 2
-    preparar(sistema, retroarch)
+    preparar_pastas(sistema)
     import tkinter as tk
 
     raiz = pasta_jogos()
     cfg_dir = pasta_config()
+    info_n = info_nucleos()
+    nome_core, sha_core = nucleo_de(sistema, info_n)
+    pasta_cores = os.path.join(cfg_dir, "cores")
+    ja_esta = bool(nome_core) and hash_confere(os.path.join(pasta_cores, nome_core), sha_core)
+    # O pacote dos núcleos tem ~220 MB. A lista abre na hora e o download segue
+    # atrás; o jogo só começa quando a DLL conferida está na pasta.
+    aviso = ["" if ja_esta else "Baixando o emulador de jogos…"]
+
+    def quando_baixar():
+        caminho = baixar_core(sistema, pasta_cores, info=info_n)
+        aviso[0] = "" if caminho else "Não consegui preparar o emulador. Tente de novo com internet."
+
+    if retroarch and not ja_esta:
+        threading.Thread(target=quando_baixar, daemon=True).start()
     info = SISTEMAS[sistema]
     jogos = listar_jogos(sistema, raiz)
     fonte = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
@@ -525,7 +679,7 @@ def main(argv=None):
         if proc[0] is not None:
             return
         selecionar(k)
-        core = os.path.join(cfg_dir, "cores", CORES[sistema][0])
+        core = os.path.join(pasta_cores, nome_core) if nome_core else ""
         cfg = os.path.join(cfg_dir, "retroarch.cfg")
         cmd = comando_jogo(sistema, jogos[k][1], retroarch, cfg, core)
         if not cmd:
@@ -564,8 +718,20 @@ def main(argv=None):
     for tecla, nome in (("<Left>", "esq"), ("<Right>", "dir"), ("<Up>", "cima"),
                         ("<Down>", "baixo"), ("<Return>", "ok"), ("<space>", "ok")):
         root.bind(tecla, lambda e, a=nome: acao(a))
+    def pulsar_aviso():
+        if aviso[0]:
+            if canvas.find_withtag("aviso"):
+                canvas.itemconfigure("aviso", text=aviso[0])
+            else:
+                canvas.create_text(largura // 2, altura - 36, text=aviso[0],
+                                   fill="#ffd34d", font=(fonte, 16), tags="aviso")
+        else:
+            canvas.delete("aviso")
+        root.after(400, pulsar_aviso)
+
     desenhar()
     root.after(100, ler_fila)
+    root.after(400, pulsar_aviso)
     root.mainloop()
     return 0
 

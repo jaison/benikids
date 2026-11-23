@@ -1,5 +1,6 @@
 import os
 import queue
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -39,6 +40,26 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertTrue(instalar_apps.precisa_de_senha({"id": "a", "escopo": "machine"}))
         self.assertFalse(instalar_apps.precisa_de_senha({"id": "b", "escopo": "user"}))
         self.assertTrue(instalar_apps.precisa_de_senha({"id": "b", "escopo": "user"}, {"b"}))
+
+    def test_baixa_a_versao_presa_no_catalogo(self):
+        self.assertEqual(instalar_apps.versao_fixa({"versao": "1.22.2"}), "1.22.2")
+        self.assertEqual(instalar_apps.versao_fixa({"versao": "latest"}), "")
+        item = {"id": "snes", "winget": "Libretro.RetroArch", "versao": "1.22.2",
+                "instalador": "nullsoft", "escopo": "machine"}
+        with tempfile.TemporaryDirectory() as pasta:
+            destino = os.path.join(pasta, "snes")
+
+            def run(argv, **kwargs):
+                os.makedirs(destino, exist_ok=True)
+                open(os.path.join(destino, "RetroArch-Win64-setup.exe"), "wb").close()
+                return subprocess.CompletedProcess(argv, 0, "", "")
+
+            with mock.patch.object(instalar_apps, "winget", return_value="winget"), \
+                    mock.patch("subprocess.run", side_effect=run) as rodou:
+                arquivo = instalar_apps.baixar(item, pasta)
+            argv = rodou.call_args_list[0].args[0]
+            self.assertEqual(argv[argv.index("--version") + 1], "1.22.2")
+            self.assertTrue(arquivo.endswith("RetroArch-Win64-setup.exe"))
 
     def test_le_o_tipo_do_instalador_do_winget_show(self):
         saida = "Found Tux Paint [NewBreedSoftware.TuxPaint]\nInstaller:\n  Installer Type: inno\n  Installer Url: x\n"

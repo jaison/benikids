@@ -7,6 +7,7 @@ Benikids e pela área dos pais. Uso: pythonw instalar_apps.py [id ...]
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -81,6 +82,8 @@ def instalar(item, ao_pedir_senha=None):
         winget(), "install", "--id", item["winget"], "--exact", "--silent",
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
     ]
+    if versao_fixa(item):
+        argv += ["--version", versao_fixa(item)]
     if item.get("escopo"):
         argv += ["--scope", item["escopo"]]
     env = dict(os.environ, __COMPAT_LAYER="RunAsInvoker")
@@ -125,6 +128,14 @@ SILENCIOSO = {
 def pacote(item):
     """O que identifica o instalador: dois apps com o mesmo baixam e instalam uma vez só."""
     return item.get("winget") or item.get("pagina") or item["id"]
+
+
+def versao_fixa(item):
+    """Versão presa no catálogo (ex.: o RetroArch 1.22.2, a mesma dos núcleos)."""
+    versao = item.get("versao")
+    if isinstance(versao, str) and re.fullmatch(r"\d+(?:\.\d+){1,3}", versao):
+        return versao
+    return ""
 
 
 def mais_novo_da_pagina(html, padrao):
@@ -177,6 +188,8 @@ def baixar(item, pasta):
         winget(), "download", "--id", item["winget"], "--exact", "--download-directory", destino,
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
     ]
+    if versao_fixa(item):
+        base += ["--version", versao_fixa(item)]
     tipo = ["--installer-type", item["instalador"]] if item.get("instalador") else []
     # primeiro o instalador "por máquina" do tipo que o script de administrador vai rodar;
     # manifestos sem "Scope" (ex.: Enigma) não passam no filtro --scope machine e o winget

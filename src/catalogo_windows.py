@@ -15,13 +15,23 @@ ARQUIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogo", "
 PREFIXO = "catalogo:"
 
 
-def carregar(arquivo=ARQUIVO):
+def _ler(arquivo):
     try:
         with open(arquivo, encoding="utf-8") as f:
             dados = json.load(f)
     except (OSError, ValueError):
-        return []
-    return [item for item in dados.get("apps", []) if isinstance(item, dict) and item.get("id")]
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def carregar(arquivo=ARQUIVO):
+    return [item for item in _ler(arquivo).get("apps", []) if isinstance(item, dict) and item.get("id")]
+
+
+def nucleos_retroarch(arquivo=ARQUIVO):
+    """Pacote estável dos núcleos do RetroArch: url, sha256, snes, ps1 e o extrator."""
+    info = _ler(arquivo).get("retroarch_nucleos")
+    return info if isinstance(info, dict) else {}
 
 
 def raizes():
