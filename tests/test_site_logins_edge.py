@@ -89,12 +89,14 @@ class EdgeCommandTest(unittest.TestCase):
             for profile_id in ("default", "child-1"):
                 command = external_browser_command("msedge.exe", "https://x.org/", root, profile_id=profile_id)
                 self.assertEqual([a for a in command if a.startswith("--disable-features")],
-                                 ["--disable-features=Translate"])
+                                 ["--disable-features=Translate,DnsOverHttps"])
+                self.assertIn("--lang=pt-BR", command)
                 prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
                 self.assertEqual(json.loads(prefs.read_text()), MINIMO)
             # o Firefox não ganha nada disso
             firefox = external_browser_command("firefox", "https://x.org/", root)
             self.assertFalse(any("disable-features" in arg for arg in firefox))
+            self.assertNotIn("--lang=pt-BR", firefox)
 
     def test_firefox_ignores_devtools_port(self):
         with tempfile.TemporaryDirectory() as root:
@@ -178,7 +180,8 @@ class EdgePreferencesTest(unittest.TestCase):
         with mock.patch("application_launcher.os.replace", side_effect=PermissionError("em uso")):
             self.assertFalse(ensure_chromium_preferences(self.profile))
             command = external_browser_command("msedge.exe", "https://x.org/", self.tmp.name, profile_id="child-1")
-        self.assertIn("--disable-features=Translate", command)
+        self.assertIn("--disable-features=Translate,DnsOverHttps", command)
+        self.assertIn("--lang=pt-BR", command)
         self.assertEqual(json.loads(self.prefs.read_text()), {"x": 1})
         self.assertEqual(os.listdir(self.prefs.parent), ["Preferences"])
 

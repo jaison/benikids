@@ -224,10 +224,12 @@ def external_browser_command(
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
+            "--lang=pt-BR",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço da preferência translate.enabled=false (só um --disable-features
-            # vale: some outra função desligada aqui, na mesma lista)
-            "--disable-features=Translate",
+            # Só um --disable-features vale: as funções desligadas vão na mesma
+            # lista. Translate reforça a preferência; DnsOverHttps é o mesmo do
+            # navegador-jogos no Linux (o quiosque usa o DNS da rede).
+            "--disable-features=Translate,DnsOverHttps",
         ]
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,
