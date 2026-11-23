@@ -216,6 +216,20 @@ class SemChamadaQuePrendeTests(unittest.TestCase):
         self.assertIn('self.pedir_janela("tela cheia", self.passo_da_tela_cheia', codigo)
         self.assertIn('self.pedir_janela("voltar", self.voltar_no_app', codigo)
         self.assertIn('self.pedir_janela("maximizar", self.passo_maximizar', codigo)
+        # o cursor preso se solta com ClipCursor, sem mensagem para o outro processo
+        self.assertIn("soltar_cursor_se_preso", codigo)
+        self.assertNotIn("SendMessage", (RAIZ / "src" / "plataforma_windows.py").read_text(encoding="utf-8").split("def soltar_cursor_se_preso")[1].split("def ")[0])
+
+
+class CursorPresoTests(unittest.TestCase):
+    def test_releases_only_a_clip_smaller_than_the_monitor_of_the_app(self):
+        monitor = (0, 0, 1920, 1080)
+        self.assertTrue(js.cursor_precisa_soltar((0, 0, 800, 600), monitor, True))
+        self.assertFalse(js.cursor_precisa_soltar(monitor, monitor, True))
+        self.assertFalse(js.cursor_precisa_soltar((0, 0, 800, 600), monitor, False))
+        self.assertFalse(js.cursor_precisa_soltar(None, monitor, True))
+        # recorte maior que o monitor (tela virtual) ainda cobre a pílula
+        self.assertFalse(js.cursor_precisa_soltar((0, 0, 3840, 1080), monitor, True))
 
 
 if __name__ == "__main__":

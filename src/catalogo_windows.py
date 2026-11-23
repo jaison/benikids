@@ -9,6 +9,7 @@ tipo de instalação (por usuário ou para todos).
 import glob
 import json
 import os
+import sys
 
 ARQUIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogo", "windows.json")
 PREFIXO = "catalogo:"
@@ -137,8 +138,14 @@ def comando(cmd, catalogo=None, bases=None):
     exe = localizar(item, bases)
     if not exe:
         return None
-    argv = [exe, *(preencher(arg, item) for arg in item.get("args", []))]
+    argv = [exe]
+    for arg in item.get("args", []):
+        preenchido = preencher(arg, item)
+        if preenchido:
+            argv.append(preenchido)
     gravar_config_inicial(item, exe)
+    if "LANGUAGE" in (item.get("env") or {}):
+        garantir_idioma_kde()
     preparar = item.get("preparar")
     if preparar == "xmoto":
         preparar_xmoto()
@@ -148,6 +155,13 @@ def comando(cmd, catalogo=None, bases=None):
         preparar_luanti(exe)
     elif preparar == "supertuxkart":
         preparar_supertuxkart(tamanho_da_tela())
+    elif preparar == "pista":
+        preparar_pista()
+    elif preparar == "cozy":
+        import cozy_jogos
+
+        cozy_jogos.preparar_pastas(item["id"])
+        return [sys.executable, os.path.abspath(cozy_jogos.__file__), item["id"], exe]
     return argv
 
 
@@ -156,7 +170,33 @@ def comando(cmd, catalogo=None, bases=None):
 # disponível" (com o botão "Visitar site", que abriria o navegador fora do Benikids),
 # em português e em tela cheia. Só grava a chave que falta: o que os pais mudarem no
 # próprio jogo fica. Valor vazio, como o printf do Linux: sem endereço, sem consulta.
-LUANTI_CONFIG = (("update_information_url", ""), ("language", "pt_BR"), ("fullscreen", "true"))
+# As chaves de beni/emuladores/luanti-minetest.conf (notebook fraco), mais o aviso
+# de versão nova desligado. garantir_chaves só grava a que ainda não existe.
+LUANTI_CONFIG = (
+    ("update_information_url", ""),
+    ("fullscreen", "true"),
+    ("language", "pt_BR"),
+    ("viewing_range", "40"),
+    ("smooth_lighting", "false"),
+    ("enable_shaders", "false"),
+    ("enable_clouds", "false"),
+    ("enable_3d_clouds", "false"),
+    ("enable_particles", "false"),
+    ("enable_waving_leaves", "false"),
+    ("enable_waving_plants", "false"),
+    ("enable_waving_water", "false"),
+    ("enable_minimap", "false"),
+    ("fps_max", "30"),
+    ("fps_max_unfocused", "10"),
+    ("client_mapblock_limit", "3000"),
+    ("mip_map", "false"),
+    ("anisotropic_filter", "false"),
+    ("bilinear_filter", "false"),
+    ("trilinear_filter", "false"),
+    ("antialiasing", "none"),
+    ("undersampling", "2"),
+    ("menu_last_game", "mineclonia"),
+)
 
 
 def garantir_chaves(texto, pares):
@@ -367,6 +407,79 @@ def preparar_xmoto(bancos=None, perfil="Benikids"):
     return preparados
 
 
+def texto_kdeglobals(texto):
+    """kdeglobals com Language=pt_BR se essa chave ainda não existe.
+
+    O Qt no Windows nem sempre lê LANG. O KDE lê [Locale] Language neste arquivo
+    (%LOCALAPPDATA%\\kdeglobals e %APPDATA%\\kdeglobals). O que os pais mudarem fica.
+    """
+    import re
+
+    if re.search(r"(?mi)^[ \t]*Language[ \t]*=", texto or ""):
+        return texto
+    if re.search(r"(?mi)^\[Locale\][ \t]*$", texto or ""):
+        return re.sub(r"(?mi)^\[Locale\][ \t]*$", "[Locale]\nLanguage=pt_BR", texto, count=1)
+    if texto and not texto.endswith("\n"):
+        texto += "\n"
+    return (texto or "") + "[Locale]\nLanguage=pt_BR\n"
+
+
+def garantir_idioma_kde(arquivos=None):
+    """Grava Language=pt_BR nos kdeglobals que ainda não escolhem idioma."""
+    if arquivos is None:
+        arquivos = []
+        for variavel in ("LOCALAPPDATA", "APPDATA"):
+            raiz = os.environ.get(variavel)
+            if raiz:
+                arquivos.append(os.path.join(raiz, "kdeglobals"))
+    gravados = []
+    for caminho in arquivos:
+        try:
+            texto = ""
+            if os.path.isfile(caminho):
+                with open(caminho, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    texto = f.read()
+            novo = texto_kdeglobals(texto)
+            if novo != texto:
+                os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
+                with open(caminho, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    f.write(novo)
+            gravados.append(caminho)
+        except OSError:
+            continue
+    return gravados
+
+
+def preparar_pista(destino=None, origem=None):
+    """Copia Pista Turbo.sb3 para Imagens/Scratch se a criança ainda não tem a sua.
+
+    Igual ao Linux (beni/bin/pista-turbo): a cópia que ela editar não é sobrescrita.
+    Devolve o caminho do .sb3, ou "" se a original não está no pacote."""
+    import shutil
+
+    origem = origem or os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch", "Pista Turbo.sb3")
+    if destino is None:
+        try:
+            import politicas_edge
+
+            imagens = politicas_edge.pasta_imagens()
+        except OSError:
+            imagens = ""
+        if not imagens:
+            return ""
+        destino = os.path.join(imagens, "Scratch", "Pista Turbo.sb3")
+    if os.path.isfile(destino):
+        return destino
+    if not os.path.isfile(origem):
+        return ""
+    try:
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        shutil.copyfile(origem, destino)
+    except OSError:
+        return ""
+    return destino
+
+
 def preparar_scratch(arquivo=None):
     """Scratch 3 sem a pergunta "ajudar a melhorar o Scratch?": a resposta fica em
     %APPDATA%\\Scratch\\telemetry.json ("optIn"); enquanto falta, o diálogo aparece.
@@ -485,6 +598,8 @@ def preencher(arg, item):
         arg = arg.replace("{dados_ascii}", pasta_de_dados_ascii(item))
     if "{tela}" in arg:
         arg = arg.replace("{tela}", tamanho_da_tela() or "1280x720")
+    if "{pista}" in arg:
+        arg = arg.replace("{pista}", preparar_pista())
     return arg
 
 
@@ -506,6 +621,28 @@ def tiles(catalogo=None):
             tile["gamepad"] = True
         resultado.append(tile)
     return resultado
+
+
+def _alinhar_categoria(tile, novos):
+    """A categoria do catálogo vale para o tile que o catálogo criou (cmd catalogo:id).
+
+    O GCompris no Windows estava em Aprender; no Linux é Passatempo (o tempo sai do
+    mesmo pool dos jogos). Um tile que os pais tiraram do catálogo não entra aqui.
+    """
+    if not isinstance(tile, dict):
+        return False
+    novo = next((t for t in novos if t["id"] == tile.get("id")), None)
+    if not novo or tile.get("cmd") != [PREFIXO + novo["id"]]:
+        return False
+    if "category" not in tile or tile.get("category") == novo.get("category"):
+        return False
+    tile["category"] = novo.get("category", "jogos")
+    return True
+
+
+def _categorias_diferentes(stored, novos):
+    return any(_alinhar_categoria(dict(t) if isinstance(t, dict) else t, novos)
+               for p in stored.get("profiles", []) for t in p.get("tiles", []))
 
 
 def sincronizar_tiles(stored, catalogo=None):
@@ -532,12 +669,15 @@ def sincronizar_tiles(stored, catalogo=None):
 
     orfaos = any(fora_do_catalogo(t) for p in stored.get("profiles", [])
                  for t in p.get("tiles", []))
-    if vistos >= set(ids_catalogo) and not orfaos:
+    categorias = _categorias_diferentes(stored, novos)
+    if vistos >= set(ids_catalogo) and not orfaos and not categorias:
         return stored, False
     resultado = copy.deepcopy(stored)
     for perfil in resultado.get("profiles", []):
         if "tiles" in perfil:
             perfil["tiles"] = [t for t in perfil["tiles"] if not fora_do_catalogo(t)]
+            for tile in perfil["tiles"]:
+                _alinhar_categoria(tile, novos)
         existentes = {t.get("id") for t in perfil.get("tiles", []) if isinstance(t, dict)}
         for tile in novos:
             if tile["id"] not in vistos and tile["id"] not in existentes:

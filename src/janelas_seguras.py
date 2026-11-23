@@ -61,6 +61,22 @@ def trazer(api, h):
     return "alt" if ok else "falhou"
 
 
+def cursor_precisa_soltar(recorte, monitor, app_na_frente):
+    """O jogo prendeu o cursor (ClipCursor) numa área que não cobre o monitor, e a
+    janela da frente é a do app. Soltar é ClipCursor(NULL): o Windows aplica na hora,
+    sem mensagem para o outro processo (não é SendMessage nem AttachThreadInput)."""
+    if not app_na_frente or not _retangulo_de_cursor(recorte) or not _retangulo_de_cursor(monitor):
+        return False
+    esquerda, topo, direita, baixo = recorte
+    ml, mt, mr, mb = monitor
+    return esquerda > ml or topo > mt or direita < mr or baixo < mb
+
+
+def _retangulo_de_cursor(valor):
+    return (isinstance(valor, tuple) and len(valor) == 4
+            and all(isinstance(n, (int, float)) and not isinstance(n, bool) for n in valor))
+
+
 def pode_mexer(api, h, ms=300):
     """Antes de uma chamada que espera o app (SetWindowLongPtr): ele não está travado e
     respondeu a um WM_NULL em até `ms` (SendMessageTimeout com SMTO_ABORTIFHUNG)."""

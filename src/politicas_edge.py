@@ -61,8 +61,87 @@ ESCOLA_GAMES_SEM_FILTRO = True
 # translate.enabled=false (application_launcher.py), que não pede administrador.
 # PasswordManagerEnabled=0: o Edge não salva nem preenche senhas (o login dos
 # sites é o automático, por criança). Não apaga as senhas já salvas.
-VALORES_RAIZ = {"TranslateEnabled": ("DWord", 0), "PasswordManagerEnabled": ("DWord", 0)}
+# PromptForDownloadLocation=0: o Edge não pergunta a pasta (como o Firefox do Linux,
+# browser.download.useDownloadDir). A pasta em si é por criança, no HKCU: o lote
+# com UAC roda como o administrador, e a pasta Imagens de quem joga é outra.
+VALORES_RAIZ = {
+    "TranslateEnabled": ("DWord", 0),
+    "PasswordManagerEnabled": ("DWord", 0),
+    "PromptForDownloadLocation": ("DWord", 0),
+}
+RAIZ_USUARIO = r"SOFTWARE\Policies\Microsoft\Edge"
 SEM_FILTRO = ("escolagames.com.br",)
+
+
+def pasta_imagens():
+    """A pasta Imagens do usuário. No Windows o caminho real costuma ser Pictures
+    (o nome Imagens é o que o Explorer mostra)."""
+    if os.name != "nt":
+        return os.path.join(os.path.expanduser("~"), "Imagens")
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                        ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+        ole32 = ctypes.WinDLL("ole32")
+        shell32 = ctypes.WinDLL("shell32")
+        ole32.CLSIDFromString.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(GUID)]
+        shell32.SHGetKnownFolderPath.argtypes = [
+            ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p)]
+        shell32.SHGetKnownFolderPath.restype = ctypes.HRESULT
+        ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        guid = GUID()
+        # FOLDERID_Pictures
+        if ole32.CLSIDFromString("{33E28130-4E1E-4676-835A-98395C3BC3BB}", ctypes.byref(guid)) == 0:
+            ptr = ctypes.c_void_p()
+            if shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(ptr)) == 0 and ptr:
+                caminho = ctypes.wstring_at(ptr)
+                ole32.CoTaskMemFree(ptr)
+                if caminho:
+                    return caminho
+    except (OSError, AttributeError, ValueError):
+        pass
+    return os.path.join(os.environ.get("USERPROFILE") or os.path.expanduser("~"), "Pictures")
+
+
+def pasta_desenhos(imagens):
+    """Imagens\\Desenhos, onde o Kleki (e os outros sites) salvam o desenho."""
+    return os.path.join(imagens, "Desenhos")
+
+
+def preferencias_downloads(pasta):
+    """Preferências do perfil do Edge, o equivalente ao user.js do Firefox.
+
+    O painel de downloads não tem política no Edge (o Firefox usa
+    browser.download.alwaysOpenPanel). download_bubble.partial_view_enabled
+    é a preferência do perfil que deixa esse menu fechado.
+    """
+    return {
+        "download": {"prompt_for_download": False, "default_directory": pasta},
+        "download_bubble": {"partial_view_enabled": False},
+    }
+
+
+def gravar_politica_de_desenhos(pasta, winreg=None):
+    """HKCU do usuário atual: baixa em `pasta` sem perguntar. Não precisa de UAC.
+
+    Devolve True se gravou. Fora do Windows, False (a preferência do perfil cobre).
+    """
+    if winreg is None:
+        if os.name != "nt":
+            return False
+        import winreg  # noqa: PLC0415
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RAIZ_USUARIO) as chave:
+            winreg.SetValueEx(chave, "DownloadDirectory", 0, winreg.REG_SZ, pasta)
+            winreg.SetValueEx(chave, "PromptForDownloadLocation", 0, winreg.REG_DWORD, 0)
+    except OSError:
+        return False
+    return True
 
 
 def url_do_firefox(padrao):

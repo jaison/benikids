@@ -1146,8 +1146,21 @@ class AppOverlay:
         não virou on_close em 0,8 s, fecha o app daqui e sai, sem depender do Tk."""
         clique = janelas_seguras.CliqueNoBotao()
         eu = os.getpid()
+        pids, proxima_arvore = set(), 0.0
         while not self.fechando:
             time.sleep(0.03)
+            try:
+                agora = time.monotonic()
+                if agora >= proxima_arvore:
+                    record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+                    pids = set(win.arvore(record["pid"])) if record else set()
+                    proxima_arvore = agora + 0.5
+                # SuperTux, Pingus e outros prendem o cursor (ClipCursor) e o ✕
+                # fica fora do alcance. Soltar é do sistema, não uma mensagem ao jogo.
+                if pids and win.soltar_cursor_se_preso(pids):
+                    self.log_uma_vez("overlay: soltei o cursor que o jogo tinha prendido")
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
             try:
                 apertado, pos, pid = win.estado_do_mouse()
             except (OSError, ValueError, TypeError):

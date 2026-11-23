@@ -12,6 +12,7 @@ import time
 from app_detection import browser_family
 from browser_policy import is_safe_web_url
 from process_state import owned_process_alive, terminate_owned_process
+import politicas_edge
 
 
 def resolve_tile_action(tile):
@@ -218,7 +219,15 @@ def external_browser_command(
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
         profile = external_chromium_profile(cache_root, profile_id)
-        ensure_chromium_preferences(profile)
+        prefs = dict(CHROMIUM_PREFERENCES)
+        if os.name == "nt":
+            # Kleki e os outros sites: Imagens\\Desenhos, sem perguntar a pasta e
+            # sem abrir o painel. A política do HKCU vale para o Edge desta conta;
+            # a preferência cobre o perfil que o Benikids abre.
+            pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
+            politicas_edge.gravar_politica_de_desenhos(pasta)
+            prefs.update(politicas_edge.preferencias_downloads(pasta))
+        ensure_chromium_preferences(profile, prefs)
         command = [
             browser,
             f"--user-data-dir={profile}",

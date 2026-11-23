@@ -128,6 +128,18 @@ class SincronizarCatalogoTests(unittest.TestCase):
         _, mudou = catalogo_windows.sincronizar_tiles(novo, self.CATALOGO)
         self.assertFalse(mudou)
 
+    def test_existing_gcompris_moves_to_the_linux_category(self):
+        catalogo = [
+            {"id": "gcompris", "label": "GCompris", "emoji": "🧩", "category": "passatempo"},
+        ]
+        cfg = self.config(catalogSeen=["gcompris"])
+        cfg["profiles"][0]["tiles"][0]["category"] = "educativo"
+        novo, mudou = catalogo_windows.sincronizar_tiles(cfg, catalogo)
+        self.assertTrue(mudou)
+        self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "passatempo")
+        _, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
+        self.assertFalse(mudou)
+
 
 class ConfigsAntesDeAbrirTests(unittest.TestCase):
     def test_tux_racer_gets_fullscreen_portuguese_options_next_to_the_exe(self):
@@ -222,7 +234,7 @@ class PrepararLuantiTests(unittest.TestCase):
             conf = exe.parent.parent / "minetest.conf"
             self.assertEqual(gravados, [str(conf)])
             self.assertEqual(conf.read_text(encoding="utf-8"),
-                             "update_information_url = \nlanguage = pt_BR\nfullscreen = true\n")
+                             "".join(f"{k} = {v}\n" for k, v in catalogo_windows.LUANTI_CONFIG))
             self.assertFalse((Path(raiz) / "Luanti").exists())
 
     def test_keys_the_parents_changed_are_kept(self):
@@ -231,8 +243,9 @@ class PrepararLuantiTests(unittest.TestCase):
             conf = exe.parent.parent / "minetest.conf"
             conf.write_text("fullscreen = false\r\nname = Bia", encoding="utf-8")
             catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
+            faltam = "".join(f"{k} = {v}\n" for k, v in catalogo_windows.LUANTI_CONFIG if k != "fullscreen")
             self.assertEqual(conf.read_bytes().decode("utf-8"),
-                             "fullscreen = false\r\nname = Bia\nupdate_information_url = \nlanguage = pt_BR\n")
+                             "fullscreen = false\r\nname = Bia\n" + faltam)
             antes = conf.read_text(encoding="utf-8")
             catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
             self.assertEqual(conf.read_text(encoding="utf-8"), antes)
@@ -254,6 +267,20 @@ class PrepararLuantiTests(unittest.TestCase):
 
     def test_catalog_asks_for_the_luanti_preparation(self):
         self.assertEqual(catalogo_windows.por_id("luanti")["preparar"], "luanti")
+
+    def test_lightweight_keys_match_the_linux_conf(self):
+        texto = Path(__file__).resolve().parents[1].joinpath(
+            "beni", "emuladores", "luanti-minetest.conf").read_text(encoding="utf-8")
+        chaves = {}
+        for linha in texto.splitlines():
+            if not linha.strip() or linha.strip().startswith("#") or "=" not in linha:
+                continue
+            chave, _, valor = linha.partition("=")
+            chaves[chave.strip()] = valor.strip()
+        atual = dict(catalogo_windows.LUANTI_CONFIG)
+        for chave, valor in chaves.items():
+            self.assertEqual(atual[chave], valor, chave)
+        self.assertEqual(atual["update_information_url"], "")
 
 
 class PrepararSuperTuxKartTests(unittest.TestCase):
@@ -315,6 +342,91 @@ class PrepararSuperTuxKartTests(unittest.TestCase):
     def test_files_live_in_appdata(self):
         self.assertEqual(catalogo_windows.config_supertuxkart(appdata="A"),
                          os.path.join("A", "supertuxkart", "config-0.10", "config.xml"))
+
+
+class AjustesDosAppsTests(unittest.TestCase):
+    def test_gcompris_matches_the_linux_wrapper(self):
+        item = catalogo_windows.por_id("gcompris")
+        self.assertEqual(item["category"], "passatempo")
+        self.assertEqual(item["args"], ["-f", "--difficulty", "3-6", "--locale", "pt_BR"])
+        self.assertEqual(item["env"]["LANGUAGE"], "pt_BR")
+
+    def test_stellarium_starts_fullscreen(self):
+        self.assertEqual(catalogo_windows.por_id("stellarium")["args"], ["--full-screen", "yes"])
+
+    def test_tux_racer_keeps_pt_pt_because_the_game_has_no_pt_br(self):
+        texto = catalogo_windows.por_id("extremetuxracer")["config_inicial"]["texto"]
+        self.assertIn("[language] pt_PT", texto)
+        self.assertNotIn("pt_BR", texto)
+
+    def test_kdeglobals_gains_portuguese_without_replacing_a_choice(self):
+        self.assertEqual(catalogo_windows.texto_kdeglobals(""), "[Locale]\nLanguage=pt_BR\n")
+        self.assertEqual(catalogo_windows.texto_kdeglobals("[Locale]\nCountry=BR\n"),
+                         "[Locale]\nLanguage=pt_BR\nCountry=BR\n")
+        escolhido = "[Locale]\nLanguage=en_US\n"
+        self.assertEqual(catalogo_windows.texto_kdeglobals(escolhido), escolhido)
+        with tempfile.TemporaryDirectory() as raiz:
+            caminho = os.path.join(raiz, "kdeglobals")
+            catalogo_windows.garantir_idioma_kde([caminho])
+            self.assertEqual(Path(caminho).read_text(encoding="utf-8"), "[Locale]\nLanguage=pt_BR\n")
+            Path(caminho).write_text("Language=de\n", encoding="utf-8")
+            catalogo_windows.garantir_idioma_kde([caminho])
+            self.assertEqual(Path(caminho).read_text(encoding="utf-8"), "Language=de\n")
+
+    def test_pista_turbo_copies_the_project_once(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            origem = os.path.join(raiz, "Pista Turbo.sb3")
+            destino = os.path.join(raiz, "Scratch", "Pista Turbo.sb3")
+            with open(origem, "wb") as f:
+                f.write(b"PK pista")
+            self.assertEqual(catalogo_windows.preparar_pista(destino, origem), destino)
+            self.assertEqual(Path(destino).read_bytes(), b"PK pista")
+            with open(destino, "wb") as f:
+                f.write(b"da crianca")
+            catalogo_windows.preparar_pista(destino, origem)
+            self.assertEqual(Path(destino).read_bytes(), b"da crianca")
+
+    def test_scratch_tile_is_turbowarp_and_pista_opens_the_sb3(self):
+        scratch = catalogo_windows.por_id("scratch")
+        pista = catalogo_windows.por_id("pista-turbo")
+        self.assertEqual(scratch["winget"], "GarboMuffin.TurboWarp")
+        self.assertEqual(pista["winget"], scratch["winget"])
+        self.assertEqual(pista["category"], "educativo")
+        self.assertEqual(pista["args"], ["{pista}"])
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "TurboWarp", "TurboWarp.exe")
+            exe.parent.mkdir()
+            exe.write_bytes(b"")
+            destino = os.path.join(raiz, "Scratch", "Pista Turbo.sb3")
+            with mock.patch.object(catalogo_windows, "preparar_pista", return_value=destino):
+                cmd = catalogo_windows.comando(["catalogo:pista-turbo"], bases=[raiz])
+            self.assertEqual(cmd, [str(exe), destino])
+
+    def test_snes_opens_the_game_list(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "RetroArch", "retroarch.exe")
+            exe.parent.mkdir()
+            exe.write_bytes(b"MZ")
+            with mock.patch("cozy_jogos.baixar_core", return_value=os.path.join(raiz, "core.dll")), \
+                    mock.patch("cozy_jogos.pasta_jogos", return_value=os.path.join(raiz, "Jogos")), \
+                    mock.patch("cozy_jogos.pasta_config", return_value=os.path.join(raiz, "cfg")):
+                cmd = catalogo_windows.comando(["catalogo:snes"], bases=[raiz])
+            self.assertEqual(cmd[0], sys.executable)
+            self.assertTrue(cmd[1].endswith("cozy_jogos.py"))
+            self.assertEqual(cmd[2:], ["snes", str(exe)])
+            cfg = Path(raiz, "cfg", "retroarch.cfg").read_text(encoding="utf-8")
+            self.assertIn('video_driver = "d3d11"', cfg)
+            self.assertIn('audio_driver = "wasapi"', cfg)
+            self.assertIn('joypad_driver = "xinput"', cfg)
+            self.assertIn('kiosk_mode_enable = "true"', cfg)
+            self.assertIn('input_exit_emulator = "escape"', cfg)
+            self.assertIn('menu_show_online_updater = "false"', cfg)
+            self.assertTrue((Path(raiz, "Jogos") / "LEIA-ME.txt").is_file())
+            self.assertIn("SNES", (Path(raiz, "Jogos") / "LEIA-ME.txt").read_text(encoding="utf-8"))
+            item = catalogo_windows.por_id("ps1")
+            self.assertEqual(item["winget"], "Libretro.RetroArch")
+            self.assertIs(item["sem_moldura"], False)
+
 
 if __name__ == "__main__":
     unittest.main()
