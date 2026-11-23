@@ -1,7 +1,11 @@
 """Controles (gamepads USB) do Beni Launcher.
 
-Lê os controles direto do kernel (/dev/input/eventN, sem dependências), guarda o
-mapeamento feito pelos pais na área dos pais e, a partir dele, gera:
+No Linux lê os controles direto do kernel (/dev/input/eventN, sem dependências).
+No Windows a leitura está em controles_windows.py (XInput e HID, por ctypes);
+aqui fica o que é igual nos dois: o mapeamento da área dos pais e o que se
+gera a partir dele.
+
+Gera:
 
   - navegação do menu: direcional = setas, ✕ = Enter, ◯ = Esc (só quando a
     janela do menu está na frente e nenhum app está aberto);
@@ -76,6 +80,9 @@ CHAVE_CONTROLE = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
 
 # Saída de emergência: Start + Select seguros por este tempo fecham o app aberto
 SEGURAR_PARA_SAIR_S = 2.0
+# Sem controle conectado a thread dorme; com controle, acorda várias vezes por segundo.
+PAUSA_SEM_CONTROLE_S = 2.0
+PAUSA_COM_CONTROLE_S = 0.05
 
 TECLAS_MENU = {"up": "Up", "down": "Down", "left": "Left", "right": "Right",
                "a": "Return", "start": "Return", "b": "Escape"}
@@ -166,13 +173,28 @@ def hats_em_ordem(eixos):
     return pares
 
 
+def pausa_da_leitura(n_controles):
+    """Segundos até a próxima leitura. Sem controle, não fica girando."""
+    return PAUSA_SEM_CONTROLE_S if not n_controles else PAUSA_COM_CONTROLE_S
+
+
 def sdl_guid(dispositivo):
-    """GUID do SDL2 (sem o CRC do nome, que o SDL aceita como curinga)."""
+    """GUID do SDL2 (sem o CRC do nome, que o SDL aceita como curinga).
+
+    No Windows o SDL põe a letra do driver no byte 14 ('h' = HID, 'x' = XInput).
+    Sem o campo "driver", o GUID é o do Linux (os testes conhecem esse valor)."""
     def le16(hexa):
         valor = int(hexa, 16)
         return f"{valor & 0xFF:02x}{valor >> 8 & 0xFF:02x}"
-    return (le16(dispositivo["bus"]) + "0000" + le16(dispositivo["vendor"]) + "0000"
+    base = (le16(dispositivo["bus"]) + "0000" + le16(dispositivo["vendor"]) + "0000"
             + le16(dispositivo["product"]) + "0000" + le16(dispositivo["version"]) + "0000")
+    driver = dispositivo.get("driver")
+    if not driver:
+        return base
+    cru = bytearray.fromhex(base)
+    cru[14] = ord(str(driver)[0])
+    cru[15] = int(dispositivo.get("driver_data") or 0) & 0xFF
+    return cru.hex()
 
 
 # --------------------------------------------------------------- tokens → índices
@@ -236,7 +258,7 @@ def linha_sdl(dispositivo, mapa):
         else:
             valor = ("+" if alvo[2] > 0 else "-") + f"a{alvo[1]}"
         partes.append(f"{SDL_NOMES[nome]}:{valor}")
-    partes.append("platform:Linux")
+    partes.append("platform:" + str(dispositivo.get("plataforma") or "Linux"))
     return ",".join(partes) + ","
 
 
@@ -354,14 +376,52 @@ def mapa_navegador(dispositivo, mapa):
     return {"botoes": botoes, "eixos": eixos}
 
 
-def script_navegador(dispositivos, mapas):
+def script_navegador(dispositivos, mapas, plataforma=None):
     tabela = {}
     for dispositivo in dispositivos:
         mapa = (mapas.get(dispositivo["chave"]) or {}).get("mapa")
         if mapa and dispositivo["chave"] not in tabela:
             tabela[dispositivo["chave"]] = mapa_navegador(dispositivo, mapa)
+    if plataforma is None:
+        plataforma = "windows" if os.name == "nt" else ""
+    marca = 'window.__beniPlataforma = "windows";\n' if plataforma == "windows" else ""
     return ("// Gerado pelo Beni Launcher (área dos pais → Controles). Não edite à mão.\n"
-            "window.__beniControles = " + json.dumps(tabela, sort_keys=True) + ";\n")
+            + marca
+            + "window.__beniControles = " + json.dumps(tabela, sort_keys=True) + ";\n")
+
+
+def log_controle(texto):
+    """Linha no beni-windows.log (o mesmo arquivo do iniciador). No Linux não grava."""
+    if os.name != "nt":
+        return
+    try:
+        pasta = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher")
+        os.makedirs(pasta, exist_ok=True)
+        with open(os.path.join(pasta, "beni-windows.log"), "a", encoding="utf-8") as arquivo:
+            arquivo.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
+def pasta_extensao_edge():
+    """Pasta da extensão de controle que o Edge dos jogos carrega, ou None."""
+    if os.name != "nt":
+        return None
+    origem = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extensao-controle")
+    if not os.path.isfile(os.path.join(origem, "manifest.json")):
+        return None
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    destino = os.path.join(base, "Benikids", "cozy-controle")
+    try:
+        os.makedirs(destino, exist_ok=True)
+        for nome in ("manifest.json", "controle.js"):
+            shutil.copyfile(os.path.join(origem, nome), os.path.join(destino, nome))
+        mapa = os.path.join(destino, "mapa.js")
+        if not os.path.isfile(mapa):
+            _gravar(mapa, script_navegador([], {}))
+    except OSError:
+        return None
+    return destino
 
 
 # --------------------------------------------------------------- armazenamento
@@ -475,11 +535,15 @@ class Controles:
         (pode ter sido feito à mão no PCSX)."""
         dados = carregar(self.arquivo)
         if dispositivos is None:
-            dispositivos = listar_dispositivos()
+            dispositivos = self._listar()
         mapas = dados["controles"]
         linhas_sdl = []
         vistos = set()
         for dispositivo in dispositivos:
+            # Xbox (XInput): o SDL do Windows já traz o mapeamento certo. Uma
+            # linha nossa usaria a ordem do XInput cru e trocaria os eixos Y.
+            if dispositivo.get("tipo") == "xinput":
+                continue
             mapa = (mapas.get(dispositivo["chave"]) or {}).get("mapa")
             if mapa and dispositivo["chave"] not in vistos:
                 vistos.add(dispositivo["chave"])
@@ -488,6 +552,13 @@ class Controles:
             os.environ["SDL_GAMECONTROLLERCONFIG"] = "\n".join(linhas_sdl)
         else:
             os.environ.pop("SDL_GAMECONTROLLERCONFIG", None)
+        if os.name == "nt":
+            # RetroArch e PCSX são do Linux. No Windows só o SDL (acima) e a
+            # extensão do Edge, na pasta que o --load-extension aponta.
+            pasta = pasta_extensao_edge()
+            if pasta:
+                _gravar(os.path.join(pasta, "mapa.js"), script_navegador(dispositivos, mapas))
+            return
         caminhos = self.caminhos()
         pasta_ra = caminhos["retroarch"]
         os.makedirs(pasta_ra, exist_ok=True)
@@ -535,7 +606,7 @@ class Controles:
     def estado(self):
         dados = carregar(self.arquivo)
         with self.trava:
-            dispositivos = list(self.dispositivos) if self.thread else listar_dispositivos()
+            dispositivos = list(self.dispositivos) if self.thread else self._listar()
         lista = []
         for jogador, d in enumerate(dispositivos, start=1):
             salvo = dados["controles"].get(d["chave"]) or {}
@@ -579,6 +650,12 @@ class Controles:
     def encerrar(self):
         self.parar.set()
 
+    def _listar(self):
+        if os.name == "nt":
+            import controles_windows
+            return controles_windows.listar_dispositivos()
+        return listar_dispositivos()
+
     def _sincronizar(self):
         atuais = listar_dispositivos()
         mudou = [d["evento"] for d in atuais] != [d["evento"] for d in self.dispositivos]
@@ -611,6 +688,10 @@ class Controles:
                 pass
 
     def _loop(self):
+        if os.name == "nt":
+            import controles_windows
+            controles_windows.rodar(self)
+            return
         proxima_busca = 0.0
         util_ate = 0.0  # até quando houve evento útil (botão/direcional) recente
         while not self.parar.is_set():
@@ -620,7 +701,7 @@ class Controles:
                 proxima_busca = agora + 2
             fds = {v[0]: k for k, v in self.abertos.items()}
             if not fds:
-                self.parar.wait(2)
+                self.parar.wait(PAUSA_SEM_CONTROLE_S)
                 continue
             try:
                 prontos, _, _ = select.select(list(fds), [], [], 0.25)
@@ -730,6 +811,10 @@ def mapa_basico(dispositivo):
 
 
 def enviar_tecla(tecla):
+    if os.name == "nt":
+        import controles_windows
+        controles_windows.enviar_tecla(tecla)
+        return
     if not shutil.which("xdotool"):
         return
     try:
