@@ -773,9 +773,14 @@ def abridor_do_sistema():
 
 def external_browser_command(browser, url, profile_id="", marionette_port=None, devtools_port=None):
     cache_root = os.path.join(HOME, ".cache", "cozy-kids-launcher")
+    # Extensão de controle (a mesma ideia do Chromium no Linux). No Edge ela
+    # só entra com --load-extension no perfil dos jogos, sem política de máquina
+    # e sem UAC. Sem os arquivos no pacote, o Edge abre como antes.
+    extensao = controles.pasta_extensao_edge()
     return build_external_browser_command(
         browser, url, cache_root, profile_id=profile_id,
         marionette_port=marionette_port, devtools_port=devtools_port,
+        extensao=extensao,
     )
 
 
@@ -943,7 +948,9 @@ def menu_na_frente():
     browser = owned_process(BROWSER_PIDFILE, "browser")
     if not browser:
         return False
-    if controles.janela_ativa_pid() != browser.get("pid"):
+    # No Windows o pid vem do GetForegroundWindow (pid_da_janela_ativa); no Linux,
+    # do xdotool, o mesmo de antes.
+    if pid_da_janela_ativa() != browser.get("pid"):
         return False
     try:
         return not usage_status(load_cfg()).get("active")
@@ -1041,8 +1048,18 @@ def fechar_app_pelo_controle():
         return
     reset_active_tile()
     log_runtime_event("controles.app_closed")
+    controles.log_controle("controles: Start+Select por 2 s; app encerrado")
     browser = owned_process(BROWSER_PIDFILE, "browser")
-    if browser and shutil.which("xdotool"):
+    if not browser:
+        return
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            plataforma_windows.ativar_processo(browser["pid"])
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    if shutil.which("xdotool"):
         subprocess.run(["xdotool", "search", "--pid", str(browser["pid"]), "windowactivate"],
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=5, check=False)
@@ -2563,7 +2580,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         self.json_response({"status": "missing", "message": "App not installed"}, 404)
                         return
                     path_extra = catalogo_windows.pasta_no_path(clean, resolved)
-                    env_extra = catalogo_windows.ambiente(clean)
+                    env_extra = catalogo_windows.com_controle(catalogo_windows.ambiente(clean))
                     clean = resolved
                 clean = direct_app_command(clean)
                 try:
@@ -2660,9 +2677,9 @@ def main():
                 except Exception:  # noqa: BLE001
                     pass
             try:
-                if os.name != "nt":  # controles USB: só Linux (evdev) por enquanto
-                    controles_service().aplicar()
-                    controles_service().garantir_thread()
+                # Linux: evdev. Windows: XInput + HID (controles_windows.py).
+                controles_service().aplicar()
+                controles_service().garantir_thread()
             except Exception as exc:  # noqa: BLE001
                 log_runtime_event("controles.failed", level="warning",
                                   exceptionType=type(exc).__name__)

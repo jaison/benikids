@@ -19,8 +19,12 @@
                  "up", "down", "left", "right"];
 
   function chave(id) {
-    const m = /Vendor:\s*([0-9a-f]{4})\s+Product:\s*([0-9a-f]{4})/i.exec(id || "");
-    return m ? (m[1] + ":" + m[2]).toLowerCase() : null;
+    const texto = id || "";
+    const m = /Vendor:\s*([0-9a-f]{4})\s+Product:\s*([0-9a-f]{4})/i.exec(texto);
+    if (m) return (m[1] + ":" + m[2]).toLowerCase();
+    // Edge no Windows às vezes manda o id no formato do HID (VID_0079&PID_0006).
+    const w = /VID_([0-9a-f]{4})&PID_([0-9a-f]{4})/i.exec(texto);
+    return w ? (w[1] + ":" + w[2]).toLowerCase() : null;
   }
   function botao(valor) {
     const v = Math.max(0, Math.min(1, valor || 0));
@@ -42,6 +46,10 @@
     return typeof window.createUnityInstance === "function" || typeof window.UnityLoader === "object";
   }
   function converter(pad) {
+    // No Windows, mapping "standard" já é a ordem da Gamepad API (o WGI do
+    // Edge arruma sozinho). Reordenar de novo trocaria os botões. O Linux não
+    // define __beniPlataforma, então o comportamento de lá não muda.
+    if (window.__beniPlataforma === "windows" && pad.mapping === "standard") return pad;
     const mapa = MAPAS[chave(pad.id)];
     if (!mapa) return pad;
     const padrao = pad.mapping === "standard";

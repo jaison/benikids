@@ -418,6 +418,19 @@ def ambiente(cmd):
             if isinstance(k, str) and k and "=" not in k and isinstance(v, (str, int))}
 
 
+def com_controle(env):
+    """Junta o SDL_GAMECONTROLLERCONFIG do controle mapeado ao ambiente do app.
+
+    O catálogo manda (ambiente()); se ele já trouxer a variável, ela fica.
+    Sem mapeamento, devolve o env como está. O valor vem do controles.py, que
+    o servidor grava em os.environ quando os pais salvam o controle."""
+    extra = dict(env or {})
+    sdl = os.environ.get("SDL_GAMECONTROLLERCONFIG")
+    if sdl and "SDL_GAMECONTROLLERCONFIG" not in extra:
+        extra["SDL_GAMECONTROLLERCONFIG"] = sdl
+    return extra
+
+
 def gravar_config_inicial(item, exe=None):
     """Config pronta na pasta de dados do app, se ainda não existe (ex.: SuperTux sem a
     pergunta "conectar à Internet?": o ✕ fecha o jogo à força e ele nunca grava a resposta).

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Beni Launcher: controles",
+  "version": "1.0",
+  "description": "Entrega aos jogos de navegador os controles USB no formato padrão, com os botões configurados na área dos pais.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["mapa.js", "controle.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    }
+  ]
+}

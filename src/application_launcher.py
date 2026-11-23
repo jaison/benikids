@@ -208,6 +208,7 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
 
 def external_browser_command(
     browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
+    extensao=None,
 ):
     """Build the isolated kiosk command used for an external web tile.
 
@@ -226,9 +227,14 @@ def external_browser_command(
             "--disable-session-crashed-bubble",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
             # reforço da preferência translate.enabled=false (só um --disable-features
-            # vale: some outra função desligada aqui, na mesma lista)
-            "--disable-features=Translate",
+            # vale: some outra função desligada aqui, na mesma lista).
+            # DisableLoadExtensionCommandLineSwitch: o Edge novo ignora
+            # --load-extension sem isto (a extensão de controle dos jogos).
+            "--disable-features=Translate"
+            + (",DisableLoadExtensionCommandLineSwitch" if extensao else ""),
         ]
+        if extensao:
+            command.append(f"--load-extension={extensao}")
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,
             # só em 127.0.0.1
