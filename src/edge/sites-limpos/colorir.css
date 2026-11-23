@@ -1,0 +1,13 @@
+/* Colorir Online: só a parte de colorir. Sem a barra de cima, rodapé,
+   banners, redes sociais, lojas de apps e espaços de anúncio. */
+header, .oxy-header-wrapper, footer,
+section.publi-celu-336, section.descripcion-seccion,
+#banner_izquierdo, #banner_inferior, #banner_derecho, ins.adsbygoogle,
+section:not(.seccion-inicio):has(a[href*="acorujaboo"], a[href*="elbuhoboo"], a[href*="ecokids"],
+  a[href*="tiktok.com"], a[href*="instagram.com"], a[href*="youtube.com"], a[href*="facebook.com"],
+  a[href*="apps.apple.com"], a[href*="play.google.com"]),
+a[href^="http"]:not([href*="colorir-online.com"]) {
+  display: none !important;
+}
+
+html, body { background: #afddea !important; min-height: 100vh; }

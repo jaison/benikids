@@ -148,10 +148,19 @@ def external_chromium_profile(cache_root, profile_id=""):
 # - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
 #   preenche sozinho um login salvo à mão (quem entra é o login automático, com
 #   o login de cada criança). Logins já salvos não são apagados.
+# Um só --disable-features vale. Translate já estava. DnsOverHttps: o navegador
+# não troca o DNS do Windows (CleanBrowsing) por um DoH próprio. A última chave
+# reabre o --load-extension, que o Chromium novo ignora (a extensão de CSS).
+CHROMIUM_RECURSOS_DESLIGADOS = "Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch"
+EXTENSAO_SITES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edge", "sites-limpos")
+CSS_FIREFOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "firefox", "userContent.css")
+
 CHROMIUM_PREFERENCES = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
     "profile": {"password_manager_enabled": False},
+    # o mesmo DoH desligado, dentro do perfil, se a linha de comando não pegar
+    "dns_over_https": {"mode": "off", "templates": ""},
 }
 
 
@@ -206,6 +215,42 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
     return True
 
 
+def _args_extensao_sites():
+    """Extensão só de CSS (Escola Games, Colorir, Autodraw), se o pacote a trouxe."""
+    if os.path.isfile(os.path.join(EXTENSAO_SITES, "manifest.json")):
+        return [f"--load-extension={EXTENSAO_SITES}"]
+    return []
+
+
+def garantir_perfil_firefox(profile):
+    """DoH desligado e o CSS dos sites no perfil do Firefox que o Benikids abre.
+
+    network.trr.mode=5 é "desligado por escolha" (o policies.json do Linux trava
+    o mesmo no computador inteiro). O userContent.css é o de beni/firefox, copiado
+    para src/firefox para ir no pacote do Windows.
+    """
+    os.makedirs(profile, exist_ok=True)
+    _set_user_pref(profile, "network.trr.mode", 5)
+    _set_user_pref(profile, "toolkit.legacyUserProfileCustomizations.stylesheets", True)
+    if not os.path.isfile(CSS_FIREFOX):
+        return
+    destino_dir = os.path.join(profile, "chrome")
+    destino = os.path.join(destino_dir, "userContent.css")
+    try:
+        with open(CSS_FIREFOX, "rb") as handle:
+            conteudo = handle.read()
+        atual = b""
+        if os.path.isfile(destino):
+            with open(destino, "rb") as handle:
+                atual = handle.read()
+        if atual != conteudo:
+            os.makedirs(destino_dir, exist_ok=True)
+            with open(destino, "wb") as handle:
+                handle.write(conteudo)
+    except OSError:
+        pass
+
+
 def external_browser_command(
     browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
 ):
@@ -225,10 +270,13 @@ def external_browser_command(
             "--no-first-run",
             "--disable-session-crashed-bubble",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço da preferência translate.enabled=false (só um --disable-features
-            # vale: some outra função desligada aqui, na mesma lista)
-            "--disable-features=Translate",
+            # reforço de translate.enabled=false e do DoH desligado (só um
+            # --disable-features vale: tudo na mesma lista)
+            f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}",
         ]
+        command += _args_extensao_sites()
+        if os.name == "nt":
+            _log_windows("navegador: DoH desligado; extensão sites-limpos no perfil do Edge")
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,
             # só em 127.0.0.1
@@ -238,7 +286,9 @@ def external_browser_command(
             ]
         return command + ["--kiosk", f"--app={url}"]
     profile = external_firefox_profile(cache_root, profile_id)
-    os.makedirs(profile, exist_ok=True)
+    garantir_perfil_firefox(profile)
+    if os.name == "nt":
+        _log_windows("navegador: DoH desligado (network.trr.mode=5) e userContent.css no perfil")
     if marionette_port:
         # login automático (site_logins.py): o Marionette só liga neste tile
         _set_user_pref(profile, "marionette.port", int(marionette_port))

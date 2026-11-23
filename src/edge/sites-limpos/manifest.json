@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Benikids: sites mais limpos",
+  "version": "1.0.0",
+  "description": "Esconde menus e barras que não são para crianças. Só CSS: não bloqueia script nem rede.",
+  "content_scripts": [
+    {
+      "matches": ["*://escolagames.com.br/*", "*://*.escolagames.com.br/*"],
+      "css": ["escolagames.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://colorir-online.com/*", "*://*.colorir-online.com/*"],
+      "css": ["colorir.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://autodraw.com/*", "*://*.autodraw.com/*"],
+      "css": ["autodraw.css"],
+      "run_at": "document_start"
+    }
+  ]
+}

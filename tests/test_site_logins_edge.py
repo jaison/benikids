@@ -89,7 +89,7 @@ class EdgeCommandTest(unittest.TestCase):
             for profile_id in ("default", "child-1"):
                 command = external_browser_command("msedge.exe", "https://x.org/", root, profile_id=profile_id)
                 self.assertEqual([a for a in command if a.startswith("--disable-features")],
-                                 ["--disable-features=Translate"])
+                                 ["--disable-features=Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch"])
                 prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
                 self.assertEqual(json.loads(prefs.read_text()), MINIMO)
             # o Firefox não ganha nada disso
@@ -107,6 +107,7 @@ MINIMO = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
     "profile": {"password_manager_enabled": False},
+    "dns_over_https": {"mode": "off", "templates": ""},
 }
 
 
@@ -143,6 +144,7 @@ class EdgePreferencesTest(unittest.TestCase):
         expected["translate"]["enabled"] = False
         expected["credentials_enable_service"] = False
         expected["profile"]["password_manager_enabled"] = False  # name e exit_type ficam
+        expected["dns_over_https"] = {"mode": "off", "templates": ""}
         self.assertEqual(data, expected)
 
     def test_password_manager_is_turned_off_without_touching_saved_logins(self):
@@ -178,7 +180,7 @@ class EdgePreferencesTest(unittest.TestCase):
         with mock.patch("application_launcher.os.replace", side_effect=PermissionError("em uso")):
             self.assertFalse(ensure_chromium_preferences(self.profile))
             command = external_browser_command("msedge.exe", "https://x.org/", self.tmp.name, profile_id="child-1")
-        self.assertIn("--disable-features=Translate", command)
+        self.assertTrue(any(a.startswith("--disable-features=Translate,") for a in command))
         self.assertEqual(json.loads(self.prefs.read_text()), {"x": 1})
         self.assertEqual(os.listdir(self.prefs.parent), ["Preferences"])
 

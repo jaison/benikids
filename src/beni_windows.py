@@ -143,31 +143,49 @@ def relatar_menu(codigo):
                                 assinatura=f"menu_nativo:{'sem_gpu' if codigo == SEM_GPU else codigo}")
 
 
+def preparar_perfil_do_menu(nav):
+    """DoH desligado no navegador do menu (área dos pais), sem pedir administrador."""
+    from application_launcher import (  # noqa: PLC0415
+        CHROMIUM_RECURSOS_DESLIGADOS,
+        ensure_chromium_preferences,
+        garantir_perfil_firefox,
+    )
+
+    familia = browser_family(nav) if nav else "chromium"
+    perfil = os.path.join(CACHE, f"menu-{familia}-profile")
+    if familia == "chromium":
+        ensure_chromium_preferences(perfil)
+    elif nav:
+        garantir_perfil_firefox(perfil)
+    return familia, perfil, CHROMIUM_RECURSOS_DESLIGADOS
+
+
 def abrir_menu(usar_web):
     nav = navegador()
+    familia, perfil, recursos = preparar_perfil_do_menu(nav)
     exe = os.path.join(APP_ROOT, "beni-menu.exe")
     if not usar_web and os.path.isfile(exe):
-        familia = browser_family(nav) if nav else "chromium"
         argv = [
             exe,
             "--porta", str(PORTA),
             "--app-root", APP_ROOT,
             "--web-cmd", nav or "msedge",
             "--web-familia", familia,
-            "--web-perfil", os.path.join(CACHE, f"menu-{familia}-profile"),
+            "--web-perfil", perfil,
         ]
         return iniciar(argv, log_em=MENU_LOG), "nativo"
     if not nav:
         log("sem navegador para o menu web")
         return None, "nenhum"
     url = f"http://127.0.0.1:{PORTA}/index.html"
-    if browser_family(nav) == "chromium":
-        argv = [nav, f"--user-data-dir={os.path.join(CACHE, 'menu-chromium-profile')}",
-                "--no-first-run", "--disable-session-crashed-bubble", "--kiosk", url]
+    if familia == "chromium":
+        argv = [nav, f"--user-data-dir={perfil}",
+                "--no-first-run", "--disable-session-crashed-bubble",
+                f"--disable-features={recursos}", "--kiosk", url]
+        log("menu web: DoH desligado")
     else:
-        perfil = os.path.join(CACHE, "menu-firefox-profile")
-        os.makedirs(perfil, exist_ok=True)
         argv = [nav, "--no-remote", "--profile", perfil, "--kiosk", url]
+        log("menu web: DoH desligado (network.trr.mode=5)")
     return iniciar(argv), "web"
 
 
