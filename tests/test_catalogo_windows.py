@@ -415,7 +415,7 @@ class AjustesDosAppsTests(unittest.TestCase):
             self.assertTrue(cmd[1].endswith("cozy_jogos.py"))
             self.assertEqual(cmd[2:], ["snes", str(exe)])
             cfg = Path(raiz, "cfg", "retroarch.cfg").read_text(encoding="utf-8")
-            self.assertIn('video_driver = "d3d11"', cfg)
+            self.assertIn('video_driver = "gl"', cfg)
             self.assertIn('audio_driver = "wasapi"', cfg)
             self.assertIn('joypad_driver = "xinput"', cfg)
             self.assertIn('kiosk_mode_enable = "true"', cfg)

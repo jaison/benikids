@@ -186,12 +186,19 @@ def _aspas(caminho):
 
 
 def texto_retroarch(sistema, raiz_jogos, cfg_dir):
-    """retroarch.cfg do Linux, com áudio/vídeo/controle do Windows e sem menu."""
+    """retroarch.cfg do Linux, com áudio e controle do Windows e sem menu.
+
+    O vídeo fica em gl, como beni/emuladores/retroarch.cfg. No RetroArch 1.22.2,
+    se o d3d11 não cria o vídeo, o programa grava gl na cfg, mostra um erro e sai
+    (video_driver_force_fallback): não segue na mesma abertura. Esta cfg é
+    reescrita toda vez que a lista abre, então o gl gravado se perderia e um
+    Intel HD antigo (sem DirectX 11) cairia nesse erro sempre.
+    """
     saves = os.path.join(raiz_jogos, ".saves", sistema)
     sistema_bios = os.path.join(raiz_jogos, "PS1", "BIOS")
     autoconfig = os.path.join(cfg_dir, "autoconfig")
     return f"""config_save_on_exit = "false"
-video_driver = "d3d11"
+video_driver = "gl"
 video_fullscreen = "true"
 video_windowed_fullscreen = "true"
 video_fullscreen_x = "0"

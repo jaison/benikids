@@ -60,6 +60,8 @@ class CozyJogosTests(unittest.TestCase):
 
     def test_config_keeps_fullscreen_borderless_and_escape(self):
         texto = cozy_jogos.texto_retroarch("ps1", os.path.join("C:\\", "Jogos"), os.path.join("C:\\", "cfg"))
+        self.assertIn('video_driver = "gl"', texto)
+        self.assertNotIn("d3d11", texto)
         self.assertIn('video_windowed_fullscreen = "true"', texto)
         self.assertIn('input_auto_mouse_grab = "false"', texto)
         self.assertIn("Jogos/.saves/ps1", texto.replace("\\", "/"))
