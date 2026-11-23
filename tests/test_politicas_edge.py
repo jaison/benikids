@@ -63,7 +63,8 @@ def registro_completo(**extra):
         BLOCKLIST: {str(i + 1): url for i, url in enumerate(("exemplo.com",) + pe.URLS_BLOQUEADAS)},
         UBOL: {"defaultFiltering": "complete", "disableFirstRunPage": 1},
         UBOL + r"\rulesets": {"1": "+annoyances-cookies"},
-        RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0, "PasswordManagerEnabled": 0},
+        RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0, "PasswordManagerEnabled": 0,
+               "DnsOverHttpsMode": "off"},
     }
     chaves.update(extra)
     return chaves
@@ -156,7 +157,7 @@ class PoliticasTest(unittest.TestCase):
         self.assertEqual(valores, [
             rf"Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name '{nome}' "
             "-ErrorAction SilentlyContinue"
-            for nome in ("TranslateEnabled", "PasswordManagerEnabled")
+            for nome in ("TranslateEnabled", "PasswordManagerEnabled", "DnsOverHttpsMode")
         ])
         # a chave da lista só some se ficou vazia e sem subchaves
         self.assertIn("$outros.Count -eq 0 -and $chave.SubKeyCount -eq 0", texto)

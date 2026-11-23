@@ -369,6 +369,7 @@ function renderAdmin(){
   document.getElementById('cfgSpeechFeedbackEnabled').checked=cfg.speechFeedbackEnabled===true;
   document.getElementById('cfgStartOnLogin').checked=cfg.startOnLogin!==false;
   document.getElementById('cfgTelemetry').checked=cfg.telemetryEnabled!==false;
+  if(typeof carregarFiltroInternet==='function') carregarFiltroInternet();
   document.getElementById('cfgUsageTelemetry').checked=cfg.usageTelemetryEnabled===true;
   document.getElementById('cfgCelebrationEnabled').checked=cfg.celebrationEnabled===true;
   document.getElementById('cfgAccessibilityLargeText').checked=cfg.accessibilityLargeText===true;

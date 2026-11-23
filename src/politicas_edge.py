@@ -8,7 +8,9 @@ O que o Firefox dos sites tem no Linux (beni/firefox/policies.json), no Edge:
   "complete", a lista de avisos de cookies e sem a página de boas-vindas;
 - URLBlocklist com as mesmas páginas bloqueadas do Linux;
 - TranslateEnabled=0 (sem o "Traduzir esta página");
-- PasswordManagerEnabled=0 (sem salvar nem preencher senhas).
+- PasswordManagerEnabled=0 (sem salvar nem preencher senhas);
+- DnsOverHttpsMode=off (o Edge não troca o DNS do Windows por um DoH próprio;
+  senão o filtro CleanBrowsing seria contornado).
 
 Fica em HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge: vale para o Edge inteiro do
 computador (o mantenedor confirmou que só o Benikids usa o Edge) e precisa de
@@ -61,7 +63,14 @@ ESCOLA_GAMES_SEM_FILTRO = True
 # translate.enabled=false (application_launcher.py), que não pede administrador.
 # PasswordManagerEnabled=0: o Edge não salva nem preenche senhas (o login dos
 # sites é o automático, por criança). Não apaga as senhas já salvas.
-VALORES_RAIZ = {"TranslateEnabled": ("DWord", 0), "PasswordManagerEnabled": ("DWord", 0)}
+# DnsOverHttpsMode=off: o mesmo DNSOverHTTPS do Firefox no Linux. O perfil que
+# o Benikids abre também desliga o DoH na linha de comando; esta política vale
+# para qualquer Edge do computador (o mantenedor confirmou que só o Benikids usa).
+VALORES_RAIZ = {
+    "TranslateEnabled": ("DWord", 0),
+    "PasswordManagerEnabled": ("DWord", 0),
+    "DnsOverHttpsMode": ("String", "off"),
+}
 SEM_FILTRO = ("escolagames.com.br",)
 
 
@@ -180,8 +189,10 @@ def script_aplicar(sem_filtro=ESCOLA_GAMES_SEM_FILTRO):
     linhas.append(f"Benikids-Por {_ps(RAIZ + SEP + 'URLBlocklist')} {_lista_ps(URLS_BLOQUEADAS)} ''")
     linhas.append(f"Benikids-Chave {_ps(RAIZ)}")
     for nome, (tipo, valor) in VALORES_RAIZ.items():
+        mostrado = _ps(valor) if tipo == "String" else valor
         linhas.append(
-            f"New-ItemProperty -Path {_ps(RAIZ)} -Name {_ps(nome)} -Value {valor} -PropertyType {tipo} -Force | Out-Null"
+            f"New-ItemProperty -Path {_ps(RAIZ)} -Name {_ps(nome)} -Value {mostrado} "
+            f"-PropertyType {tipo} -Force | Out-Null"
         )
     chave = _chave_ubol()
     linhas.append(f"Benikids-Chave {_ps(chave)}")
