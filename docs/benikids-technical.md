@@ -89,7 +89,7 @@ Parents can move any app to another category in Parents → Screen time.
 - On Windows, games handle the gamepad themselves, but the menu can't be navigated with it yet.
 
 ### Other
-- **itch.io collections**: each child has a public collection. A game added to the collection becomes an icon (with its cover), and a removed game disappears. Sync runs at login and every 30 min, so parents test first and only then release a game.
+- **itch.io collections**: each profile gets the girl or boy collection (the two public URLs live in the program). A new game arrives on, in Play, with its cover; a removed game disappears. What parents changed (on/off, category, name) stays. A profile without boy/girl gets no collection. Sync runs 2 min after the menu opens and every 30 min (on Linux, also at login and from the timer). A profile id in `itch-colecoes.json` overrides gender.
 - In Parents → Appearance → **Home screen**, you turn the Learn/Hobbies/Play question on or off per profile.
 
 ### 🔄 Automatic updates (Linux)
@@ -112,7 +112,7 @@ After installing, before handing it to the child:
 - If you like, turn on **required learning** (Parents → Screen time) and save the **site logins** (Parents → Children).
 - Luanti: open it once and install the **Mineclonia** game (Content → Browse).
 - Put your SNES/PS1 games in `~/Jogos/SNES` and `~/Jogos/PS1`. The PS1 BIOS goes in `~/Jogos/PS1/BIOS` (see `~/Jogos/LEIA-ME.txt`).
-- Replace the itch.io collections in `~/.config/cozy-kids-launcher/itch-colecoes.json`. The file maps the **profile id** to the collection's public URL.
+- itch.io collections follow each profile's boy/girl field (girl → the bea collection, boy → the beni collection). A profile without that field gets no collection. To override one profile, edit `~/.config/cozy-kids-launcher/itch-colecoes.json`: the **profile id** points at the public URL, and that entry wins over gender. Do not delete the file on a computer that already has one.
 
 Running `./instalar.sh` again updates the files and **does not erase** the configuration, saved
 logins or games. Use `./instalar.sh --sem-apps` to leave apt/flatpak alone.
@@ -123,7 +123,7 @@ logins or games. Use `./instalar.sh --sem-apps` to leave apt/flatpak alone.
 
 ```
 login → ~/.config/autostart → cozy-iniciar
-          ├─ cozy-itch-sync      (itch.io collections → "itch-*" tiles in config.json)
+          ├─ cozy-itch-sync      (thin wrapper around itch_sync.py: collections → "itch-*" tiles)
           └─ cozy-kids-launcher  (Python server on 127.0.0.1:38431 + native menu beni-menu;
                  │                    with no usable GPU, Firefox in kiosk mode)
                  ├─ Parents → Firefox with only the parents' area (closes on return)

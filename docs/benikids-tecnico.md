@@ -91,7 +91,7 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 - No Windows, os jogos usam o controle sozinhos, mas o menu ainda não é navegado pelo controle.
 
 ### Outros
-- **Coleções do itch.io**: cada criança tem uma coleção pública. Jogo adicionado na coleção vira ícone (com capa), e jogo removido some. A sincronização roda no login e a cada 30 min, então os pais testam antes e só então liberam.
+- **Coleções do itch.io**: cada perfil recebe a coleção do menino ou da menina (os dois endereços públicos ficam no programa). Jogo adicionado na coleção vira ícone ligado, na categoria Jogar, com capa; jogo removido some. O que os pais mudaram (ligado, categoria, nome) fica. Perfil sem menino/menina não recebe coleção. A sincronização roda 2 min depois de abrir o menu e a cada 30 min (no Linux, também no login e no timer). Para forçar outra coleção num perfil, o id dele em `itch-colecoes.json` manda.
 - Em Pais → Aparência → **Tela inicial**, você liga ou desliga a pergunta Aprender/Passatempo/Jogar em cada perfil.
 
 ### 🔄 Atualizações automáticas
@@ -114,7 +114,7 @@ Depois de instalar, antes de entregar para a criança:
 - Se quiser, ligue o **reforço de aprendizagem** (Pais → Tempo de tela) e salve os **logins dos sites** (Pais → Crianças).
 - Luanti: abra uma vez e instale o jogo **Mineclonia** (Conteúdo → Procurar).
 - Coloque seus jogos de SNES/PS1 em `~/Jogos/SNES` e `~/Jogos/PS1`. A BIOS do PS1 vai em `~/Jogos/PS1/BIOS` (veja `~/Jogos/LEIA-ME.txt`).
-- Troque as coleções do itch.io em `~/.config/cozy-kids-launcher/itch-colecoes.json`. O arquivo liga o **id do perfil** à URL pública da coleção.
+- As coleções do itch.io seguem o menino/menina de cada perfil (menina → coleção bea, menino → coleção beni). Um perfil antigo sem esse campo não recebe coleção. Para trocar a de um perfil, edite `~/.config/cozy-kids-launcher/itch-colecoes.json`: o **id do perfil** aponta para a URL pública, e essa entrada manda sobre o gênero. Não apague o arquivo de um notebook que já o tem.
 
 Rodar `./instalar.sh` de novo atualiza os arquivos e **não apaga** a configuração, os logins
 salvos nem os jogos. Use `./instalar.sh --sem-apps` para não mexer em apt/flatpak.
@@ -125,8 +125,9 @@ salvos nem os jogos. Use `./instalar.sh --sem-apps` para não mexer em apt/flatp
 
 ```
 login → ~/.config/autostart → cozy-iniciar
-          ├─ cozy-itch-sync      (coleções do itch.io → tiles "itch-*" no config.json)
+          ├─ cozy-itch-sync      (invólucro de itch_sync.py: coleções → tiles "itch-*")
           └─ cozy-kids-launcher  (servidor Python em 127.0.0.1:38431 + menu nativo beni-menu;
+                                  a mesma sincronização roda numa thread do servidor)
                  │                    sem GPU utilizável, Firefox em modo quiosque)
                  ├─ Pais → PIN na tela do menu + Firefox/Edge atrás dele com a área dos pais
                  │         (aparece com o PIN certo; fecha ao voltar)
@@ -158,7 +159,8 @@ login → ~/.config/autostart → cozy-iniciar
 | `beni/ferramentas/migrar-config.py`, `beni/config/migracoes.json` | mudanças de catálogo aplicadas uma vez em cada notebook |
 | `beni/lib/cozy-fixes/` | `nograb.c` (compilado na instalação) e `carregando.py` |
 | `beni/cozy-jogos/jogos.py` | lista de jogos SNES/PS1 |
-| `beni/chromium/cozy-jogo.html` | moldura que amplia jogos de navegador |
+| `src/itch_sync.py`, `src/jogo.html` | coleções do itch.io (Windows e Linux) e a moldura servida em `/jogo.html` |
+| `beni/chromium/cozy-jogo.html` | a mesma moldura, aberta pelo Chromium no Linux |
 | `beni/config/` | configuração inicial (perfis, apps, categorias, limites) e coleções do itch.io |
 | `beni/emuladores/` | configurações do RetroArch, PCSX-R e Luanti para hardware fraco |
 | `beni/systemd/` | timer da sincronização do itch.io |

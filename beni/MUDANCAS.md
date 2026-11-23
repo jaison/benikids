@@ -11,6 +11,7 @@ Base: [TrissyGE/cozy-kids-launcher](https://github.com/TrissyGE/cozy-kids-launch
 ## Arquivos novos (`src/`)
 | Arquivo | Para quê |
 |---|---|
+| `itch_sync.py`, `jogo.html` | Coleções públicas do itch.io nos dois sistemas. A thread do servidor sincroniza 2 min depois de subir e a cada 30 min. Menina → coleção bea, menino → coleção beni; uma entrada em `itch-colecoes.json` (id do perfil) manda sobre o gênero; perfil sem gênero não recebe coleção. Jogo novo entra ligado em Jogar; visível, categoria e nome escolhidos pelos pais ficam; jogo que saiu some. No Windows o tile abre o Edge em quiosque na moldura `/jogo.html` (a mesma de `beni/chromium/cozy-jogo.html`). No Linux o `cozy-itch-sync` virou um invólucro dessa lógica. Capas em `themes/covers`, emoji `img:covers/…` (o menu nativo e o menu web já mostram). |
 | `usage_limits.py` | Limite diário por perfil e por categoria (`jogos`, `educativo`, …). Conta o tempo só com o app aberto, grava em `~/.local/state/cozy-kids-launcher/usage-today.json`, zera à meia-noite, bloqueia tiles e fecha o app que passar do limite. Uma categoria pode dividir o limite de outra (`"pool": "jogos"`): o **Passatempo** gasta dos mesmos minutos dos Jogos. Opcional: limite diferente em cada dia da semana (`categoryLimits.weekdays.{mon..sun}`; campo ausente = usa o padrão, `null` = sem limite). Opcional: **regra de aprendizado** (`categoryLimits.learningRule`, ver abaixo); para ela o mesmo arquivo guarda um histórico curto por perfil (`history`, últimos 14 dias, só segundos por categoria; continua `usageVersion: 1`, então uma versão antiga só ignora o campo). |
 | `frontend/usage-limits.js` / `.css` | Medidores na barra de baixo, mensagens de "tempo acabou" e painel em Pais → Tempo de tela (com a tabela Seg–Dom de "Tempo diferente em cada dia da semana" e o quadro da regra de aprendizado com a linha "Hoje: Jogar reduzido para 15 min porque…"). |
 | `frontend/escolha.js` / `.css` | Tela inicial "O que você quer fazer? Aprender / Passatempo / Jogar" e lista filtrada por categoria (o Passatempo só aparece se o perfil tiver essa categoria). Com a regra de aprendizado valendo, Jogar/Passatempo mostram "Hoje 15 min — ontem faltou aprender 📚" e a barrinha começa pela metade; o Aprender mostra quanto falta para a meta de hoje. |
@@ -87,7 +88,7 @@ compilar: [cliente/LEIA-ME.md](../cliente/LEIA-ME.md).
 | `bin/cozy-kids-launcher` | `~/.local/bin` | Script de início do launcher, já preenchido (porta 38431, Firefox em modo quiosque). Respeita a trava de usuário (`cozy-usuario-permitido`). |
 | `bin/cozy-usuario-permitido` | `~/.local/bin` | Trava de usuário: o menu só abre nos usuários de `USUARIOS_PERMITIDOS=` em `/etc/beni-launcher/launcher.conf` (criado pelo `instalar-sistema.sh` com o usuário das crianças; vazio ou sem arquivo = qualquer usuário). Impede que o autostart de outra conta (a dos pais) tome a porta 38431 e deixe o menu da criança com tela branca. Para testar em outra conta: `COZY_KIDS_IGNORAR_TRAVA_USUARIO=1`. |
 | `bin/cozy-iniciar` | `~/.local/bin` | Usado no login: confere a trava de usuário, abre o launcher (com a tela "Abrindo o menu…") e sincroniza o itch.io em segundo plano. |
-| `bin/cozy-itch-sync` | `~/.local/bin` + timer systemd | Coleções do itch.io → tiles `itch-*` com capa, tamanho do jogo e corte da faixa do Unity. |
+| `bin/cozy-itch-sync` | `~/.local/bin` + timer systemd | Invólucro de `src/itch_sync.py` (a mesma sincronização da thread do servidor). |
 | `bin/navegador-jogos` | `~/.local/bin` | Chromium em modo quiosque com aceleração, pt-BR, sem barra de tradução, mais a tela "Carregando…". |
 | `bin/cozy-fullscreen` | `~/.local/bin` | Põe em tela cheia apps que abrem em janela (`wmctrl`). |
 | `bin/cozy-jogos` | `~/.local/bin` | Abre a lista de jogos SNES/PS1. |
@@ -103,7 +104,7 @@ compilar: [cliente/LEIA-ME.md](../cliente/LEIA-ME.md).
 | `emuladores/gpuPeopsMesaGL.cfg` | `~/.pcsxr/plugins` | Vídeo OpenGL do PCSX-R (o DFXVideo não funciona com o driver modesetting). |
 | `emuladores/luanti-minetest.conf` | `~/.var/app/org.luanti.luanti/.minetest` | Luanti leve (distância de visão curta, sem sombras). |
 | `config/config.json` | `~/.config/cozy-kids-launcher` (se não existir) | Dois perfis com apps, categorias, temas e limites 60/30/30. |
-| `config/itch-colecoes.json` | idem | Perfil → coleção pública do itch.io. |
+| `config/itch-colecoes.json` | idem, só se ainda não existir | Opcional: id do perfil → URL da coleção. Vazio por padrão; o gênero escolhe a coleção. O arquivo que um notebook já tem não é substituído. |
 | `systemd/cozy-itch-sync.{service,timer}` | `~/.config/systemd/user` | Sincronização a cada 30 min. |
 | `ferramentas/gerar-temas*.py` | — | Geram os SVG dos temas (Python puro). |
 

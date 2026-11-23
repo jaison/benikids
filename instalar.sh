@@ -243,6 +243,6 @@ cat <<'EOF'
   2. Ajuste nomes, temas e limites de tempo em Pais.
   3. Luanti: abra uma vez e instale o jogo "Mineclonia" (Conteúdo → Jogos).
   4. Coloque seus jogos de SNES/PS1 em ~/Jogos (veja ~/Jogos/LEIA-ME.txt).
-  5. Ajuste as coleções do itch.io em ~/.config/cozy-kids-launcher/itch-colecoes.json
+  5. Os jogos do itch.io seguem menino/menina de cada perfil. Para trocar a coleção de um perfil, edite ~/.config/cozy-kids-launcher/itch-colecoes.json (id do perfil → URL). Não apague esse arquivo se ele já existir: o que está lá manda.
 ==========================================================================
 EOF
