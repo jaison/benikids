@@ -210,6 +210,84 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertIn("o Windows pediu a senha de um adulto", textos)
 
 
+class BaixarZipTests(unittest.TestCase):
+    def zip_de(self, arquivos):
+        import hashlib
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for nome, dados in arquivos:
+                z.writestr(nome, dados)
+        pacote = buf.getvalue()
+        return pacote, hashlib.sha256(pacote).hexdigest()
+
+    def resposta(self, dados):
+        import io
+        return lambda _url: io.BytesIO(dados)
+
+    def test_zip_with_the_right_hash_lands_next_to_its_dlls(self):
+        import tempfile
+        pacote, sha = self.zip_de([
+            ("neverball-1.6.0/neverball.exe", b"MZ" + b"x" * 30000),
+            ("neverball-1.6.0/SDL2.dll", b"MZ" + b"d" * 100),
+        ])
+        item = {"id": "neverball", "baixar": {
+            "url": "https://neverball.org/neverball-1.6.0.zip", "arquivo": "neverball.exe",
+            "zip": True, "sha256": sha,
+        }}
+        with tempfile.TemporaryDirectory() as raiz:
+            ok, texto = instalar_apps.baixar_direto(item, raiz, self.resposta(pacote))
+            self.assertTrue(ok, texto)
+            self.assertTrue(os.path.isfile(os.path.join(
+                raiz, "Benikids Apps", "neverball", "neverball-1.6.0", "neverball.exe")))
+            self.assertTrue(os.path.isfile(os.path.join(
+                raiz, "Benikids Apps", "neverball", "neverball-1.6.0", "SDL2.dll")))
+
+    def test_wrong_hash_is_not_extracted(self):
+        import tempfile
+        pacote, _sha = self.zip_de([("jogo/hex-a-hop.exe", b"MZ" + b"x" * 30000)])
+        item = {"id": "hexahop", "baixar": {
+            "url": "https://exemplo.org/hex.zip", "arquivo": "hex-a-hop.exe",
+            "zip": True, "sha256": "0" * 64,
+        }}
+        with tempfile.TemporaryDirectory() as raiz:
+            ok, texto = instalar_apps.baixar_direto(item, raiz, self.resposta(pacote))
+            self.assertFalse(ok)
+            self.assertIn("não confere", texto)
+            self.assertFalse(os.path.exists(os.path.join(raiz, "Benikids Apps", "hexahop")))
+
+    def test_zip_with_a_path_escape_is_refused(self):
+        import tempfile
+        pacote, sha = self.zip_de([("../fora.exe", b"MZ" + b"x" * 30000)])
+        with tempfile.TemporaryDirectory() as raiz:
+            caminho = os.path.join(raiz, "pacote.zip")
+            with open(caminho, "wb") as f:
+                f.write(pacote)
+            ok, _texto = instalar_apps.extrair_zip(caminho, os.path.join(raiz, "saida"), "fora.exe")
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(os.path.join(raiz, "fora.exe")))
+            self.assertEqual(len(sha), 64)
+
+    def test_installer_from_the_author_site_checks_the_hash(self):
+        import hashlib
+        import io
+        import tempfile
+        dados = b"MZ" + b"y" * 30000
+        sha = hashlib.sha256(dados).hexdigest()
+        item = {"id": "tuxmath", "url": "https://downloads.sourceforge.net/project/tuxmath/t.exe",
+                "sha256": sha}
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = instalar_apps.baixar(item, pasta, lambda _u: io.BytesIO(dados))
+            self.assertTrue(caminho.endswith("t.exe"))
+            with open(caminho, "rb") as f:
+                self.assertEqual(f.read(), dados)
+            self.assertIsNone(instalar_apps.baixar(
+                {"id": "tuxmath", "url": item["url"], "sha256": "ab" * 32},
+                pasta, lambda _u: io.BytesIO(dados)))
+
+
 class BaixarDiretoTests(unittest.TestCase):
     ITEM = {"id": "puzzles-quinze", "baixar": {"url": "https://exemplo.org/fifteen.exe", "arquivo": "fifteen.exe"}}
 
