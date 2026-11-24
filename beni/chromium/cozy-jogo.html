@@ -32,27 +32,51 @@
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000}
   #moldura{position:absolute;overflow:hidden;transform-origin:0 0}
-  iframe{position:absolute;left:0;top:0;border:0;background:#fff}
+  iframe{position:absolute;left:0;top:0;border:0;background:#fff;overflow:hidden}
 </style>
 </head>
 <body>
-<div id="moldura"><iframe id="jogo" sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms" allow="autoplay; fullscreen; gamepad; pointer-lock" allowfullscreen></iframe></div>
+<div id="moldura"><iframe id="jogo" scrolling="no" sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms" allow="autoplay; fullscreen; gamepad; pointer-lock" allowfullscreen></iframe></div>
 <script>
   const p=new URLSearchParams(location.hash.slice(1));
   const w=+p.get('w')||0, h=+p.get('h')||0, fh=+p.get('fh')||h;
   const f=document.getElementById('jogo'), m=document.getElementById('moldura');
+  // O jogo só pode ser https em *.itch.zone (html.itch.zone e html-classic.itch.zone
+  // inclusive). Outro endereço fica em branco: a moldura não é um navegador aberto.
+  function enderecoPermitido(valor){
+    if(!valor) return false;
+    let url;
+    try { url=new URL(valor); } catch(e){ return false; }
+    if(url.protocol!=='https:'||url.username||url.password) return false;
+    if(url.port&&url.port!=='443') return false;
+    const host=url.hostname.toLowerCase().replace(/\.$/,'');
+    if(!host||host==='itch.zone'||host.indexOf('..')!==-1) return false;
+    return host.endsWith('.itch.zone')&&/^[a-z0-9.-]+$/.test(host);
+  }
   function ajustar(){
     const W=innerWidth, H=innerHeight;
     if(!w||!h){ Object.assign(m.style,{left:0,top:0,width:W+'px',height:H+'px',transform:'none'});
                 Object.assign(f.style,{width:W+'px',height:H+'px'}); return; }
     const s=Math.min(W/w,H/h);
-    // folga de 20 px para as barras de rolagem da página do jogo ficarem fora da área visível
-    const pad=p.has('fh')?20:0;
-    Object.assign(f.style,{width:(w+pad)+'px',height:(fh+pad)+'px',left:(-pad/2)+'px',top:(-pad/2)+'px'});
+    const folga=+p.get('pad')||0;
+    if(p.has('fh')){
+      // folga para a faixa do Unity (e a barra dela) ficar fora da área visível
+      const pad=20;
+      Object.assign(f.style,{width:(w+pad)+'px',height:(fh+pad)+'px',left:(-pad/2)+'px',top:(-pad/2)+'px'});
+    } else if(folga>0&&folga<=64){
+      // GameMaker (Maquiagem, Vestir Missy): canvas fixo e inline. O iframe
+      // fica um pouco maior e a moldura esconde a sobra, barras inclusive.
+      // Sem pad= (Dog Wash e os outros) o iframe fica exatamente w×h: o Godot
+      // ocupa a janela e uma folga aqui cortaria o jogo.
+      Object.assign(f.style,{width:(w+folga)+'px',height:(h+folga)+'px',left:'0px',top:'0px',overflow:'hidden'});
+    } else {
+      Object.assign(f.style,{width:w+'px',height:h+'px',left:'0px',top:'0px',overflow:'hidden'});
+    }
     Object.assign(m.style,{width:w+'px',height:h+'px',left:((W-w*s)/2)+'px',top:((H-h*s)/2)+'px',transform:'scale('+s+')'});
   }
   addEventListener('resize',ajustar); ajustar();
-  f.src=p.get('u')||'about:blank';
+  const endereco=p.get('u')||'';
+  f.src=enderecoPermitido(endereco)?endereco:'about:blank';
   f.addEventListener('load',()=>f.focus());
   addEventListener('click',()=>f.focus());
 </script>
