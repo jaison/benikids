@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<title>Jogo</title>
+<!-- Cozy Kids Launcher: mostra um jogo de navegador de tamanho fixo ampliado para a tela toda.
+     Uso: cozy-jogo.html#w=960&h=585&u=<endereço do jogo>
+     fh=<altura real da página> (opcional): mostra só os h px de cima e esconde o resto
+     (ex.: a faixa do Unity com o botão de tela cheia).
+
+     Sandbox do iframe. O jogo (https) e esta página (file:) são origens diferentes:
+     allow-scripts junto com allow-same-origin não entrega o arquivo local. Só evita
+     que a origem do jogo vire opaca, senão o save (IndexedDB do Unity e do Ren'Py)
+     some ao fechar. O htmlgame.js do itch só lê ancestorOrigins e o referrer; o
+     sandbox não apaga nenhum dos dois, e esta página não muda o referrerpolicy.
+
+     Entram no sandbox:
+     - allow-scripts: o jogo é JavaScript.
+     - allow-same-origin: o save fica na origem de verdade do jogo.
+     - allow-pointer-lock: o rato pode ficar preso no jogo (o allow= também pede).
+     - allow-forms: um formulário do jogo segue dentro do iframe.
+     Ficam de fora de propósito:
+     - allow-popups e allow-popups-to-escape-sandbox: window.open e target=_blank
+       (o "Powered by Ren'Py") não abrem outra janela do navegador.
+     - allow-downloads: não baixa arquivo (Export Saves, Download Log).
+     - allow-top-navigation e allow-top-navigation-by-user-activation: um clique
+       não troca esta moldura por outro site.
+     - allow-modals: sem alert, confirm ou print, que abrem diálogo do sistema.
+     O allow= (autoplay, fullscreen, gamepad, pointer-lock) é outra lista: o que
+     o navegador deixa o iframe pedir, além do sandbox. -->
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  #moldura{position:absolute;overflow:hidden;transform-origin:0 0}
+  iframe{position:absolute;left:0;top:0;border:0;background:#fff}
+</style>
+</head>
+<body>
+<div id="moldura"><iframe id="jogo" sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms" allow="autoplay; fullscreen; gamepad; pointer-lock" allowfullscreen></iframe></div>
+<script>
+  const p=new URLSearchParams(location.hash.slice(1));
+  const w=+p.get('w')||0, h=+p.get('h')||0, fh=+p.get('fh')||h;
+  const f=document.getElementById('jogo'), m=document.getElementById('moldura');
+  function ajustar(){
+    const W=innerWidth, H=innerHeight;
+    if(!w||!h){ Object.assign(m.style,{left:0,top:0,width:W+'px',height:H+'px',transform:'none'});
+                Object.assign(f.style,{width:W+'px',height:H+'px'}); return; }
+    const s=Math.min(W/w,H/h);
+    // folga de 20 px para as barras de rolagem da página do jogo ficarem fora da área visível
+    const pad=p.has('fh')?20:0;
+    Object.assign(f.style,{width:(w+pad)+'px',height:(fh+pad)+'px',left:(-pad/2)+'px',top:(-pad/2)+'px'});
+    Object.assign(m.style,{width:w+'px',height:h+'px',left:((W-w*s)/2)+'px',top:((H-h*s)/2)+'px',transform:'scale('+s+')'});
+  }
+  addEventListener('resize',ajustar); ajustar();
+  f.src=p.get('u')||'about:blank';
+  f.addEventListener('load',()=>f.focus());
+  addEventListener('click',()=>f.focus());
+</script>
+</body>
+</html>

@@ -196,8 +196,9 @@ class SemChamadaQuePrendeTests(unittest.TestCase):
     """Nenhum código do Benikids volta a ligar filas de entrada nem a chamar a versão
     síncrona do ShowWindow/BringWindowToTop (a regra do roteiro 31)."""
 
-    ARQUIVOS = ["src/plataforma_windows.py", "src/overlay.py", "src/trava_windows.py", "src/timer_watchdog.py",
-                "src/beni_windows.py", "src/vigia_da_pilula.py", "cliente/src/menu.rs", "cliente/src/navegador.rs"]
+    ARQUIVOS = ["src/plataforma_windows.py", "src/overlay.py", "src/quiosque_edge.py", "src/trava_windows.py",
+                "src/timer_watchdog.py", "src/beni_windows.py", "src/vigia_da_pilula.py",
+                "cliente/src/menu.rs", "cliente/src/navegador.rs"]
 
     def test_no_attach_thread_input_or_synchronous_show(self):
         for nome in self.ARQUIVOS:
@@ -216,6 +217,8 @@ class SemChamadaQuePrendeTests(unittest.TestCase):
         self.assertIn('self.pedir_janela("tela cheia", self.passo_da_tela_cheia', codigo)
         self.assertIn('self.pedir_janela("voltar", self.voltar_no_app', codigo)
         self.assertIn('self.pedir_janela("maximizar", self.passo_maximizar', codigo)
+        self.assertIn('self.pedir_janela("quiosque", self.passo_do_quiosque', codigo)
+        self.assertNotRegex(codigo, r"\bSendMessageW\(")
 
 
 if __name__ == "__main__":

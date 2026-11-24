@@ -1053,7 +1053,7 @@ impl Menu {
                 .args([
                     "--disable-backgrounding-occluded-windows",
                     "--disable-renderer-backgrounding",
-                    "--disable-features=CalculateNativeWinOcclusion",
+                    "--disable-features=CalculateNativeWinOcclusion,DnsOverHttps",
                     "--kiosk",
                     &url,
                 ]);

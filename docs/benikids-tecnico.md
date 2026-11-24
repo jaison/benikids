@@ -71,14 +71,20 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 - **DNS CleanBrowsing Family** em qualquer Wi‑Fi:
   - bloqueia sites adultos, proxies e VPNs;
   - força a Busca Segura do Google/Bing e o Modo Restrito do YouTube.
-- Os navegadores não conseguem contornar o filtro, porque o DNS‑over‑HTTPS está desligado.
+- Vale para o programa que usa o DNS do sistema. No Linux, o Firefox tem o DNS‑over‑HTTPS travado e o Chromium dos jogos desliga o DoH. No Windows, o Edge do computador e o Chrome instalado também desligam o DoH. Outro navegador com DNS seguro (o Firefox, por exemplo) pode furar.
+- **No Windows** o mesmo filtro entra na instalação, no lote que já pede a senha do administrador (não há um UAC só para o DNS). Vale para as placas de rede ativas. O IPv4 recebe o CleanBrowsing; se o IPv6 da placa não aceitar, fica sem servidor DNS (não continua no do roteador). Uma placa que aparecer depois (Wi‑Fi novo) é reaplicada pela tarefa agendada `Benikids DNS Familia`, que roda como o sistema, sem pedir senha de novo. **Sair** não desliga o filtro: é proteção do computador. Para desligar, Pais → Sistema → **Filtro de internet** (o Windows pede a senha). O log fica em `C:\ProgramData\Benikids\dns-familia.log`.
 - **uBlock Origin** nos sites, já ajustado para os jogos do Escola Games abrirem sem anúncio.
 - **Sites limpos com CSS próprio**:
   - Escola Games sem o menu "Jogos";
   - Colorir sem a barra de cima, banners e redes sociais;
-  - Autodraw sem "Share" e links externos.
+  - Autodraw sem "Share" e links externos;
+  - Kiddo Games sem "Spread the fun" (X, Facebook, Pinterest);
+  - Music Lab e PhET sem os links que saem do experimento.
 
-  As páginas proibidas também ficam bloqueadas por política do Firefox.
+  No Linux isso é o `userContent.css` do Firefox. No Windows é a extensão do Edge (`src/edge/sites-limpos/`), as mesmas regras de CSS. Não vai no uBlock Origin Lite: filtrar a Escola Games travava o jogo, e o uBOL não tem filtro cosmético avulso na política.
+  As páginas proibidas também ficam bloqueadas por política do Firefox (no Windows, `URLBlocklist` do Edge).
+  **No Windows**, a mesma extensão limita a navegação da janela do site aos domínios daquele tile (e, no PhET, só `/sims/html/` e a página local). Outro site volta para o tile. Não pede senha de administrador: as regras vão na cópia da extensão, no cache, ao abrir. O Firefox do Linux não tem essa lista; lá o bloqueio continua sendo o dos caminhos do `policies.json` mais o CSS.
+  O comando do Chromium monta as flags num lugar só (`flags_do_chromium`): um `--disable-features` e um `--load-extension` com a lista de pastas. A extensão de controle entra nessa lista; uma segunda flag de qualquer uma das duas é ignorada pelo navegador.
 - Downloads vão direto para `~/Imagens/Desenhos`, sem o painel do Firefox, que abriria o gerenciador de arquivos.
 
 ### 🎮 Controles (Pais → Sistema → Controles)
@@ -91,7 +97,7 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 - No Windows, os jogos usam o controle sozinhos, mas o menu ainda não é navegado pelo controle.
 
 ### Outros
-- **Coleções do itch.io**: cada criança tem uma coleção pública. Jogo adicionado na coleção vira ícone (com capa), e jogo removido some. A sincronização roda no login e a cada 30 min, então os pais testam antes e só então liberam.
+- **Coleções do itch.io**: cada perfil recebe a coleção do menino ou da menina (os dois endereços públicos ficam no programa). Jogo adicionado na coleção vira ícone ligado, na categoria Jogar, com capa; jogo removido some. O que os pais mudaram (ligado, categoria, nome) fica. Perfil sem menino/menina não recebe coleção. A sincronização roda 2 min depois de abrir o menu e a cada 30 min (no Linux, também no login e no timer). Para forçar outra coleção num perfil, o id dele em `itch-colecoes.json` manda.
 - Em Pais → Aparência → **Tela inicial**, você liga ou desliga a pergunta Aprender/Passatempo/Jogar em cada perfil.
 
 ### 🔄 Atualizações automáticas
@@ -114,7 +120,7 @@ Depois de instalar, antes de entregar para a criança:
 - Se quiser, ligue o **reforço de aprendizagem** (Pais → Tempo de tela) e salve os **logins dos sites** (Pais → Crianças).
 - Luanti: abra uma vez e instale o jogo **Mineclonia** (Conteúdo → Procurar).
 - Coloque seus jogos de SNES/PS1 em `~/Jogos/SNES` e `~/Jogos/PS1`. A BIOS do PS1 vai em `~/Jogos/PS1/BIOS` (veja `~/Jogos/LEIA-ME.txt`).
-- Troque as coleções do itch.io em `~/.config/cozy-kids-launcher/itch-colecoes.json`. O arquivo liga o **id do perfil** à URL pública da coleção.
+- As coleções do itch.io seguem o menino/menina de cada perfil (menina → coleção bea, menino → coleção beni). Um perfil antigo sem esse campo não recebe coleção. Para trocar a de um perfil, edite `~/.config/cozy-kids-launcher/itch-colecoes.json`: o **id do perfil** aponta para a URL pública, e essa entrada manda sobre o gênero. Não apague o arquivo de um notebook que já o tem.
 
 Rodar `./instalar.sh` de novo atualiza os arquivos e **não apaga** a configuração, os logins
 salvos nem os jogos. Use `./instalar.sh --sem-apps` para não mexer em apt/flatpak.
@@ -125,8 +131,9 @@ salvos nem os jogos. Use `./instalar.sh --sem-apps` para não mexer em apt/flatp
 
 ```
 login → ~/.config/autostart → cozy-iniciar
-          ├─ cozy-itch-sync      (coleções do itch.io → tiles "itch-*" no config.json)
+          ├─ cozy-itch-sync      (invólucro de itch_sync.py: coleções → tiles "itch-*")
           └─ cozy-kids-launcher  (servidor Python em 127.0.0.1:38431 + menu nativo beni-menu;
+                                  a mesma sincronização roda numa thread do servidor)
                  │                    sem GPU utilizável, Firefox em modo quiosque)
                  ├─ Pais → PIN na tela do menu + Firefox/Edge atrás dele com a área dos pais
                  │         (aparece com o PIN certo; fecha ao voltar)
@@ -144,6 +151,9 @@ login → ~/.config/autostart → cozy-iniciar
 | `src/` | código do launcher (original + mudanças) → `~/.local/share/cozy-kids-launcher` |
 | `src/beni_windows.py`, `src/plataforma_windows.py` | no Windows: inicia o servidor e o menu, e faz o papel do bash/`xdotool` (árvore de processos, Job Object para fechar o app inteiro, foco das janelas) |
 | `src/catalogo/windows.json`, `src/instalar_apps.py` | catálogo de apps do Windows e a instalação pelo `winget` |
+| `src/dns_familia.py` | DNS CleanBrowsing no Windows (lote com UAC + tarefa agendada) e o interruptor da área dos pais |
+| `src/sites/tiles.json`, `src/sites_windows.py` | tiles `special:` que um Windows já instalado recebe uma vez |
+| `src/edge/sites-limpos/` | extensão do Edge: CSS dos sites e, ao abrir, o limite de navegação do tile |
 | `scripts/windows/` | instalador e configuração inicial do pacote do Windows (montado pelo GitHub Actions em `menu-nativo.yml`) |
 | `cliente/` | **menu nativo** (`beni-menu`, Rust + gpui-fast): a tela das crianças sem navegador. Veja [cliente/LEIA-ME.md](../cliente/LEIA-ME.md) |
 | `src/usage_limits.py`, `src/frontend/usage-limits.*` | tempo de tela por categoria, dia da semana e reforço de aprendizagem |
@@ -158,7 +168,8 @@ login → ~/.config/autostart → cozy-iniciar
 | `beni/ferramentas/migrar-config.py`, `beni/config/migracoes.json` | mudanças de catálogo aplicadas uma vez em cada notebook |
 | `beni/lib/cozy-fixes/` | `nograb.c` (compilado na instalação) e `carregando.py` |
 | `beni/cozy-jogos/jogos.py` | lista de jogos SNES/PS1 |
-| `beni/chromium/cozy-jogo.html` | moldura que amplia jogos de navegador |
+| `src/itch_sync.py`, `src/jogo.html` | coleções do itch.io (Windows e Linux). No Linux a moldura abre em file://; no Windows o Edge abre o `jogo.html` da instalação também em file:// (`benikids-jogo:` no config) |
+| `beni/chromium/cozy-jogo.html` | a mesma moldura, aberta pelo Chromium no Linux |
 | `beni/config/` | configuração inicial (perfis, apps, categorias, limites) e coleções do itch.io |
 | `beni/emuladores/` | configurações do RetroArch, PCSX-R e Luanti para hardware fraco |
 | `beni/systemd/` | timer da sincronização do itch.io |
@@ -226,7 +237,8 @@ de janelas de mentira).
   roteiro 17 a tela "Acabou o tempo!" ficou sem teclado. Em qualquer fim da espera (PIN
   aceito, cancelado, timer, navegador que fechou, erro) o menu deixa de ficar por cima.
   O Edge abre com `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
-  --disable-features=CalculateNativeWinOcclusion`, para continuar desenhando coberto.
+  --disable-features=CalculateNativeWinOcclusion,DnsOverHttps`, para continuar desenhando coberto
+  e não trocar o DNS da família por um DNS-over-HTTPS próprio.
 - **Linux (X11):** `wmctrl` põe a janela do Firefox `below`, `skip_taskbar` e `skip_pager`, e
   o menu `above`; o `xdotool` devolve o foco ao menu e, depois do PIN, ativa o Firefox.
 - **Risco:** a janela nasce tentando pegar o foco; se pegar, a vigia devolve ao menu em até
@@ -407,6 +419,14 @@ um app aberto.
 - **Como o adulto recupera a barra:** Ctrl+Alt+Del → Gerenciador de Tarefas → em Processos,
   "Windows Explorer" → Reiniciar. Ou abrir e fechar o Benikids.
 
+### Windows: DNS com filtro e sites (`src/dns_familia.py`)
+
+Os IPs são os do Linux (`185.228.168.168`, `185.228.169.168`, `2a0d:2a00:1::`, `2a0d:2a00:2::`). O lote elevado da instalação grava `C:\ProgramData\Benikids\dns-familia.ps1` (ACL: SYSTEM e Administradores com controle total, Usuários só leitura, sem herança), põe `HKLM\SOFTWARE\Benikids\DnsFamilia = 1` e cria a tarefa `Benikids DNS Familia` como SYSTEM, com o caminho do script entre aspas. A tarefa sobe com o Windows e também no evento 10000 (rede conectou). Se esse evento não existir na máquina, a subida ainda reaplica. Com o registro em 0 a tarefa sai na hora e não mexe no DNS.
+
+Se `Set-DnsClientServerAddress` do IPv6 falhar, o script roda `netsh interface ipv6 set dnsservers … address=none` e registra. Não usa `ResetServerAddresses` nesse caso: isso devolveria o DNS do roteador. O log esperado é `ipv6=…` ou `ipv6 sem cleanbrowsing` seguido de `ipv6 sem servidor (o do roteador nao vale)`.
+
+O Edge do computador ganha a política `DnsOverHttpsMode=off`. O mesmo lote do filtro põe `DnsOverHttpsMode=off` em `HKLM\SOFTWARE\Policies\Google\Chrome` e `…\Chromium`, e tira esses valores ao desligar o filtro. Não há NRPT: uma regra para todos os nomes atrapalha impressora, VPN e nome local. O DoH do próprio Windows não troca o CleanBrowsing por outro provedor (esses IPs não estão na lista automática), então não mexemos nele. Os navegadores que o Benikids abre (sites e menu) também desligam o DoH na linha de comando (`--disable-features=…DnsOverHttps`) ou, no Firefox, `network.trr.mode=5`. Um Firefox (ou outro navegador) aberto fora, com DNS seguro, continua podendo furar. O log do filtro é `C:\ProgramData\Benikids\dns-familia.log`; o do navegador é `%USERPROFILE%\.cache\cozy-kids-launcher\beni-windows.log`.
+
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:
 limites por categoria e dia da semana, categorias que dividem tempo, reforço de aprendizagem,
@@ -438,6 +458,7 @@ traduzidos e o campo `limitBlocked`.
      ```
      `perfis` aceita `"todos"` ou uma lista de ids (`default` = Beni, `child-2501513b5fcb` = Bea).
      O `id` da migração nunca pode se repetir.
+   - No **Windows já instalado**, o tile `special:` também precisa estar em `src/sites/tiles.json` (o teste `test_sites_windows` confere que este arquivo é o config do Linux mais as migrações). Não acrescente o id novo em `SITES_JA_ENTREGUES` (`src/sites_windows.py`): essa tupla é a foto dos sites que já vinham no pacote, para um site apagado pelos pais não voltar. Um id fora dela é oferecido uma vez (`sitesSeen`).
    - Pacotes novos vão em `beni/sistema/pacotes-apt.txt` / `pacotes-flatpak.txt`.
 3. Suba o número em **`VERSION`** (ex.: `1.1.0`), faça o commit e o push.
 4. Crie a Release com a **tag igual à versão**:
@@ -517,6 +538,6 @@ ultrawide 2560×1080, usuário da criança sem administrador. O menu fica em 0% 
   - Só funciona com contas de e-mail/usuário e senha (não "Entrar com Google").
   - Se o site mudar a página de login, é preciso ajustar `src/site_logins.py`.
   - A senha fica protegida só pela permissão do arquivo, sem cifra. Proteja a área dos pais com PIN.
-- O filtro de DNS pode bloquear algum site inofensivo. Para desligar, veja `beni/MUDANCAS.md`.
+- O filtro de DNS pode bloquear algum site inofensivo. No Linux, para desligar, veja `beni/MUDANCAS.md`. No Windows: Pais → Sistema → **Filtro de internet** (pede a senha). Sair e reinstalar não desligam um filtro que os pais desligaram de propósito, nem ligam sozinhos um computador antigo: nele o filtro entra na próxima instalação de apps (o mesmo pedido de senha) ou pelo interruptor da área dos pais.
 - O `src/index.html` (e outros arquivos com textos) já vem em pt-BR, não é mais um modelo com `{{…}}`. O `scripts/install.sh` original continua funcionando, mas o caminho recomendado é o `instalar.sh`.
 - ROMs comerciais não são fornecidas. Use cópias dos seus próprios discos/cartuchos ou jogos homebrew.

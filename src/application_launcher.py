@@ -11,6 +11,7 @@ import time
 
 from app_detection import browser_family
 from browser_policy import is_safe_web_url
+from navegacao_sites import limites_da_url, preparar_extensao
 from process_state import owned_process_alive, terminate_owned_process
 
 
@@ -29,6 +30,15 @@ def resolve_tile_action(tile):
         ):
             if clean[0].startswith(prefix):
                 url = clean[0][len(prefix):]
+                if mode == "external":
+                    # Moldura do itch.io: o token (ou o http://127.0.0.1/jogo.html
+                    # antigo) vira file:// da instalação. Outro file:// continua
+                    # barrado pelo is_safe_web_url, logo abaixo.
+                    import itch_sync
+
+                    arquivo = itch_sync.url_da_moldura(url)
+                    if arquivo:
+                        return {"type": "web", "mode": mode, "url": arquivo}
                 if not is_safe_web_url(url):
                     raise ValueError("Invalid browser URL")
                 return {"type": "web", "mode": mode, "url": url}
@@ -148,10 +158,37 @@ def external_chromium_profile(cache_root, profile_id=""):
 # - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
 #   preenche sozinho um login salvo à mão (quem entra é o login automático, com
 #   o login de cada criança). Logins já salvos não são apagados.
+# - download_restrictions=3: neste perfil, nenhum download (o valor do
+#   DownloadRestrictions; aqui é preferência do perfil, não política de
+#   máquina, que atingiria o Edge dos pais). Não há chave em Local State que
+#   desligue o seletor de arquivos ou janela nova.
+# - popups=2 e automatic_downloads=2: o perfil bloqueia window.open e download
+#   automático (2 = bloquear). Ctrl+N e o menu "abrir em nova janela" não passam
+#   por essa chave: o vigia do quiosque fecha a janela.
+# Um só --disable-features vale. Translate já estava. DnsOverHttps: o navegador
+# não troca o DNS do Windows (CleanBrowsing) por um DoH próprio.
+# DisableLoadExtensionCommandLineSwitch reabre o --load-extension (a extensão
+# dos sites). FileSystemAccessAPI é o seletor novo (showOpenFilePicker); o
+# diálogo clássico não tem flag — o vigia do quiosque fecha essa janela.
+CHROMIUM_RECURSOS_DESLIGADOS = (
+    "Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch,FileSystemAccessAPI"
+)
+EXTENSAO_SITES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edge", "sites-limpos")
+CSS_FIREFOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "firefox", "userContent.css")
+
 CHROMIUM_PREFERENCES = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
-    "profile": {"password_manager_enabled": False},
+    "download_restrictions": 3,
+    "profile": {
+        "password_manager_enabled": False,
+        "default_content_setting_values": {
+            "popups": 2,
+            "automatic_downloads": 2,
+        },
+    },
+    # o mesmo DoH desligado, dentro do perfil, se a linha de comando não pegar
+    "dns_over_https": {"mode": "off", "templates": ""},
 }
 
 
@@ -206,14 +243,91 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
     return True
 
 
+def pasta_extensao_sites(cache_root, url):
+    """Pasta da extensão dos sites, com o limite deste tile, ou '' se o pacote não a trouxe.
+
+    A cópia no cache leva as regras do declarativeNetRequest. Sem ela, cai na
+    pasta de origem (só o CSS). Não pede UAC. Devolve a pasta, não a flag:
+    o Chromium só honra um --load-extension, e quem monta é flags_do_chromium.
+    """
+    if not os.path.isfile(os.path.join(EXTENSAO_SITES, "manifest.json")):
+        return ""
+    try:
+        destino = preparar_extensao(os.path.join(os.fspath(cache_root), "extensao-sites"), url)
+    except OSError:
+        if os.name == "nt":
+            _log_windows("navegador: não consegui gravar o limite de navegação; segue só o CSS")
+        return EXTENSAO_SITES
+    if os.name == "nt":
+        _log_windows(
+            "navegador: navegação de topo limitada a "
+            + limites_da_url(url)["resumo"]
+            + " (extensão, sem UAC)"
+        )
+    return destino
+
+
+def flags_do_chromium(pastas=()):
+    """Um --disable-features e, se houver pasta, um --load-extension.
+
+    O Chromium ignora a segunda flag de cada. As pastas vão juntas, separadas
+    por vírgula. O controle acrescenta a pasta dele na lista; não monta flag.
+    """
+    flags = [f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}"]
+    lista = []
+    for pasta in pastas:
+        if not pasta:
+            continue
+        caminho = os.fspath(pasta)
+        if caminho not in lista:
+            lista.append(caminho)
+    if lista:
+        flags.append("--load-extension=" + ",".join(lista))
+    return flags
+
+
+def garantir_perfil_firefox(profile):
+    """DoH desligado e o CSS dos sites no perfil do Firefox que o Benikids abre.
+
+    network.trr.mode=5 é "desligado por escolha" (o policies.json do Linux trava
+    o mesmo no computador inteiro). O userContent.css é o de beni/firefox, copiado
+    para src/firefox para ir no pacote do Windows.
+    """
+    os.makedirs(profile, exist_ok=True)
+    _set_user_pref(profile, "network.trr.mode", 5)
+    _set_user_pref(profile, "toolkit.legacyUserProfileCustomizations.stylesheets", True)
+    if not os.path.isfile(CSS_FIREFOX):
+        return
+    destino_dir = os.path.join(profile, "chrome")
+    destino = os.path.join(destino_dir, "userContent.css")
+    try:
+        with open(CSS_FIREFOX, "rb") as handle:
+            conteudo = handle.read()
+        atual = b""
+        if os.path.isfile(destino):
+            with open(destino, "rb") as handle:
+                atual = handle.read()
+        if atual != conteudo:
+            os.makedirs(destino_dir, exist_ok=True)
+            with open(destino, "wb") as handle:
+                handle.write(conteudo)
+    except OSError:
+        pass
+
+
 def external_browser_command(
     browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
+    extensoes=(), extensao=None,
 ):
     """Build the isolated kiosk command used for an external web tile.
 
     marionette_port (Firefox) e devtools_port (Edge/Chrome) só vêm quando o tile
     tem login automático salvo: o controle remoto do navegador fica desligado
     nos outros sites.
+
+    extensoes (ou extensao, uma pasta) entram no mesmo --load-extension da
+    extensão dos sites. Quem chama não monta --load-extension nem
+    --disable-features: o Chromium só honra um de cada.
     """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
@@ -224,11 +338,16 @@ def external_browser_command(
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
+            "--lang=pt-BR",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço da preferência translate.enabled=false (só um --disable-features
-            # vale: some outra função desligada aqui, na mesma lista)
-            "--disable-features=Translate",
         ]
+        extras = [pasta for pasta in (extensoes or ()) if pasta]
+        if extensao:
+            extras.append(extensao)
+        sites = pasta_extensao_sites(cache_root, url)
+        command += flags_do_chromium(([sites] if sites else []) + extras)
+        if os.name == "nt":
+            _log_windows("navegador: DoH desligado; extensão sites-limpos no perfil do Edge")
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,
             # só em 127.0.0.1
@@ -236,9 +355,14 @@ def external_browser_command(
                 f"--remote-debugging-port={int(devtools_port)}",
                 "--remote-debugging-address=127.0.0.1",
             ]
+        if os.name == "nt" and url.startswith("file:"):
+            # sem o fragmento: o log fica com o caminho codificado, não com o jogo
+            _log_windows("jogo: Edge em quiosque na moldura local " + url.split("#", 1)[0])
         return command + ["--kiosk", f"--app={url}"]
     profile = external_firefox_profile(cache_root, profile_id)
-    os.makedirs(profile, exist_ok=True)
+    garantir_perfil_firefox(profile)
+    if os.name == "nt":
+        _log_windows("navegador: DoH desligado (network.trr.mode=5) e userContent.css no perfil")
     if marionette_port:
         # login automático (site_logins.py): o Marionette só liga neste tile
         _set_user_pref(profile, "marionette.port", int(marionette_port))

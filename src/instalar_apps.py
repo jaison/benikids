@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import catalogo_windows  # noqa: E402
+import dns_familia  # noqa: E402
 import politicas_edge  # noqa: E402
 import marca_tk as marca  # noqa: E402
 
@@ -305,15 +306,32 @@ def _linhas_politicas_edge(resultados):
             f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ('edge-politicas|' + $c)"]
 
 
-def script_admin(pares, pasta, politicas=False):
-    """O PowerShell do lote: as políticas do Edge (se faltam), as dependências e
-    cada app, anotando os códigos."""
+def _linhas_dns(resultados):
+    """Filtro de DNS (CleanBrowsing): dns_familia.py, no mesmo pedido de senha.
+    Anota "dns-familia|0" ou o erro, sem parar o lote dos apps."""
+    miolo = "\n".join(dns_familia.linhas_ligar())
+    return [
+        "try {",
+        "$ErrorActionPreference = 'Stop'",
+        miolo,
+        "$c = 0",
+        "} catch { $c = 'erro: ' + $_.Exception.Message }",
+        "finally { $ErrorActionPreference = 'Continue' }",
+        f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ('dns-familia|' + $c)",
+    ]
+
+
+def script_admin(pares, pasta, politicas=False, dns=False):
+    """O PowerShell do lote: as políticas do Edge e o DNS com filtro (se faltam),
+    as dependências e cada app, anotando os códigos."""
     logs = os.path.join(pasta, "logs")
     resultados = os.path.join(pasta, "resultados.txt")
     linhas = ["$ErrorActionPreference = 'Continue'",
               f"New-Item -ItemType Directory -Force -Path {_ps(logs)} | Out-Null"]
     if politicas:
         linhas += _linhas_politicas_edge(resultados)
+    if dns:
+        linhas += _linhas_dns(resultados)
     for item, arquivo in pares:
         for n, dep in enumerate(dependencias(arquivo)):
             linhas.append(_linha_instalar(f"{item['id']}-dependencia{n + 1}", dep, "", logs, resultados))
@@ -341,11 +359,11 @@ def ler_resultados(caminho):
 CODIGOS_OK = {"0", "1641", "3010"}  # 1641/3010: instalou e pede para reiniciar
 
 
-def instalar_como_admin(pares, pasta, ao_terminar_app=None, politicas=False):
+def instalar_como_admin(pares, pasta, ao_terminar_app=None, politicas=False, dns=False):
     """Roda todos os instaladores "para todos" de uma vez, com um só pedido do UAC
     (a conta da criança não é administradora: o Windows pede a senha de um adulto).
     Enquanto o lote roda, avisa ao_terminar_app(id, código) a cada app que termina."""
-    texto, resultados = script_admin(pares, pasta, politicas=politicas)
+    texto, resultados = script_admin(pares, pasta, politicas=politicas, dns=dns)
     try:
         os.remove(resultados)
     except OSError:
@@ -492,13 +510,16 @@ def trabalhar(itens, avisos, pasta=None):
             arquivo = None
         if arquivo:
             pares.append((item, arquivo))
-    # bloqueador de anúncios e páginas bloqueadas no Edge: vão no mesmo pedido de
-    # senha; numa reinstalação que já as tem, não pedem senha de novo
+    # bloqueador de anúncios, páginas bloqueadas e o DNS com filtro: vão no mesmo
+    # pedido de senha. Quem já tem não pede de novo. DnsFamilia=0 é escolha dos
+    # pais (desligado de propósito): falta() fica falso e a reinstalação não liga.
     politicas = politicas_edge.faltam()
-    if pares or politicas:
+    dns = dns_familia.falta()
+    if pares or politicas or dns:
         for item, _arquivo in pares:
             avisos.put((item["id"], "instalando", "instala depois da senha"))
-        avisos.put((None, "admin", "politicas" if politicas else ""))
+        marcador = "+".join(parte for parte, vai in (("politicas", politicas), ("dns", dns)) if vai)
+        avisos.put((None, "admin", marcador))
         por_id = {item["id"]: item for item, _ in pares}
 
         def terminou(item_id, codigo):
@@ -518,7 +539,7 @@ def trabalhar(itens, avisos, pasta=None):
                 avisos.put((item_id, "erro", f"não instalou (código {codigo})"))
                 relatar_falha(por_id[item_id], codigo, pasta)
 
-        codigos = instalar_como_admin(pares, pasta, terminou, politicas=politicas)
+        codigos = instalar_como_admin(pares, pasta, terminou, politicas=politicas, dns=dns)
         if "fim" not in codigos and not any(i in codigos for i in por_id):
             avisos.put((None, "sem_senha", ""))  # o adulto não digitou a senha (ou cancelou)
         for item, _arquivo in pares:
@@ -592,9 +613,14 @@ def janela(itens):
             while True:
                 item_id, estado, texto = avisos.get_nowait()
                 if item_id is None and estado == "admin":
+                    extras = []
+                    if "politicas" in (texto or ""):
+                        extras.append("o bloqueador de anúncios")
+                    if "dns" in (texto or ""):
+                        extras.append("o filtro de internet")
+                    extra = (" e " + " e ".join(extras)) if extras else ""
                     rodape.config(text="Agora o Windows pede a senha de um administrador do computador,\n"
-                                       "uma vez só, para instalar os que faltam"
-                                       + (" e o bloqueador de anúncios." if texto == "politicas" else "."))
+                                       "uma vez só, para instalar os que faltam" + extra + ".")
                     raiz.lift()
                     continue
                 if item_id is None and estado == "sem_senha":

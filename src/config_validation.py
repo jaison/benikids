@@ -156,6 +156,14 @@ def _validate_flat_config(data, existing_pin_hash="", allow_pin_hash=False):
         ):
             raise ValueError("catalogSeen must be a list of app ids")
 
+    # sites special: já oferecidos no Windows (apagado pelos pais não volta)
+    if "sitesSeen" in result:
+        vistos = result["sitesSeen"]
+        if not isinstance(vistos, list) or len(vistos) > 500 or not all(
+            isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", v) for v in vistos
+        ):
+            raise ValueError("sitesSeen must be a list of site ids")
+
     # Benikids: nascimento (só mês/ano, fica no computador), menino/menina e o número
     # aleatório da criança na telemetria de uso; vazio/None = não informado
     for field, padrao in (

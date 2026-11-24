@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import catalogo_windows
 import controles
 import inicio_automatico
+import itch_sync
 import telemetria
 import site_logins
 from app_detection import (
@@ -1233,6 +1234,15 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
             gender=crianca.get("icon"),
             telemetryId=os.urandom(16).hex(),
         )
+        # Menina recebe os jogos de vestir/maquiagem. Menino não fica com os
+        # que vieram copiados do perfil-modelo. Sem gender a configuração nem chega aqui.
+        import jogos_genero
+        jogos_genero.retirar_de_outros_generos(perfil)
+        jogos_genero.aplicar_perfil(
+            perfil,
+            "windows" if os.name == "nt" else "linux",
+            porta=PORT,
+        )
         if nascimento:
             perfil["birthMonth"] = nascimento
         else:
@@ -1549,12 +1559,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 version=status["latestVersion"],
             )
             return self.json_response(status)
+        if self.path == "/api/dns-familia":
+            if not self.require_admin():
+                return
+            if os.name != "nt":
+                return self.json_response({"status": "error", "message": "Só no Windows"}, 404)
+            import dns_familia
+            return self.json_response({"status": "ok", **dns_familia.ler()})
         if self.path == "/api/features":
             shutdown_ok = bool(comandos_desligar())
             return self.json_response({
                 "shutdownAvailable": shutdown_ok,
                 "speechFeedbackAvailable": speech_feedback().available(),
                 "catalogInstallAvailable": os.name == "nt",
+                "dnsFamiliaAvailable": os.name == "nt",
             })
         if self.path == "/api/browsers":
             return self.json_response(
@@ -2019,6 +2037,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             self.json_response({"status": "ok"})
             return
+        if action == "api/dns-familia":
+            # Liga ou desliga o DNS com filtro. Pede o UAC; Sair não desfaz.
+            if not self.require_admin():
+                return
+            if os.name != "nt":
+                self.json_response({"status": "error", "message": "Só no Windows"}, 404)
+                return
+            body = self.read_json_body()
+            if body is None:
+                return
+            if set(body) != {"ligado"} or not isinstance(body.get("ligado"), bool):
+                self.json_response(
+                    {"status": "error", "message": "Esperado: ligado true ou false"}, 400,
+                )
+                return
+            import dns_familia
+            ok = dns_familia.aplicar(body["ligado"])
+            estado = dns_familia.ler()
+            log_runtime_event("dns.familia", level="info" if ok else "warning")
+            if ok:
+                self.json_response({"status": "ok", **estado})
+            else:
+                self.json_response({
+                    "status": "cancelado",
+                    "message": "A senha não foi digitada ou o Windows não deixou.",
+                    **estado,
+                }, 409)
+            return
         if action == "api/telemetria/apagar":
             if not self.require_admin():
                 return
@@ -2274,6 +2320,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not self.require_admin():
                 return
             reset_active_tile()
+            # O filtro de DNS fica ligado: é proteção do computador, não da sessão.
+            # Desliga em Pais → Sistema → Filtro de internet (pede a senha do Windows).
             # Sair com PIN encerra o timer da sessão: senão o Benikids reabria já com
             # "Acabou o tempo!" (roteiro 25). Uma queda ou reinício não passam por aqui,
             # e aí o timer continua valendo.
@@ -2650,9 +2698,23 @@ def main():
                         log_runtime_event("catalogo.sincronizado")
                 except Exception:  # noqa: BLE001
                     pass
+                try:  # sites special: novos chegam uma vez; apagado pelos pais não volta
+                    import sites_windows
+                    atual, mudou = sites_windows.sincronizar(load_stored_cfg())
+                    if mudou:
+                        save_stored_cfg(atual)
+                        log_runtime_event("sites.sincronizados")
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 telemetria_service().iniciar()
             except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor
+                pass
+            try:
+                # coleções do itch.io: 2 min depois de subir e a cada 30 min
+                # (no Linux o cozy-itch-sync também chama a mesma lógica)
+                itch_sync.iniciar()
+            except Exception:  # noqa: BLE001
                 pass
             if os.name == "nt":
                 try:  # roteiro 31: pílula travada é reaberta; app travado não conta tempo

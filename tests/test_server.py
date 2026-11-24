@@ -1614,7 +1614,18 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual((angela["avatar"], angela["theme"], angela["title"]), ("👧", "benikids", "Oi, Ângela!"))
         self.assertEqual((beni["avatar"], beni["theme"]), ("👦", "benikids"))
         self.assertNotEqual(angela["id"], beni["id"])
-        self.assertEqual(angela["tiles"], beni["tiles"])
+        self.assertEqual(
+            [t["id"] for t in beni["tiles"]],
+            [t["id"] for t in angela["tiles"] if not t["id"].startswith("bea-")],
+        )
+        self.assertEqual(
+            [t["id"] for t in angela["tiles"] if t["id"].startswith("bea-")],
+            ["bea-dollmaker", "bea-kitty", "bea-darling", "bea-missy"],
+        )
+        for tile in angela["tiles"]:
+            if tile["id"].startswith("bea-"):
+                self.assertTrue(tile["visible"])
+                self.assertEqual(tile["category"], "jogos")
         self.assertEqual((angela["birthMonth"], angela["gender"], beni["gender"]), ("2018-05", "menina", "menino"))
         self.assertNotIn("birthMonth", beni)
         self.assertRegex(angela["telemetryId"], r"^[0-9a-f]{32}$")

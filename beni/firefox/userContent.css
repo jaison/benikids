@@ -3,7 +3,8 @@
   a[href*="/jogos-divertidos"], a[href*="bestschoolgames.com"],
   [data-hideable-key="jogos-divertidos"], [data-hideable-key="jogos-em-ingles"],
   .swiper-slide:has(a[href*="/diversao/"]), a[href*="/diversao/"],
-  [data-scrollable-list]:has(a[href*="/diversao/"]):not(:has(a[href*="/jogos/"], a[href*="/recursos-educacionais/"])) {
+  [data-scrollable-list]:has(a[href*="/diversao/"]):not(:has(a[href*="/jogos/"], a[href*="/recursos-educacionais/"])),
+  a[href*="instagram.com"], a[href*="youtube.com"] {
     display: none !important;
   }
 }
@@ -33,6 +34,52 @@
   #main-menu > ul > li:nth-child(6),
   #main-menu > ul > li:nth-child(7),
   #main-menu footer, #aix-link, #terms-link, a[target="_blank"] {
+    display: none !important;
+  }
+}
+
+/* Compartilhar, doação e loja. Login fica: Khan e Teach Your Monster entram por ele. */
+@-moz-document regexp("https?://.*") {
+  a[href*="facebook.com"],
+  a[href*="instagram.com"],
+  a[href*="tiktok.com"],
+  a[href*="twitter.com"],
+  a[href*="://x.com"],
+  a[href*="pinterest.com"],
+  a[href*="apps.apple.com"],
+  a[href*="play.google.com"],
+  a[href*="itunes.apple.com"],
+  a[href*="givecampus.com"],
+  a[href*="donate.code.org"],
+  a[href*="/donate"] {
+    display: none !important;
+  }
+}
+
+/* Kiddo Games: "Spread the fun" (Post on X, Facebook, Pinterest). */
+@-moz-document domain("kiddogames.fun") {
+  .share-cta, #shareBtn, #sX, #sFB, #sPin {
+    display: none !important;
+  }
+}
+
+/* Music Lab: o About aponta para fora. O experimento é link do próprio site. */
+@-moz-document domain("musiclab.chromeexperiments.com") {
+  a[target="_blank"],
+  a[href*="google.com"],
+  a[href*="g.co"],
+  a[href*="github.com"],
+  a[href*="wikipedia.org"],
+  a[href*="w3.org"] {
+    display: none !important;
+  }
+}
+
+/* PhET: o menu da simulação não leva ao site, à doação nem ao STUDIO. */
+@-moz-document domain("phet.colorado.edu") {
+  a[href*="givecampus"],
+  a[href*="/donate"],
+  a[href*="phet.colorado.edu/"]:not([href*="/sims/html/"]) {
     display: none !important;
   }
 }

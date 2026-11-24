@@ -1,0 +1,8 @@
+/* AutoDraw: sem Share (publica o desenho), Artists, About e links externos.
+   Ordem do menu: Start over, Download, Share, How-To, Shortcuts, Artists, About. */
+#main-menu > ul > li:nth-child(3),
+#main-menu > ul > li:nth-child(6),
+#main-menu > ul > li:nth-child(7),
+#main-menu footer, #aix-link, #terms-link, a[target="_blank"] {
+  display: none !important;
+}

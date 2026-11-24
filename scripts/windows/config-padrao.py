@@ -20,8 +20,23 @@ from config_validation import validate_stored_config  # noqa: E402
 
 
 def portavel(tile):
+    """Sites (special:) e jogos de navegador do Linux (navegador-jogos).
+
+    O jogo de tamanho fixo (cozy-jogo.html) vira o token benikids-jogo:,
+    aberto em file:// na hora. O site do jogo abre direto. Visibilidade e
+    categoria ficam as do Linux.
+    """
+    import jogos_genero
+
     cmd = tile.get("cmd") or []
-    return len(cmd) == 1 and isinstance(cmd[0], str) and cmd[0].startswith("special:")
+    if len(cmd) == 1 and isinstance(cmd[0], str) and cmd[0].startswith("special:"):
+        return tile
+    novo = jogos_genero.traduzir_navegador_jogos(cmd)
+    if not novo:
+        return None
+    tile = dict(tile)
+    tile["cmd"] = novo
+    return tile
 
 
 def main(saida):
@@ -36,7 +51,7 @@ def main(saida):
     cfg["activeProfileId"] = cfg["profiles"][0]["id"]
     cfg["setupCompleted"] = False
     for perfil in cfg.get("profiles", []):
-        perfil["tiles"] = [t for t in perfil.get("tiles", []) if portavel(t)]
+        perfil["tiles"] = [t for t in (portavel(tile) for tile in perfil.get("tiles", [])) if t]
         # catálogo do Windows: todos ligados por padrão (os pais desligam)
         ids_sites = {t["id"] for t in perfil["tiles"]}
         perfil["tiles"] += [t for t in catalogo_windows.tiles() if t["id"] not in ids_sites]

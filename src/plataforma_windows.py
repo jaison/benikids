@@ -381,6 +381,64 @@ def janelas_de(pids):
     return achadas
 
 
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetClassNameW.restype = ctypes.c_int
+user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetWindowTextW.restype = ctypes.c_int
+user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.PostMessageW.restype = wintypes.BOOL
+
+
+def descrever_janelas(pids):
+    """Janelas visíveis de nível superior dos PIDs, com ou sem dono, na ordem do Z
+    (a da frente primeiro). Cada item: hwnd, classe, titulo, dono, area, visivel.
+
+    O diálogo de arquivo tem dono, então janelas_de não o vê. A classe vem do
+    GetClassName. O título é o da legenda: em janela de outro processo o
+    GetWindowText lê a legenda, não manda WM_GETTEXT. Nada de SendMessage."""
+    alvo = {int(p) for p in pids}
+    achadas = []
+    classe_buf = ctypes.create_unicode_buffer(256)
+    titulo_buf = ctypes.create_unicode_buffer(512)
+
+    def cada(h, _):
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        if pid.value not in alvo or not user32.IsWindowVisible(h):
+            return True
+        user32.GetClassNameW(h, classe_buf, len(classe_buf))
+        user32.GetWindowTextW(h, titulo_buf, len(titulo_buf))
+        r = wintypes.RECT()
+        area = 0
+        if user32.GetWindowRect(h, ctypes.byref(r)):
+            area = max(0, r.right - r.left) * max(0, r.bottom - r.top)
+        achadas.append({
+            "hwnd": h,
+            "classe": classe_buf.value,
+            "titulo": titulo_buf.value,
+            "dono": bool(user32.GetWindow(h, GW_OWNER)),
+            "area": area,
+            "visivel": True,
+        })
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(cada), 0)
+    return achadas
+
+
+def fechar_extra(hwnd, classe):
+    """Fecha uma janela que não é a do quiosque, sem esperar ela processar.
+
+    PostMessage volta na hora. O #32770 (Abrir, Salvar, Imprimir) leva IDCANCEL
+    antes do WM_CLOSE, para o diálogo cancelar em vez de gravar o arquivo."""
+    import quiosque_edge
+
+    ok = True
+    for mensagem, wparam in quiosque_edge.mensagens_para_fechar(classe):
+        ok = bool(user32.PostMessageW(hwnd, mensagem, wparam, 0)) and ok
+    return ok
+
+
 def travada(h):
     """O Windows considera a janela "Não respondendo" (5 s sem processar mensagens)."""
     return bool(h) and bool(user32.IsHungAppWindow(h))
@@ -651,10 +709,15 @@ def pid_da_janela_ativa():
     return pid.value or None
 
 
-def alt_esquerda(pid_raiz):
-    """Alt+← na janela do app (o "‹ Voltar" do overlay nos sites)."""
-    janelas = janelas_de(arvore(pid_raiz))
-    if not janelas or not trazer_para_frente(janelas[0]):
+def alt_esquerda(pid_raiz, hwnd=None):
+    """Alt+← na janela do app (o "‹ Voltar" do overlay nos sites).
+
+    hwnd, quando vem, é a do quiosque: a da frente pode ser uma janela extra
+    que o vigia está fechando, e o Alt+← não pode ir para ela."""
+    if not hwnd:
+        janelas = janelas_de(arvore(pid_raiz))
+        hwnd = janelas[0] if janelas else None
+    if not hwnd or not trazer_para_frente(hwnd):
         return False
     user32.keybd_event(VK_MENU, 0, 0, 0)
     user32.keybd_event(VK_LEFT, 0, 0, 0)

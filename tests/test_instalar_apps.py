@@ -62,7 +62,7 @@ class InstalarAppsTest(unittest.TestCase):
         with mock.patch.object(instalar_apps.catalogo_windows, "localizar", return_value=None), \
              mock.patch.object(instalar_apps, "instalar", side_effect=instalar), \
              mock.patch.object(instalar_apps, "baixar", side_effect=lambda item, pasta: f"{item['id']}.exe"), \
-             mock.patch.object(instalar_apps, "instalar_como_admin", side_effect=lambda pares, pasta, ao_terminar=None, politicas=False: lote.extend(i["id"] for i, _ in pares) or {}):
+             mock.patch.object(instalar_apps, "instalar_como_admin", side_effect=lambda pares, pasta, ao_terminar=None, politicas=False, dns=False: lote.extend(i["id"] for i, _ in pares) or {}):
             fila = queue.Queue()
             instalar_apps.trabalhar(itens, fila)
         self.assertEqual(ordem, ["usuario", "teimoso"])  # o "machine" nem passa pela fila sem senha
