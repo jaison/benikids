@@ -138,6 +138,44 @@ class JogosPorGeneroTest(unittest.TestCase):
         jogos_genero.aplicar_perfil(menino, "linux")
         self.assertEqual(menino["tiles"], [])
 
+    def test_trocar_genero_tira_bea_visivel_e_respeita_oculto_e_apagado(self):
+        perfil = {
+            "id": "ela",
+            "gender": "menino",
+            "tilesSeen": ["bea-dollmaker", "bea-kitty", "bea-darling", "bea-missy"],
+            "tiles": [
+                {"id": "paint", "visible": True, "label": "Desenhar"},
+                {"id": "bea-dollmaker", "visible": True, "label": "Boneca"},
+                {"id": "bea-kitty", "visible": False, "label": "Escondido"},
+            ],
+        }
+        jogos_genero.trocar_genero(perfil, "linux")
+        ids = [t["id"] for t in perfil["tiles"]]
+        self.assertEqual(ids, ["paint", "bea-kitty"])
+        self.assertFalse(perfil["tiles"][1]["visible"])
+        self.assertEqual(perfil["tiles"][1]["label"], "Escondido")
+        self.assertNotIn("bea-dollmaker", perfil["tilesSeen"])
+        self.assertIn("bea-darling", perfil["tilesSeen"])
+        self.assertIn("bea-missy", perfil["tilesSeen"])
+
+        perfil["gender"] = "menina"
+        jogos_genero.trocar_genero(perfil, "linux")
+        por_id = {t["id"]: t for t in perfil["tiles"]}
+        self.assertTrue(por_id["bea-dollmaker"]["visible"])
+        self.assertFalse(por_id["bea-kitty"]["visible"])
+        self.assertEqual(por_id["bea-kitty"]["label"], "Escondido")
+        self.assertNotIn("bea-darling", por_id)
+        self.assertNotIn("bea-missy", por_id)
+        self.assertEqual(perfil["tiles"][0]["id"], "paint")
+
+    def test_trocar_para_menina_no_windows_abre_na_moldura(self):
+        perfil = {"id": "ele", "gender": "menina", "tiles": [{"id": "paint", "visible": True}]}
+        jogos_genero.trocar_genero(perfil, "windows")
+        boneca = next(t for t in perfil["tiles"] if t["id"] == "bea-dollmaker")
+        self.assertTrue(boneca["cmd"][0].startswith(
+            "special:external-browser:benikids-jogo:#"
+        ))
+
 
 class NavegadorJogosWindowsTest(unittest.TestCase):
     def test_site_abre_direto_e_moldura_vai_para_jogo_html(self):

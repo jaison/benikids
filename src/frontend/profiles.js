@@ -45,8 +45,14 @@ function renderProfileAdmin(){
   document.getElementById('cfgProfileAvatar').value=cfg.avatar||'';
   const nameInput=document.getElementById('newProfileName');
   const avatarInput=document.getElementById('newProfileAvatar');
+  const genderInput=document.getElementById('newProfileGender');
   nameInput.placeholder=text.namePlaceholder;
   avatarInput.placeholder=text.avatarPlaceholder;
+  if(genderInput&&genderInput.options.length>=3){
+    genderInput.options[0].textContent=text.genderChoose;
+    genderInput.options[1].textContent=text.boy;
+    genderInput.options[2].textContent=text.girl;
+  }
   setIconLabel(document.getElementById('createProfileBtn'),'add',text.create);
 
   const list=document.getElementById('profileList');
@@ -137,21 +143,29 @@ async function activateProfile(profileId,options={}){
 async function createProfileFromAdmin(){
   const nameInput=document.getElementById('newProfileName');
   const avatarInput=document.getElementById('newProfileAvatar');
+  const genderInput=document.getElementById('newProfileGender');
   const message=document.getElementById('profileAdminMessage');
   const name=nameInput.value.trim();
+  const gender=genderInput?genderInput.value:'';
   if(!name){
     renderUiState(message,'error',profileText().nameRequired);
     nameInput.focus();
+    return;
+  }
+  if(gender!=='menino'&&gender!=='menina'){
+    renderUiState(message,'error',profileText().genderRequired);
+    if(genderInput) genderInput.focus();
     return;
   }
   const button=document.getElementById('createProfileBtn');
   button.disabled=true;
   renderUiState(message,'loading',uiText.saveLoading);
   try{
-    const created=await profileApi('/api/profiles/create',{name:name,avatar:avatarInput.value.trim()});
+    const created=await profileApi('/api/profiles/create',{name:name,avatar:avatarInput.value.trim(),gender:gender});
     cfg.profiles=created.profiles;
     nameInput.value='';
     avatarInput.value='';
+    if(genderInput) genderInput.value='';
     await activateProfile(created.profileId,{admin:true});
   }catch(e){
     renderUiState(message,'error',profileText().error);

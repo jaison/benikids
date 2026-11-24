@@ -466,6 +466,8 @@ class ServerApiTests(unittest.TestCase):
         server_module.clear_pin_failures()
         server_module.Handler.log_message = lambda *args, **kwargs: None
 
+        self._sync = mock.patch.object(server_module, "agendar_sync_da_colecao")
+        self._sync.start()
         server_module.save_cfg(base_config())
         self.httpd = server_module.create_server(port=0)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -474,6 +476,7 @@ class ServerApiTests(unittest.TestCase):
         self.base_url = f"http://127.0.0.1:{self.port}"
 
     def tearDown(self):
+        self._sync.stop()
         self.httpd.shutdown()
         self.httpd.server_close()
         self.thread.join(timeout=5)
@@ -770,7 +773,7 @@ class ServerApiTests(unittest.TestCase):
         status, created, _ = self.request(
             "/api/profiles/create",
             method="POST",
-            body={"name": "Alex", "avatar": "🚀"},
+            body={"name": "Alex", "avatar": "🚀", "gender": "menino"},
             origin=self.base_url,
         )
         self.assertEqual(status, 200)
@@ -785,6 +788,13 @@ class ServerApiTests(unittest.TestCase):
         _, catalog, _ = self.request("/api/media")
         self.assertEqual(catalog["favoriteIds"], [])
 
+        status, _, _ = self.request(
+            "/api/profiles/select",
+            method="POST",
+            body={"profileId": "default"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
         status, _, _ = self.request(
             "/api/media/favorite",
             method="POST",
@@ -1483,7 +1493,7 @@ class ServerApiTests(unittest.TestCase):
         status, created, _ = self.request(
             "/api/profiles/create",
             method="POST",
-            body={"name": "Alex", "avatar": "🚀"},
+            body={"name": "Alex", "avatar": "🚀", "gender": "menino"},
             origin=self.base_url,
         )
         self.assertEqual(status, 200)
@@ -2057,6 +2067,79 @@ class ServerApiTests(unittest.TestCase):
         status, _, _ = self.request("/api/controles/captura", method="POST",
                                     body={"acao": "iniciar"}, origin="https://example.com")
         self.assertEqual(status, 403)
+
+    def test_perfil_novo_usa_o_genero_escolhido_e_a_troca_tira_os_bea(self):
+        atual = server_module.load_cfg()
+        atual["gender"] = "menina"
+        atual["timerMinutes"] = 5
+        atual["tiles"].append({
+            "id": "so-desta",
+            "label": "Só desta",
+            "emoji": "⭐",
+            "cmd": ["echo", "oi"],
+            "visible": True,
+            "category": "jogos",
+        })
+        server_module.save_cfg(atual)
+
+        status, erro, _ = self.request(
+            "/api/profiles/create",
+            method="POST",
+            body={"name": "Sem genero"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 400)
+
+        status, criado, _ = self.request(
+            "/api/profiles/create",
+            method="POST",
+            body={"name": "Novo", "gender": "menino"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        server_module.agendar_sync_da_colecao.assert_called()
+        status, selecionado, _ = self.request(
+            "/api/profiles/select",
+            method="POST",
+            body={"profileId": criado["profileId"]},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        perfil = selecionado["config"]
+        ids = [t["id"] for t in perfil["tiles"]]
+        self.assertEqual(perfil["gender"], "menino")
+        self.assertEqual(perfil["timerMinutes"], 30)
+        self.assertFalse(any(i.startswith("bea-") for i in ids))
+        self.assertNotIn("so-desta", ids)
+
+        status, menina, _ = self.request(
+            "/api/profiles/create",
+            method="POST",
+            body={"name": "Outra", "gender": "menina"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        status, selecionado, _ = self.request(
+            "/api/profiles/select",
+            method="POST",
+            body={"profileId": menina["profileId"]},
+            origin=self.base_url,
+        )
+        outra = selecionado["config"]
+        self.assertIn("bea-dollmaker", [t["id"] for t in outra["tiles"]])
+        outra["gender"] = "menino"
+        server_module.agendar_sync_da_colecao.reset_mock()
+        status, salvo, _ = self.request(
+            "/api/save-config",
+            method="POST",
+            body=outra,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        server_module.agendar_sync_da_colecao.assert_called()
+        ids = [t["id"] for t in salvo["config"]["tiles"]]
+        self.assertEqual(salvo["config"]["gender"], "menino")
+        self.assertFalse(any(i.startswith("bea-") for i in ids))
 
 
 class FrontendSafetyTests(unittest.TestCase):
