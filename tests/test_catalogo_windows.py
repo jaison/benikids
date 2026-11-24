@@ -105,13 +105,13 @@ class SincronizarCatalogoTests(unittest.TestCase):
         self.assertTrue(mudou)
         self.assertEqual([t["id"] for t in cfg["profiles"][0]["tiles"]], ["gcompris", "kapman"])
         self.assertEqual([t["id"] for t in cfg["profiles"][1]["tiles"]], ["gcompris", "kapman"])
-        self.assertEqual(cfg["catalogSeen"], ["gcompris", "kapman"])
+        self.assertEqual(cfg["catalogSeen"], ["gcompris", "kapman", "migracao-gcompris-passatempo"])
         validate_stored_config(cfg, existing_pin_hash="", allow_pin_hash=True)
         _, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
         self.assertFalse(mudou)
 
     def test_apps_removed_by_parents_do_not_come_back(self):
-        cfg = self.config(catalogSeen=["gcompris", "kapman"])
+        cfg = self.config(catalogSeen=["gcompris", "kapman", catalogo_windows.MARCA_GCOMPRIS])
         novo, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
         self.assertFalse(mudou)
         self.assertEqual(novo["profiles"][1]["tiles"], [])
@@ -137,8 +137,33 @@ class SincronizarCatalogoTests(unittest.TestCase):
         novo, mudou = catalogo_windows.sincronizar_tiles(cfg, catalogo)
         self.assertTrue(mudou)
         self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "passatempo")
+        self.assertIn(catalogo_windows.MARCA_GCOMPRIS, novo["catalogSeen"])
         _, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
         self.assertFalse(mudou)
+        # os pais devolvem para Aprender: a subida do servidor não desfaz
+        novo["profiles"][0]["tiles"][0]["category"] = "educativo"
+        de_novo, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
+        self.assertFalse(mudou)
+        self.assertEqual(de_novo["profiles"][0]["tiles"][0]["category"], "educativo")
+
+    def test_parent_category_survives_and_is_not_rewritten_for_other_tiles(self):
+        catalogo = [
+            {"id": "gcompris", "label": "GCompris", "emoji": "🧩", "category": "passatempo"},
+            {"id": "kapman", "label": "Come-Come", "emoji": "🟡", "category": "jogos"},
+        ]
+        cfg = self.config(catalogSeen=["gcompris"])
+        cfg["profiles"][0]["tiles"][0]["category"] = "jogos"
+        cfg["profiles"][0]["tiles"].append(
+            {"id": "kapman", "label": "Come-Come", "cmd": ["catalogo:kapman"], "category": "educativo"},
+        )
+        novo, mudou = catalogo_windows.sincronizar_tiles(cfg, catalogo)
+        self.assertTrue(mudou)  # só a marca; a categoria que os pais escolheram fica
+        self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "jogos")
+        self.assertEqual(novo["profiles"][0]["tiles"][1]["category"], "educativo")
+        _, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
+        self.assertFalse(mudou)
+        self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "jogos")
+        self.assertEqual(novo["profiles"][0]["tiles"][1]["category"], "educativo")
 
 
 class ConfigsAntesDeAbrirTests(unittest.TestCase):

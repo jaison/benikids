@@ -633,26 +633,27 @@ def tiles(catalogo=None):
     return resultado
 
 
-def _alinhar_categoria(tile, novos):
-    """A categoria do catálogo vale para o tile que o catálogo criou (cmd catalogo:id).
+# Uma vez no catalogSeen: o GCompris saiu de Aprender (educativo) para Passatempo.
+# Não é um id de app. O padrão de catalogSeen aceita letras, números e hífen.
+MARCA_GCOMPRIS = "migracao-gcompris-passatempo"
 
-    O GCompris no Windows estava em Aprender; no Linux é Passatempo (o tempo sai do
-    mesmo pool dos jogos). Um tile que os pais tiraram do catálogo não entra aqui.
+
+def _migrar_gcompris(tile, categoria):
+    """Move o GCompris que ainda está em Aprender. Não mexe em mais nenhum tile.
+
+    A categoria de um tile que já existe é dos pais (usage-limits.js). Esta função
+    só existe para a mudança antiga do catálogo, e o chamador só a usa enquanto
+    a marca não está em catalogSeen. Outra categoria — ou a volta para Aprender
+    depois da marca — fica como os pais deixaram.
     """
     if not isinstance(tile, dict):
         return False
-    novo = next((t for t in novos if t["id"] == tile.get("id")), None)
-    if not novo or tile.get("cmd") != [PREFIXO + novo["id"]]:
+    if tile.get("id") != "gcompris" or tile.get("cmd") != [PREFIXO + "gcompris"]:
         return False
-    if "category" not in tile or tile.get("category") == novo.get("category"):
+    if tile.get("category") != "educativo" or categoria == "educativo":
         return False
-    tile["category"] = novo.get("category", "jogos")
+    tile["category"] = categoria
     return True
-
-
-def _categorias_diferentes(stored, novos):
-    return any(_alinhar_categoria(dict(t) if isinstance(t, dict) else t, novos)
-               for p in stored.get("profiles", []) for t in p.get("tiles", []))
 
 
 def sincronizar_tiles(stored, catalogo=None):
@@ -662,6 +663,8 @@ def sincronizar_tiles(stored, catalogo=None):
     cada perfil (ligado, como todo o catálogo); um app que os pais removeram não volta.
     Um app que saiu do catálogo (ex.: Neverputt, que fecha sozinho no Windows) sai dos
     perfis, para não sobrar um botão que não abre.
+    A marca do GCompris entra junto: a categoria dele muda uma vez, e a de um tile
+    que já existe não é mais escrita.
     Devolve (config, mudou).
     """
     import copy
@@ -679,18 +682,23 @@ def sincronizar_tiles(stored, catalogo=None):
 
     orfaos = any(fora_do_catalogo(t) for p in stored.get("profiles", [])
                  for t in p.get("tiles", []))
-    categorias = _categorias_diferentes(stored, novos)
-    if vistos >= set(ids_catalogo) and not orfaos and not categorias:
+    ja_migrou = MARCA_GCOMPRIS in vistos
+    if vistos >= set(ids_catalogo) and not orfaos and ja_migrou:
         return stored, False
     resultado = copy.deepcopy(stored)
+    categoria_gcompris = next(
+        (t.get("category", "passatempo") for t in novos if t["id"] == "gcompris"),
+        "passatempo",
+    )
     for perfil in resultado.get("profiles", []):
         if "tiles" in perfil:
             perfil["tiles"] = [t for t in perfil["tiles"] if not fora_do_catalogo(t)]
-            for tile in perfil["tiles"]:
-                _alinhar_categoria(tile, novos)
+            if not ja_migrou:
+                for tile in perfil["tiles"]:
+                    _migrar_gcompris(tile, categoria_gcompris)
         existentes = {t.get("id") for t in perfil.get("tiles", []) if isinstance(t, dict)}
         for tile in novos:
             if tile["id"] not in vistos and tile["id"] not in existentes:
                 perfil.setdefault("tiles", []).append(copy.deepcopy(tile))
-    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo))
+    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo) | {MARCA_GCOMPRIS})
     return resultado, True
