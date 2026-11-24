@@ -159,7 +159,7 @@ login → ~/.config/autostart → cozy-iniciar
 | `beni/ferramentas/migrar-config.py`, `beni/config/migracoes.json` | mudanças de catálogo aplicadas uma vez em cada notebook |
 | `beni/lib/cozy-fixes/` | `nograb.c` (compilado na instalação) e `carregando.py` |
 | `beni/cozy-jogos/jogos.py` | lista de jogos SNES/PS1 |
-| `src/itch_sync.py`, `src/jogo.html` | coleções do itch.io (Windows e Linux) e a moldura servida em `/jogo.html` |
+| `src/itch_sync.py`, `src/jogo.html` | coleções do itch.io (Windows e Linux). No Linux a moldura abre em file://; no Windows o Edge abre o `jogo.html` da instalação também em file:// (`benikids-jogo:` no config) |
 | `beni/chromium/cozy-jogo.html` | a mesma moldura, aberta pelo Chromium no Linux |
 | `beni/config/` | configuração inicial (perfis, apps, categorias, limites) e coleções do itch.io |
 | `beni/emuladores/` | configurações do RetroArch, PCSX-R e Luanti para hardware fraco |

@@ -29,6 +29,15 @@ def resolve_tile_action(tile):
         ):
             if clean[0].startswith(prefix):
                 url = clean[0][len(prefix):]
+                if mode == "external":
+                    # Moldura do itch.io: o token (ou o http://127.0.0.1/jogo.html
+                    # antigo) vira file:// da instalação. Outro file:// continua
+                    # barrado pelo is_safe_web_url, logo abaixo.
+                    import itch_sync
+
+                    arquivo = itch_sync.url_da_moldura(url)
+                    if arquivo:
+                        return {"type": "web", "mode": mode, "url": arquivo}
                 if not is_safe_web_url(url):
                     raise ValueError("Invalid browser URL")
                 return {"type": "web", "mode": mode, "url": url}
@@ -238,6 +247,9 @@ def external_browser_command(
                 f"--remote-debugging-port={int(devtools_port)}",
                 "--remote-debugging-address=127.0.0.1",
             ]
+        if os.name == "nt" and url.startswith("file:"):
+            # sem o fragmento: o log fica com o caminho codificado, não com o jogo
+            _log_windows("jogo: Edge em quiosque na moldura local " + url.split("#", 1)[0])
         return command + ["--kiosk", f"--app={url}"]
     profile = external_firefox_profile(cache_root, profile_id)
     os.makedirs(profile, exist_ok=True)

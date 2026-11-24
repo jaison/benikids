@@ -22,8 +22,9 @@ from config_validation import validate_stored_config  # noqa: E402
 def portavel(tile):
     """Sites (special:) e jogos de navegador do Linux (navegador-jogos).
 
-    O jogo de tamanho fixo (cozy-jogo.html) abre em /jogo.html. O site do
-    jogo abre direto. Visibilidade e categoria ficam as do Linux.
+    O jogo de tamanho fixo (cozy-jogo.html) vira o token benikids-jogo:,
+    aberto em file:// na hora. O site do jogo abre direto. Visibilidade e
+    categoria ficam as do Linux.
     """
     import jogos_genero
 

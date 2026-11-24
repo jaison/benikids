@@ -5,8 +5,8 @@ Perfil sem gender não ganha nada: não adivinhamos. Tile que já existe
 não é reescrito — se os pais ocultaram, continua oculto.
 
 No Linux o comando é o mesmo dos jogos da coleção do itch.io
-(navegador-jogos + cozy-jogo.html). No Windows, special:external-browser
-+ /jogo.html, também igual à coleção.
+(navegador-jogos + cozy-jogo.html). No Windows, o token benikids-jogo:,
+resolvido na abertura para a moldura local em file://.
 """
 
 import json
@@ -41,10 +41,13 @@ def ids(gender, arquivo=ARQUIVO):
 def traduzir_navegador_jogos(cmd, porta=PORTA):
     """Comando do Linux (navegador-jogos + url) no formato do Windows.
 
-    Moldura de tamanho fixo (cozy-jogo.html#w=&h=) vira /jogo.html.
-    Um site http(s) abre direto, no mesmo quiosque dos outros sites.
-    Devolve None quando o comando não é um jogo de navegador.
+    Moldura de tamanho fixo (cozy-jogo.html#w=&h=) vira o token benikids-jogo:,
+    resolvido na abertura para file://. Um site http(s) abre direto, no mesmo
+    quiosque dos outros sites. Devolve None quando o comando não é um jogo
+    de navegador. `porta` fica na assinatura por quem já chamava assim; a
+    moldura não usa mais o servidor em 127.0.0.1.
     """
+    int(porta)  # quem passava a porta do servidor continua recebendo erro se ela for inválida
     if (
         not isinstance(cmd, list)
         or len(cmd) != 2
@@ -56,9 +59,11 @@ def traduzir_navegador_jogos(cmd, porta=PORTA):
     marca = "cozy-jogo.html#"
     if marca in url:
         frag = url.split("#", 1)[1]
-        if "w=" not in frag or "h=" not in frag:
+        import itch_sync
+
+        if not itch_sync._fragmento_valido(frag):
             return None
-        return ["special:external-browser:http://127.0.0.1:%d/jogo.html#%s" % (int(porta), frag)]
+        return itch_sync.comando_da_moldura(frag)
     if url.startswith("https://") or url.startswith("http://"):
         return ["special:external-browser:" + url]
     return None

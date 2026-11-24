@@ -1,5 +1,6 @@
 """Coleções do itch.io: gênero, override, preservação e o tile do Windows. Sem rede."""
 import json
+import os
 import tempfile
 import unittest
 import urllib.error
@@ -250,7 +251,10 @@ class ItchSyncTests(unittest.TestCase):
         acao = application_launcher.resolve_tile_action(dog)
         self.assertEqual(acao["type"], "web")
         self.assertEqual(acao["mode"], "external")
-        self.assertTrue(acao["url"].startswith("http://127.0.0.1:38431/jogo.html#w=960&h=540&u="))
+        self.assertTrue(dog["cmd"][0].startswith("special:external-browser:benikids-jogo:#w=960&h=540&u="))
+        self.assertTrue(acao["url"].startswith("file:///"))
+        self.assertIn("/jogo.html#w=960&h=540&u=", acao["url"])
+        self.assertNotIn("127.0.0.1", acao["url"])
         self.assertLessEqual(len(dog["cmd"][0]), 2048)
         comando = application_launcher.external_browser_command(
             "msedge.exe", acao["url"], str(self.dir / "edge"), profile_id="ela",
@@ -264,14 +268,98 @@ class ItchSyncTests(unittest.TestCase):
         seren = next(t for t in novo_b["profiles"][0]["tiles"] if t["id"] == "itch-serenitrove")
         url = application_launcher.resolve_tile_action(seren)["url"]
         self.assertIn("/jogo.html#w=960&h=540&fh=578&u=", url)
-        self.assertIn("special:external-browser:", seren["cmd"][0])
+        self.assertTrue(url.startswith("file:///"))
+        self.assertTrue(seren["cmd"][0].startswith("special:external-browser:benikids-jogo:#"))
         self.assertNotIn("navegador-jogos", dog["cmd"])
         self.assertNotIn("navegador-jogos", unity["cmd"])
         boneca = tiles["bea-dollmaker"]
         self.assertTrue(boneca["cmd"][0].startswith(
-            "special:external-browser:http://127.0.0.1:38431/jogo.html#w=960&h=540&u="
+            "special:external-browser:benikids-jogo:#w=960&h=540&u="
         ))
         self.assertNotIn("bea-dollmaker", [t["id"] for t in novo_b["profiles"][0]["tiles"]])
+
+    def test_moldura_codifica_acento_e_converte_o_comando_velho(self):
+        frag = "w=960&h=540&u=https%3A%2F%2Fhtml-classic.itch.zone%2Fhtml%2F1%2Findex.html"
+        caminho = (
+            "C:/Users/Lívia Kids/Benikids/jogo.html"
+            if os.name == "nt"
+            else "/home/Lívia Kids/Benikids/jogo.html"
+        )
+        token = ["special:external-browser:benikids-jogo:#" + frag]
+        with mock.patch.object(itch_sync, "caminho_da_moldura", return_value=caminho):
+            info = {
+                "embed": "https://html-classic.itch.zone/html/1/index.html",
+                "w": 960, "h": 540,
+            }
+            self.assertEqual(
+                itch_sync.comando_do_jogo(info, "windows", self.caminhos_minimos()),
+                token,
+            )
+            uri = application_launcher.resolve_tile_action({"cmd": token})["url"]
+            self.assertEqual(uri, Path(caminho).as_uri() + "#" + frag)
+            self.assertTrue(uri.startswith("file:///"))
+            self.assertIn("L%C3%ADvia%20Kids", uri)
+            self.assertNotIn("Lívia", uri)
+            self.assertNotIn(" ", uri.split("#", 1)[0])
+            velho = ["special:external-browser:http://127.0.0.1:38431/jogo.html#" + frag]
+            self.assertEqual(
+                application_launcher.resolve_tile_action({"cmd": velho})["url"],
+                uri,
+            )
+        linux = itch_sync.comando_do_jogo(
+            info, "linux", self.caminhos_minimos(),
+        )
+        self.assertEqual(linux[0], "navegador-jogos")
+        self.assertIn("file://", linux[1])
+        self.assertIn("cozy-jogo.html#", linux[1])
+        self.assertNotIn("benikids-jogo", linux[1])
+        self.assertEqual(itch_sync.converter_comando_gravado(velho), token)
+        self.assertIsNone(itch_sync.converter_comando_gravado(linux))
+        self.assertIsNone(itch_sync.converter_comando_gravado(
+            ["special:external-browser:http://127.0.0.1:38431/sites/phet.html"]
+        ))
+        self.assertEqual(
+            application_launcher.resolve_tile_action(
+                {"cmd": ["special:external-browser:http://127.0.0.1:38431/sites/phet.html"]}
+            )["url"],
+            "http://127.0.0.1:38431/sites/phet.html",
+        )
+
+    def caminhos_minimos(self):
+        return itch_sync.Caminhos(
+            config="", colecoes="", cache="", capas="", log="", trava="",
+            moldura=str(self.dir / "cozy-jogo.html"), porta=38431,
+        )
+
+    def test_comando_velho_converte_mesmo_sem_rede(self):
+        frag = "w=960&h=540&u=https%3A%2F%2Fhtml-classic.itch.zone%2Fhtml%2F1%2Findex.html"
+        velho = ["special:external-browser:http://127.0.0.1:49152/jogo.html#" + frag]
+        cfg = {"profiles": [{"id": "ela", "name": "Perfil", "gender": "menina", "tiles": [
+            {"id": "itch-dog-wash", "label": "Nome dos pais", "emoji": "🎮",
+             "cmd": velho, "visible": False, "category": "passatempo"},
+            {"id": "bea-dollmaker", "label": "Boneca", "emoji": "🧸",
+             "cmd": list(velho), "visible": True, "category": "jogos"},
+            {"id": "phet", "label": "Ciências", "emoji": "🔬",
+             "cmd": ["special:external-browser:http://127.0.0.1:38431/sites/phet.html"],
+             "visible": True, "category": "educativo"},
+        ]}]}
+
+        def baixar(url, binario=False, tentativas=4):
+            raise urllib.error.URLError("sem rede")
+
+        novo, log, _, _ = self.rodar(cfg, baixar=baixar, plataforma="windows")
+        tiles = {t["id"]: t for t in novo["profiles"][0]["tiles"]}
+        token = ["special:external-browser:benikids-jogo:#" + frag]
+        self.assertEqual(tiles["itch-dog-wash"]["cmd"], token)
+        self.assertFalse(tiles["itch-dog-wash"]["visible"])
+        self.assertEqual(tiles["itch-dog-wash"]["category"], "passatempo")
+        self.assertEqual(tiles["itch-dog-wash"]["label"], "Nome dos pais")
+        self.assertEqual(tiles["bea-dollmaker"]["cmd"], token)
+        self.assertEqual(
+            tiles["phet"]["cmd"],
+            ["special:external-browser:http://127.0.0.1:38431/sites/phet.html"],
+        )
+        self.assertIn("comando(s) antigo(s) de jogo convertido(s) para a moldura local", log)
 
     def test_segunda_sincronizacao_nao_regrava(self):
         cfg = {"profiles": [{"id": "ela", "name": "Perfil", "gender": "menina", "tiles": []}]}

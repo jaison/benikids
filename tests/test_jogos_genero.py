@@ -81,7 +81,7 @@ class JogosPorGeneroTest(unittest.TestCase):
         boneca = perfil["tiles"][0]
         self.assertEqual(boneca["id"], "bea-dollmaker")
         self.assertTrue(boneca["cmd"][0].startswith(
-            "special:external-browser:http://127.0.0.1:38431/jogo.html#w=960&h=540&u="
+            "special:external-browser:benikids-jogo:#w=960&h=540&u="
         ))
         acao = application_launcher.resolve_tile_action(boneca)
         self.assertEqual(acao["type"], "web")
@@ -115,7 +115,7 @@ class NavegadorJogosWindowsTest(unittest.TestCase):
             jogos_genero.traduzir_navegador_jogos(
                 ["navegador-jogos", "file:///tmp/cozy-jogo.html#" + frag]
             ),
-            ["special:external-browser:http://127.0.0.1:38431/jogo.html#" + frag],
+            ["special:external-browser:benikids-jogo:#" + frag],
         )
         self.assertIsNone(jogos_genero.traduzir_navegador_jogos(["tuxpaint"]))
 

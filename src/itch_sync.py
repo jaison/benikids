@@ -16,6 +16,7 @@ ou se a página não vier no formato esperado, o config.json não muda.
 import html
 import json
 import os
+import pathlib
 import re
 import tempfile
 import threading
@@ -218,13 +219,107 @@ def fragmento(info):
     return "w=%d&h=%d&u=%s" % (info.get("w", 0), info.get("h", 0), embed)
 
 
+# No Windows o tile não guarda caminho nem porta. Na hora de abrir, o servidor
+# troca este token pela moldura local em file:// (origem opaca). http://127.0.0.1
+# faz o htmlgame.js do itch.io cair em itch.io/embed-hotlink.
+TOKEN_MOLDURA = "benikids-jogo:"
+_FRAG_MOLDURA = re.compile(r"^[A-Za-z0-9%&=._~+-]+$")
+_CMD_VELHO = re.compile(
+    r"^https?://(?:127\.0\.0\.1|localhost)(?::\d+)?/jogo\.html#([A-Za-z0-9%&=._~+-]+)$"
+)
+
+
+def caminho_da_moldura():
+    """jogo.html que veio na instalação, ao lado deste módulo.
+
+    No Windows o pacote fica em ~/.local/share/cozy-kids-launcher, pasta do
+    próprio usuário (dá para ler; a página não escreve). Uma cópia à parte
+    ficaria para trás quando o Benikids atualiza a moldura.
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "jogo.html")
+
+
+def _fragmento_valido(frag):
+    if not isinstance(frag, str) or not _FRAG_MOLDURA.fullmatch(frag):
+        return False
+    if "w=" not in frag or "h=" not in frag:
+        return False
+    # o iframe só recebe http(s); javascript: e file: não passam
+    return "u=https%3A%2F%2F" in frag or "u=http%3A%2F%2F" in frag
+
+
+def fragmento_da_moldura(url):
+    """Fragmento (#w=&h=&u=) de um comando de moldura, novo ou antigo. Ou None."""
+    if not isinstance(url, str):
+        return None
+    if url.startswith(TOKEN_MOLDURA + "#"):
+        frag = url[len(TOKEN_MOLDURA) + 1:]
+    else:
+        velho = _CMD_VELHO.fullmatch(url)
+        frag = velho.group(1) if velho else None
+    return frag if _fragmento_valido(frag) else None
+
+
+def comando_da_moldura(frag):
+    return ["special:external-browser:" + TOKEN_MOLDURA + "#" + frag]
+
+
+def url_da_moldura(url, moldura=None):
+    """file:///…/jogo.html#fragmento, com acentos e espaços codificados. Ou None."""
+    frag = fragmento_da_moldura(url)
+    if not frag:
+        return None
+    caminho = pathlib.Path(moldura or caminho_da_moldura())
+    if not caminho.is_absolute():
+        caminho = pathlib.Path(os.path.abspath(caminho))
+    return caminho.as_uri() + "#" + frag
+
+
+def converter_comando_gravado(cmd):
+    """http://127.0.0.1/jogo.html#… gravado no config vira o token estável.
+
+    Devolve None quando o comando não é a moldura antiga (o Linux, os sites
+    e o PhET em 127.0.0.1/sites/ ficam como estão).
+    """
+    prefixo = "special:external-browser:"
+    if not (isinstance(cmd, list) and len(cmd) == 1 and isinstance(cmd[0], str)):
+        return None
+    if not cmd[0].startswith(prefixo):
+        return None
+    url = cmd[0][len(prefixo):]
+    if _CMD_VELHO.fullmatch(url) is None:
+        return None
+    frag = fragmento_da_moldura(url)
+    if not frag:
+        return None
+    return comando_da_moldura(frag)
+
+
+def converter_comandos_velhos(cfg):
+    """Converte a moldura antiga em todos os perfis. Devolve quantos tiles mudaram."""
+    if not isinstance(cfg, dict):
+        return 0
+    n = 0
+    for perfil in cfg.get("profiles", []):
+        if not isinstance(perfil, dict):
+            continue
+        for tile in perfil.get("tiles") or []:
+            if not isinstance(tile, dict):
+                continue
+            novo = converter_comando_gravado(tile.get("cmd"))
+            if novo and novo != tile.get("cmd"):
+                tile["cmd"] = novo
+                n += 1
+    return n
+
+
 def comando_do_jogo(info, plataforma, caminhos):
     frag = fragmento(info)
     if plataforma == "windows":
         # O mesmo caminho dos sites: o servidor abre o Edge em --kiosk --app,
-        # com a pílula, o ‹ Voltar e o limite da categoria do tile.
-        url = "http://127.0.0.1:%d/jogo.html#%s" % (caminhos.porta, frag)
-        return ["special:external-browser:" + url]
+        # com a pílula, o ‹ Voltar e o limite da categoria do tile. A URL
+        # file:// só nasce na abertura (url_da_moldura).
+        return comando_da_moldura(frag)
     return ["navegador-jogos", "file://%s#%s" % (caminhos.moldura, frag)]
 
 
@@ -398,10 +493,15 @@ def _sincronizar(caminhos, baixar, plataforma):
         gravar_json(caminhos.cache, cache)
 
     # Jogos por gênero (vestir/maquiagem) não dependem da página da coleção:
-    # entram mesmo sem internet. Tile que já existe não muda.
+    # entram mesmo sem internet. Tile que já existe não muda — por isso a
+    # moldura antiga (http://127.0.0.1/jogo.html) é convertida aqui, mesmo
+    # quando a coleção não pôde ser lida.
     import jogos_genero
 
-    mudou = False
+    convertidos = converter_comandos_velhos(cfg)
+    if convertidos:
+        log(caminhos.log, f"{convertidos} comando(s) antigo(s) de jogo convertido(s) para a moldura local")
+    mudou = convertidos > 0
     acrescentou = 0
     for perfil in cfg.get("profiles", []):
         if not isinstance(perfil, dict):
