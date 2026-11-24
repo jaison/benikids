@@ -1156,9 +1156,10 @@ class AppOverlay:
                     pids = set(win.arvore(record["pid"])) if record else set()
                     proxima_arvore = agora + 0.5
                 # SuperTux, Pingus e outros prendem o cursor (ClipCursor) e o ✕
-                # fica fora do alcance. Soltar é do sistema, não uma mensagem ao jogo.
-                if pids and win.soltar_cursor_se_preso(pids):
-                    self.log_uma_vez("overlay: soltei o cursor que o jogo tinha prendido")
+                # fica fora do alcance. Alargar é do sistema, não uma mensagem ao jogo,
+                # e o recorte novo não passa do monitor do jogo.
+                if pids and win.soltar_cursor_se_preso(pids, self.retangulo_do_x):
+                    self.log_uma_vez("overlay: alarguei o recorte do cursor até o ✕")
             except (OSError, ValueError, TypeError, AttributeError):
                 pass
             try:
