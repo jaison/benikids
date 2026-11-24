@@ -16,6 +16,7 @@ import janelas_seguras
 import marca_tk as marca
 import quiosque_edge
 import telemetria
+import timer_fim
 from process_state import (
     owned_process,
     owned_process_alive,
@@ -231,7 +232,8 @@ def focus_launcher():
         result = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=3)
         if result.returncode == 0:
             for line in result.stdout.splitlines():
-                if "Cozy Kids Launcher" in line or APP_NAME in line:
+                titulo = " ".join(line.split()[3:])
+                if "Cozy Kids Launcher" in line or APP_NAME in line or titulo == "Beni":
                     wid = line.split()[0]
                     # "above" só para passar na frente agora; se ficar ligado,
                     # o próximo app abre escondido atrás do launcher.
@@ -1075,6 +1077,20 @@ class AppOverlay:
         self.atualizar_pilula()
 
     def atualizar_pilula(self):
+        if self.fechando:
+            return
+        # O relógio local chegou a zero antes da próxima pergunta ao servidor
+        # (o poll é de 5 s): confirma e, se expirou, fecha como o ✕.
+        if self.timer_pilula and not self.timer_pilula.get("expirado") \
+                and self.timer_pilula.get("fim", 0) <= time.monotonic():
+            self.confirmar_timer()
+            if self.fechando:
+                return
+        if self.timer_pilula and self.timer_pilula.get("expirado"):
+            # Mesmo fechar do ✕ e do fim da contagem da categoria. Motivo próprio
+            # para não mexer na janela da contagem da categoria, que já cobre a tela.
+            self.on_close("acabou o timer")
+            return
         timer = None
         if self.timer_pilula:
             timer = dict(self.timer_pilula)
@@ -1154,9 +1170,31 @@ class AppOverlay:
         self.countdown_deadline = None
         self.countdown_number = None
 
+    def confirmar_timer(self):
+        """O fim local pode estar adiantado (os pais deram mais tempo). Atualiza
+        a pílula; quem fecha é o atualizar_pilula, se o servidor disser que acabou."""
+        data = api("/api/timer/status")
+        if not isinstance(data, dict) or "active" not in data:
+            return
+        if data.get("active"):
+            self.timer_pilula = {
+                "fim": time.monotonic() + int(data.get("remainingSeconds") or 0),
+                "expirado": bool(data.get("expired")),
+                "aviso": bool(data.get("warning")),
+            }
+        else:
+            self.timer_pilula = None
+
     def on_close(self, motivo="✕"):
         if WINDOWS:
             log_windows("overlay: ✕ tocado" if motivo == "✕" else f"overlay: fechando ({motivo})")
+        if motivo == "acabou o timer" and not WINDOWS and not self.fechando:
+            # Antes de matar: a janela do menu (no Linux, a do navegador) fica
+            # na frente e a do app sai do Alt+Tab. O fechar espera o processo.
+            try:
+                timer_fim.por_o_bloqueio_na_frente()
+            except Exception:  # noqa: BLE001 — fechar o app não pode falhar por causa do WM
+                pass
         self.fechar_app(motivo)
         focus_launcher()
         self.root.destroy()
@@ -1370,6 +1408,8 @@ class AppOverlay:
         self.root.after(1000, self.poll_process)
 
     def poll_timer(self):
+        if self.fechando:
+            return
         availability = api("/api/availability/status")
         if tile_is_blocked(availability, self.tile_id):
             self.on_close("horário bloqueado")
@@ -1381,7 +1421,8 @@ class AppOverlay:
         else:
             self.timer_pilula = None
         self.atualizar_pilula()  # o poll_usage (a cada 1 s) também atualiza, com a conta local
-        self.root.after(5000, self.poll_timer)
+        if not self.fechando:
+            self.root.after(5000, self.poll_timer)
 
     def run(self):
         try:

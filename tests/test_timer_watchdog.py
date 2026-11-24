@@ -31,6 +31,18 @@ class DecidirTest(unittest.TestCase):
     def test_tempo_esgotado_com_app_na_frente_bloqueia(self):
         self.assertEqual(tw.decidir({"active": True, "expired": True}, False, False, lambda: False), ["bloquear"])
 
+    def test_timer_expirou_com_app_aberto_fecha_e_bloqueia(self):
+        # a tela da vigia continua; o app é encerrado no mesmo caminho do ✕
+        self.assertEqual(
+            tw.decidir({"active": True, "expired": True}, False, False, lambda: False, app_aberto=True),
+            ["fechar_app", "bloquear"],
+        )
+        # sem app, nada de fechar (a tela é só o bloqueio)
+        self.assertNotIn(
+            "fechar_app",
+            tw.decidir({"active": True, "expired": True}, False, False, lambda: False, app_aberto=False),
+        )
+
     def test_bloqueio_aberto_continua_sem_perguntar(self):
         perguntou = mock.Mock(return_value=True)
         self.assertEqual(tw.decidir({"expired": True}, True, True, perguntou), ["bloquear", "fechar_aviso"])
@@ -174,3 +186,5 @@ class FocoDaTelaTest(unittest.TestCase):
         trecho = texto[texto.index("def stay_top():"):texto.index("stay_top()\n", texto.index("def stay_top():") + 20)]
         self.assertIn("janela_na_frente(b, pin_entry)", trecho)
         self.assertNotIn("b.focus_force()", trecho)
+        self.assertIn("_pedir_cobrir", trecho)
+        self.assertIn("por_o_bloqueio_na_frente", texto)

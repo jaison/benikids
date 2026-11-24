@@ -172,6 +172,20 @@ class LauncherFocusTests(unittest.TestCase):
         )
         owned.assert_not_called()
 
+    def test_menu_nativo_tambem_e_o_bloqueio(self):
+        # a janela do beni-menu se chama "Beni", não "Cozy Kids Launcher"
+        listing = mock.Mock(returncode=0, stdout="0x0b  0 host Beni\n")
+        raised = mock.Mock(returncode=0)
+        activated = mock.Mock(returncode=0)
+        released = mock.Mock(returncode=0)
+        with mock.patch.object(
+            overlay.subprocess,
+            "run",
+            side_effect=(listing, raised, activated, released),
+        ) as run, mock.patch.object(overlay, "owned_process"):
+            overlay.focus_launcher()
+        self.assertEqual(run.call_args_list[1].args[0][3], "0x0b")
+
     def test_pid_scoped_xdotool_is_the_x11_fallback(self):
         listing = mock.Mock(returncode=1, stdout="")
         activation = mock.Mock(returncode=0)
