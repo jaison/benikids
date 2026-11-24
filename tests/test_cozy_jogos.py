@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -126,6 +127,50 @@ class CozyJogosTests(unittest.TestCase):
         self.assertEqual(cozy_jogos.garantir_opcao("ja = \"1\"\n", "ja", "2"), "ja = \"1\"\n")
         self.assertEqual(cozy_jogos.garantir_opcao("", "pcsx_rearmed_bios", "auto"),
                          'pcsx_rearmed_bios = "auto"\n')
+        self.assertIn('joypad_driver = "sdl2"', texto)
+        self.assertNotIn("xinput", texto)
+        self.assertNotIn("joypad_autoconfig_dir", texto)
+
+    def test_autoconfig_dir_appears_only_when_a_profile_exists(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            cfg_dir = os.path.join(raiz, "cfg")
+            os.makedirs(os.path.join(cfg_dir, "autoconfig", "sdl2"))
+            texto = cozy_jogos.texto_retroarch("snes", raiz, cfg_dir)
+            self.assertNotIn("joypad_autoconfig_dir", texto)
+            perfil = os.path.join(cfg_dir, "autoconfig", "sdl2", "dragonrise.cfg")
+            with open(perfil, "w", encoding="utf-8") as handle:
+                handle.write('input_driver = "sdl2"\n')
+            texto = cozy_jogos.texto_retroarch("snes", raiz, cfg_dir)
+            self.assertIn("joypad_autoconfig_dir", texto)
+            self.assertIn("autoconfig", texto.replace("\\", "/"))
+
+    def test_list_reads_xinput_and_generic_pads(self):
+        self.assertEqual(cozy_jogos.estado_xinput(0x0008, 0, 0), (1, 0, False))
+        self.assertEqual(cozy_jogos.estado_xinput(0, 0, 20000), (0, -1, False))
+        self.assertEqual(cozy_jogos.estado_xinput(0x1000, 0, 0), (0, 0, True))
+        # chapéu para a esquerda; os eixos no centro não mandam
+        self.assertEqual(cozy_jogos.movimento_de_hid(6, 127, 127, 0), (-1, 0, False))
+        # chapéu solto (15) e eixo X no fim da faixa: para a direita; botão 1 confirma
+        self.assertEqual(cozy_jogos.movimento_de_hid(15, 255, 127, 0x1), (1, 0, True))
+        self.assertEqual(cozy_jogos.movimento_de_hid(None, 0, 255, 0, (0, 255), (0, 255)), (-1, 1, False))
+        # Xbox parado não esconde o DragonRise; os dois parados não inventam direção
+        self.assertEqual(cozy_jogos.escolher_movimento((0, 0, False), [(1, 0, False)]), (1, 0, False))
+        self.assertEqual(cozy_jogos.escolher_movimento((0, -1, False), [(1, 0, True)]), (0, -1, False))
+        self.assertEqual(cozy_jogos.escolher_movimento(None, []), (0, 0, False))
+        self.assertEqual(cozy_jogos.eventos_do_movimento((1, 0, True), (0, 0, False)), ["dir", "ok"])
+        self.assertEqual(cozy_jogos.eventos_do_movimento((1, 0, True), (1, 0, True)), [])
+
+    def test_generic_reader_hook_prefers_the_control_branch(self):
+        import controles_lista_windows
+        ramo = mock.Mock()
+        ramo.estados_para_lista.return_value = [(0, 1, True)]
+        with mock.patch.dict(sys.modules, {"controles_windows": ramo}):
+            self.assertEqual(cozy_jogos.ler_genericos(), [(0, 1, True)])
+        ramo.estados_para_lista.assert_called_once()
+        with mock.patch.object(controles_lista_windows, "estados", return_value=[(-1, 0, False)]):
+            self.assertEqual(cozy_jogos.ler_genericos(), [(-1, 0, False)])
+        self.assertTrue(controles_lista_windows.caminho_de_xbox(r"\\?\hid#vid_045e&pid_02ff&ig_00"))
+        self.assertFalse(controles_lista_windows.caminho_de_xbox(r"\\?\hid#vid_0079&pid_0006"))
 
 
 if __name__ == "__main__":

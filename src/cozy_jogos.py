@@ -325,6 +325,38 @@ def _aspas(caminho):
     return '"' + caminho.replace("\\", "/") + '"'
 
 
+def _tem_perfil_autoconfig(pasta):
+    """True se a pasta (ou um subdiretório, o sdl2/ do RetroArch) tem um .cfg."""
+    try:
+        nomes = os.listdir(pasta)
+    except OSError:
+        return False
+    for nome in nomes:
+        caminho = os.path.join(pasta, nome)
+        if nome.endswith(".cfg"):
+            return True
+        if os.path.isdir(caminho):
+            try:
+                if any(item.endswith(".cfg") for item in os.listdir(caminho)):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def linha_autoconfig(cfg_dir):
+    """A pasta do Benikids só entra na cfg quando já tem um perfil.
+
+    Vazia, ela esconderia os perfis que vêm com o RetroArch (Xbox e vários
+    genéricos). O mapeamento dos pais, quando existir, grava um .cfg aqui
+    (controles_windows, ramo win/controle) e a linha passa a valer.
+    """
+    pasta = os.path.join(cfg_dir, "autoconfig")
+    if not _tem_perfil_autoconfig(pasta):
+        return ""
+    return f"joypad_autoconfig_dir = {_aspas(pasta)}\n"
+
+
 def texto_retroarch(sistema, raiz_jogos, cfg_dir):
     """retroarch.cfg do Linux, com áudio e controle do Windows e sem menu.
 
@@ -333,10 +365,17 @@ def texto_retroarch(sistema, raiz_jogos, cfg_dir):
     (video_driver_force_fallback): não segue na mesma abertura. Esta cfg é
     reescrita toda vez que a lista abre, então o gl gravado se perderia e um
     Intel HD antigo (sem DirectX 11) cairia nesse erro sempre.
+
+    O controle usa sdl2, não xinput: o xinput só vê controle de Xbox, e um USB
+    genérico (DragonRise) não aparece. O dinput veria o genérico, mas no Windows
+    10 o Xbox One/Series muitas vezes só entra pelo XInput. O sdl2 vê os dois.
+    Os botões numerados abaixo são a reserva, para o controle sem perfil
+    (chapéu e botões 0 a 7, a ordem comum do HID). Com perfil, o RetroArch
+    troca esses números pelos do perfil.
     """
     saves = os.path.join(raiz_jogos, ".saves", sistema)
     sistema_bios = os.path.join(raiz_jogos, "PS1", "BIOS")
-    autoconfig = os.path.join(cfg_dir, "autoconfig")
+    autoconfig = linha_autoconfig(cfg_dir)
     return f"""config_save_on_exit = "false"
 video_driver = "gl"
 video_fullscreen = "true"
@@ -410,10 +449,9 @@ input_player1_l = "q"
 input_player1_r = "w"
 input_player1_start = "enter"
 input_player1_select = "rshift"
-joypad_driver = "xinput"
+joypad_driver = "sdl2"
 input_autodetect_enable = "true"
-joypad_autoconfig_dir = {_aspas(autoconfig)}
-input_player1_joypad_index = "0"
+{autoconfig}input_player1_joypad_index = "0"
 input_player1_analog_dpad_mode = "1"
 input_player1_b_btn = "0"
 input_player1_a_btn = "1"
@@ -512,8 +550,167 @@ def comando_jogo(sistema, rom, retroarch, cfg, core):
     return [retroarch, "-f", "-c", cfg, "-L", core, rom]
 
 
+# XInput: cima, baixo, esquerda, direita, A. O analógico esquerdo entra junto.
+XINPUT_CIMA, XINPUT_BAIXO = 0x0001, 0x0002
+XINPUT_ESQUERDA, XINPUT_DIREITA = 0x0004, 0x0008
+XINPUT_A = 0x1000
+
+
+def estado_xinput(botoes, lx, ly):
+    """(horizontal, vertical, confirmar) de um controle de Xbox. Vertical negativa é para cima."""
+    try:
+        botoes, lx, ly = int(botoes), int(lx), int(ly)
+    except (TypeError, ValueError):
+        return (0, 0, False)
+    horizontal = vertical = 0
+    if botoes & XINPUT_ESQUERDA or lx < -16000:
+        horizontal = -1
+    elif botoes & XINPUT_DIREITA or lx > 16000:
+        horizontal = 1
+    if botoes & XINPUT_CIMA or ly > 16000:
+        vertical = -1
+    elif botoes & XINPUT_BAIXO or ly < -16000:
+        vertical = 1
+    return (horizontal, vertical, bool(botoes & XINPUT_A))
+
+
+def eixo_digital(valor, minimo, maximo, margem=0.5):
+    """-1, 0 ou 1. O centro da faixa é solto; só a metade de fora conta."""
+    try:
+        valor, minimo, maximo = int(valor), int(minimo), int(maximo)
+    except (TypeError, ValueError):
+        return 0
+    if maximo <= minimo:
+        return 0
+    meio = (minimo + maximo) / 2
+    limite = (maximo - minimo) * margem / 2
+    if valor < meio - limite:
+        return -1
+    if valor > meio + limite:
+        return 1
+    return 0
+
+
+def eixos_do_hat(valor):
+    """Chapéu HID: 0 é o norte, no sentido horário, até 7. O resto é o centro."""
+    try:
+        valor = int(valor)
+    except (TypeError, ValueError):
+        return (0, 0)
+    return {
+        0: (0, -1), 1: (1, -1), 2: (1, 0), 3: (1, 1),
+        4: (0, 1), 5: (-1, 1), 6: (-1, 0), 7: (-1, -1),
+    }.get(valor, (0, 0))
+
+
+def movimento_de_hid(hat, x, y, botoes, faixa_x=(0, 255), faixa_y=(0, 255)):
+    """DragonRise e outros HID: chapéu, senão os eixos, e um dos 4 primeiros botões confirma.
+
+    `botoes` é uma máscara (bit 0 = primeiro botão). Y do HID cresce para baixo,
+    então vertical positiva é para baixo, como no XInput desta lista.
+    """
+    horizontal, vertical = eixos_do_hat(hat) if hat is not None else (0, 0)
+    if horizontal == 0 and vertical == 0:
+        if x is not None:
+            horizontal = eixo_digital(x, *faixa_x)
+        if y is not None:
+            vertical = eixo_digital(y, *faixa_y)
+    try:
+        mascara = int(botoes)
+    except (TypeError, ValueError):
+        mascara = 0
+    return (horizontal, vertical, bool(mascara & 0xF))
+
+
+def escolher_movimento(xinput, genericos):
+    """O controle que está sendo usado. Xbox parado não esconde o USB genérico."""
+    if xinput and any(xinput):
+        return xinput
+    for item in genericos or ():
+        if item and any(item):
+            return (item[0], item[1], bool(item[2]))
+    if xinput:
+        return xinput
+    return (0, 0, False)
+
+
+def eventos_do_movimento(agora, antes):
+    """Bordas: uma seta ao entrar na direção, e 'ok' ao apertar."""
+    eventos = []
+    if agora[0] and agora[0] != antes[0]:
+        eventos.append("dir" if agora[0] > 0 else "esq")
+    if agora[1] and agora[1] != antes[1]:
+        eventos.append("cima" if agora[1] < 0 else "baixo")
+    if agora[2] and not antes[2]:
+        eventos.append("ok")
+    return eventos
+
+
+def ler_genericos():
+    """(horizontal, vertical, confirmar) de cada controle que o XInput não vê.
+
+    Ponto de integração com o ramo win/controle, sem trazer aquele ramo: se
+    controles_windows.estados_para_lista existir, ela entrega a leitura (o HID
+    completo, com o mesmo critério de botão da área dos pais). Enquanto esse
+    módulo não está aqui, controles_lista_windows lê joystick e gamepad pelo
+    hid.dll e pula o caminho IG_, que é o Xbox visto de novo.
+    """
+    try:
+        import controles_windows
+    except ImportError:
+        controles_windows = None
+    if controles_windows is not None:
+        pronto = getattr(controles_windows, "estados_para_lista", None)
+        if pronto:
+            return [(item[0], item[1], bool(item[2])) for item in pronto()]
+    import controles_lista_windows
+
+    return controles_lista_windows.estados()
+
+
+def _abrir_xinput():
+    """XInputGetState do slot 0, ou None se a DLL não existe."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class Pad(ctypes.Structure):
+        _fields_ = [("wButtons", wintypes.WORD), ("bLeftTrigger", ctypes.c_ubyte),
+                    ("bRightTrigger", ctypes.c_ubyte), ("sThumbLX", ctypes.c_short),
+                    ("sThumbLY", ctypes.c_short), ("sThumbRX", ctypes.c_short),
+                    ("sThumbRY", ctypes.c_short)]
+
+    class Estado(ctypes.Structure):
+        _fields_ = [("dwPacketNumber", wintypes.DWORD), ("Gamepad", Pad)]
+
+    for nome in ("xinput1_4", "xinput1_3"):
+        try:
+            dll = ctypes.WinDLL(nome)
+        except (OSError, AttributeError):
+            continue
+        dll.XInputGetState.argtypes = [wintypes.DWORD, ctypes.POINTER(Estado)]
+        dll.XInputGetState.restype = wintypes.DWORD
+        return dll, Estado
+    return None
+
+
+def ler_xinput(aberto):
+    """Estado do slot 0, ou None se não há controle de Xbox nesse slot."""
+    if not aberto:
+        return None
+    import ctypes
+
+    dll, estado_cls = aberto
+    estado = estado_cls()
+    if dll.XInputGetState(0, ctypes.byref(estado)) != 0:
+        return None
+    pad = estado.Gamepad
+    return estado_xinput(pad.wButtons, pad.sThumbLX, pad.sThumbLY)
+
+
 class Controles(threading.Thread):
-    """XInput: direcional ou analógico esquerdo, e o botão A confirma."""
+    """Xbox pelo XInput e USB genérico pelo HID. Direcional e um botão confirmam."""
 
     def __init__(self, fila):
         super().__init__(daemon=True)
@@ -521,53 +718,34 @@ class Controles(threading.Thread):
         self.ativo = True
 
     def run(self):
-        try:
-            import ctypes
-            from ctypes import wintypes
-            xinput = ctypes.WinDLL("xinput1_4")
-        except (OSError, AttributeError):
-            try:
-                import ctypes
-                from ctypes import wintypes
-                xinput = ctypes.WinDLL("xinput1_3")
-            except (OSError, AttributeError):
-                return
-
-        class Pad(ctypes.Structure):
-            _fields_ = [("wButtons", wintypes.WORD), ("bLeftTrigger", ctypes.c_ubyte),
-                        ("bRightTrigger", ctypes.c_ubyte), ("sThumbLX", ctypes.c_short),
-                        ("sThumbLY", ctypes.c_short), ("sThumbRX", ctypes.c_short),
-                        ("sThumbRY", ctypes.c_short)]
-
-        class State(ctypes.Structure):
-            _fields_ = [("dwPacketNumber", wintypes.DWORD), ("Gamepad", Pad)]
-
+        xinput = _abrir_xinput()
         antes = (0, 0, False)
-        while self.ativo:
-            estado = State()
-            if xinput.XInputGetState(0, ctypes.byref(estado)) != 0:
-                threading.Event().wait(1)
+        # ativo=False pausa (o jogo ficou com o controle) e True retoma.
+        # A thread é daemon: acaba com a lista.
+        while True:
+            if not self.ativo:
+                try:
+                    import controles_lista_windows
+                    controles_lista_windows.fechar()
+                except ImportError:
+                    pass
                 antes = (0, 0, False)
+                threading.Event().wait(0.2)
                 continue
-            botao = estado.Gamepad.wButtons
-            horizontal = vertical = 0
-            if botao & 0x0004 or estado.Gamepad.sThumbLX < -16000:
-                horizontal = -1
-            elif botao & 0x0008 or estado.Gamepad.sThumbLX > 16000:
-                horizontal = 1
-            if botao & 0x0001 or estado.Gamepad.sThumbLY > 16000:
-                vertical = -1
-            elif botao & 0x0002 or estado.Gamepad.sThumbLY < -16000:
-                vertical = 1
-            agora = (horizontal, vertical, bool(botao & 0x1000))
-            if self.ativo and agora[0] and agora[0] != antes[0]:
-                self.fila.put("dir" if agora[0] > 0 else "esq")
-            if self.ativo and agora[1] and agora[1] != antes[1]:
-                self.fila.put("cima" if agora[1] < 0 else "baixo")
-            if self.ativo and agora[2] and not antes[2]:
-                self.fila.put("ok")
+            try:
+                xi = ler_xinput(xinput)
+            except (OSError, AttributeError):
+                xi = None
+            try:
+                genericos = ler_genericos()
+            except Exception:  # noqa: BLE001 — um HID esquisito não para a lista
+                genericos = []
+            agora = escolher_movimento(xi, genericos)
+            if self.ativo:
+                for evento in eventos_do_movimento(agora, antes):
+                    self.fila.put(evento)
             antes = agora
-            threading.Event().wait(0.08)
+            threading.Event().wait(0.08 if (xi is not None or genericos) else 0.4)
 
 
 def main(argv=None):
