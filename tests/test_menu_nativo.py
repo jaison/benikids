@@ -113,6 +113,26 @@ class ClienteNativoServidorTests(unittest.TestCase):
             recs = server_module.load_recommendations()
         self.assertEqual([r["installed"] for r in recs], [False, True])
 
+    def test_uso_traz_o_carimbo_do_config_sem_caminho(self):
+        status, corpo, _ = self.request("/api/usage/status")
+        self.assertEqual(status, 200)
+        self.assertIsInstance(corpo["configStamp"], str)
+        self.assertNotRegex(corpo["configStamp"], r"[\\/]")
+        antes = corpo["configStamp"]
+        cfg = server_module.load_cfg()
+        cfg["title"] = "Título novo do teste"
+        server_module.save_cfg(cfg)
+        _, depois, _ = self.request("/api/usage/status")
+        self.assertNotEqual(depois["configStamp"], antes)
+        self.assertNotIn("configStamp", server_module.usage_tracker().status("default", cfg))
+
+    def test_abrir_tile_que_saiu_responde_gone(self):
+        status, corpo, _ = self.request(
+            "/launch/nao-existe", method="POST", body={}, origin=self.base_url
+        )
+        self.assertEqual(status, 404)
+        self.assertEqual(corpo["status"], "gone")
+
 
 class ClienteNativoWebTests(unittest.TestCase):
     def test_index_carrega_o_script_do_menu_nativo_por_ultimo(self):
