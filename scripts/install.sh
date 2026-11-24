@@ -1708,6 +1708,8 @@ render_template "$SRC_DIR/launcher.sh" "$RUNTIME_BIN" 0755
 render_template "$SRC_DIR/browser.html" "$APP_ROOT/browser.html" 0644
 render_template "$SRC_DIR/overlay.py" "$APP_ROOT/overlay.py" 0755
 render_template "$SRC_DIR/timer_watchdog.py" "$APP_ROOT/timer_watchdog.py" 0755
+# o overlay.py e o timer_watchdog.py importam o timer_fim no topo
+install -m 0644 "$SRC_DIR/timer_fim.py" "$APP_ROOT/timer_fim.py"
 
 # Install the standalone updater used by the parent UI and the command line.
 install -m 0755 "$REPO_DIR/scripts/update.sh" "$UPDATE_SCRIPT"
