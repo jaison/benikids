@@ -343,6 +343,26 @@ class PrepararSuperTuxKartTests(unittest.TestCase):
         self.assertEqual(catalogo_windows.config_supertuxkart(appdata="A"),
                          os.path.join("A", "supertuxkart", "config-0.10", "config.xml"))
 
+    def test_windows_account_name_becomes_benikids_and_keeps_progress(self):
+        texto = ('<players version="1" >\n    <current player="Conta"/>\n'
+                 '    <player name="Conta" guest="false" use-frequency="3">\n'
+                 '        <story-mode><sandtrack solved="easy"/></story-mode>\n'
+                 '    </player>\n</players>\n')
+        novo = catalogo_windows.renomear_conta_do_windows(texto, "Conta")
+        self.assertIn('player="Benikids"', novo)
+        self.assertIn('name="Benikids"', novo)
+        self.assertIn('solved="easy"', novo)
+        self.assertNotIn("Conta", novo)
+        self.assertEqual(catalogo_windows.renomear_conta_do_windows(texto, "Outra"), texto)
+        self.assertEqual(catalogo_windows.renomear_conta_do_windows(novo, "Conta"), novo)
+        self.assertEqual(catalogo_windows.renomear_conta_do_windows(texto, 'a"b'), texto)
+        with tempfile.TemporaryDirectory() as pasta:
+            (Path(pasta) / "players.xml").write_text(texto, encoding="utf-8")
+            (Path(pasta) / "config.xml").write_text("<stkconfig/>", encoding="utf-8")
+            self.assertEqual(catalogo_windows.preparar_supertuxkart("800x600", pasta, usuario="Conta"),
+                             {"players.xml"})
+            self.assertIn('name="Benikids"', (Path(pasta) / "players.xml").read_text(encoding="utf-8"))
+
 
 class AjustesDosAppsTests(unittest.TestCase):
     def test_gcompris_matches_the_linux_wrapper(self):
@@ -358,6 +378,37 @@ class AjustesDosAppsTests(unittest.TestCase):
         texto = catalogo_windows.por_id("extremetuxracer")["config_inicial"]["texto"]
         self.assertIn("[language] pt_PT", texto)
         self.assertNotIn("pt_BR", texto)
+
+    def test_kturtle_commands_are_portuguese_and_the_window_starts_maximized(self):
+        self.assertEqual(catalogo_windows.texto_kturtlerc(""),
+                         "[General Options]\ncurrentLanguageCode=pt_BR\n"
+                         "[MainWindow]\nWindow-Maximized=true\n")
+        ja = "[General Options]\ncurrentLanguageCode=en_US\n[MainWindow]\nWindow-Maximized=false\nWidth=994\n"
+        novo = catalogo_windows.texto_kturtlerc(ja)
+        self.assertIn("currentLanguageCode=en_US", novo)
+        self.assertNotIn("pt_BR", novo)
+        self.assertIn("Window-Maximized=true", novo)
+        self.assertIn("Width=994", novo)
+        item = catalogo_windows.por_id("kturtle")
+        self.assertEqual(item["preparar"], "kturtle")
+        self.assertTrue(item["maximizar"])
+        with tempfile.TemporaryDirectory() as raiz:
+            caminho = os.path.join(raiz, "kturtlerc")
+            self.assertEqual(catalogo_windows.preparar_kturtle([caminho]), [caminho])
+            self.assertIn("currentLanguageCode=pt_BR", Path(caminho).read_text(encoding="utf-8"))
+            self.assertEqual(catalogo_windows.preparar_kturtle([caminho]), [])
+
+    def test_planetblupi_asks_for_portuguese_and_the_windowed_apps_maximize(self):
+        blupi = catalogo_windows.por_id("planetblupi")
+        self.assertEqual(blupi["env"], {"LANGUAGE": "pt"})
+        for item_id in ("klavaro", "minuet", "enigma"):
+            self.assertTrue(catalogo_windows.por_id(item_id)["maximizar"], item_id)
+
+    def test_simon_tatham_puzzles_stay_small_because_maximize_goes_black(self):
+        for item_id in ("puzzles-quinze", "puzzles-desembaracar"):
+            item = catalogo_windows.por_id(item_id)
+            self.assertNotIn("maximizar", item)
+            self.assertNotIn("env", item)
 
     def test_kdeglobals_gains_portuguese_without_replacing_a_choice(self):
         self.assertEqual(catalogo_windows.texto_kdeglobals(""), "[Locale]\nLanguage=pt_BR\n")

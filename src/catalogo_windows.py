@@ -165,6 +165,8 @@ def comando(cmd, catalogo=None, bases=None):
         preparar_luanti(exe)
     elif preparar == "supertuxkart":
         preparar_supertuxkart(tamanho_da_tela())
+    elif preparar == "kturtle":
+        preparar_kturtle()
     elif preparar == "pista":
         preparar_pista()
     elif preparar == "cozy":
@@ -284,8 +286,10 @@ def preparar_luanti(exe, appdata=None, pacotes=None):
 # - sem a tela "Criar usuário", que vem com o nome do usuário do Windows (dado
 #   pessoal) no campo: sem players.xml, um com o jogador "Benikids" como atual. O
 #   jogo cria o que falta nele (modo história, conquistas, ícone) — conferido no
-#   PlayerManager/PlayerProfile do código do SuperTuxKart. Um players.xml que já
-#   existe fica como está.
+#   PlayerManager/PlayerProfile do código do SuperTuxKart. Se o único jogador ainda
+#   se chama como a conta do Windows (o jogo criou sozinho numa abertura anterior),
+#   o nome vira "Benikids" e o resto do arquivo fica: o progresso não se perde.
+#   Um nome que a criança escolheu no jogo não é trocado.
 STK_CONFIG_VERSAO = 8
 STK_CONFIG_MINIMO = ('<?xml version="1.0"?>\n<stkconfig version="%d" >\n'
                      '    <enable_internet value="2" />\n</stkconfig>\n') % STK_CONFIG_VERSAO
@@ -335,11 +339,33 @@ def _gravar_se_mudou(arquivo, texto, novo):
     return True
 
 
-def preparar_supertuxkart(tela, pasta=None):
+def renomear_conta_do_windows(texto, usuario):
+    """Troca o jogador que ainda tem o nome da conta do Windows por "Benikids".
+
+    O SuperTuxKart, sem players.xml, cria o jogador com USERNAME (no Linux, com
+    USER). Num PC de família essa conta costuma ser de um adulto. "Benikids" não
+    é dado pessoal e vale para qualquer criança que use o mesmo usuário do
+    Windows. O nome que alguém escolheu dentro do jogo fica. O progresso (o
+    resto do arquivo) fica."""
+    import re
+
+    if not usuario or usuario == "Benikids" or any(c in usuario for c in '"<>&\r\n'):
+        return texto
+    if re.search(r'\bname="Benikids"', texto or ""):
+        return texto
+    if not re.search(r'\bname="' + re.escape(usuario) + r'"', texto or ""):
+        return texto
+    texto = re.sub(r'(\bname=")' + re.escape(usuario) + r'(")', r"\g<1>Benikids\g<2>", texto)
+    return re.sub(r'(\bplayer=")' + re.escape(usuario) + r'(")', r"\g<1>Benikids\g<2>", texto)
+
+
+def preparar_supertuxkart(tela, pasta=None, usuario=None):
     """Devolve o que gravou: subconjunto de {"config.xml", "players.xml"}."""
     pasta = pasta or pasta_supertuxkart()
     if not pasta:
         return set()
+    if usuario is None:
+        usuario = os.environ.get("USERNAME") or ""
     gravados = set()
     largura = altura = None
     try:
@@ -359,8 +385,14 @@ def preparar_supertuxkart(tela, pasta=None):
         pass
     players = os.path.join(pasta, "players.xml")
     try:
-        if not os.path.exists(players) and _gravar_se_mudou(players, "", STK_PLAYERS_MINIMO):
-            gravados.add("players.xml")
+        if not os.path.exists(players):
+            if _gravar_se_mudou(players, "", STK_PLAYERS_MINIMO):
+                gravados.add("players.xml")
+        else:
+            with open(players, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                texto = f.read()
+            if _gravar_se_mudou(players, texto, renomear_conta_do_windows(texto, usuario)):
+                gravados.add("players.xml")
     except OSError:
         pass
     return gravados
@@ -432,6 +464,74 @@ def texto_kdeglobals(texto):
     if texto and not texto.endswith("\n"):
         texto += "\n"
     return (texto or "") + "[Locale]\nLanguage=pt_BR\n"
+
+
+def _tem_chave_kde(texto, chave):
+    import re
+
+    return re.search(r"(?mi)^[ \t]*" + re.escape(chave) + r"(?:\[[^\]]*\])?[ \t]*=", texto or "") is not None
+
+
+def garantir_no_grupo(texto, grupo, chave, valor, so_se_faltar=False):
+    """Acrescenta chave=valor no grupo de um .rc do KDE, ou troca o valor.
+
+    Com so_se_faltar, uma chave que já existe (em qualquer grupo) fica: é escolha
+    de quem usa o programa. O arquivo pode estar com quebra do Windows."""
+    import re
+
+    texto = texto or ""
+    if so_se_faltar and _tem_chave_kde(texto, chave):
+        return texto
+    padrao = re.compile(r"(?mi)^([ \t]*" + re.escape(chave) + r"(?:\[[^\]]*\])?[ \t]*=[ \t]*)[^\r\n]*")
+    if padrao.search(texto):
+        return padrao.sub(lambda m: m.group(1) + valor, texto, count=1)
+    linha = f"{chave}={valor}\n"
+    cabecalho = re.search(r"(?mi)^(\[" + re.escape(grupo) + r"\][ \t]*\r?\n)", texto)
+    if cabecalho:
+        fim = cabecalho.end()
+        return texto[:fim] + linha + texto[fim:]
+    if texto and not texto.endswith("\n"):
+        texto += "\n"
+    return texto + f"[{grupo}]\n{linha}"
+
+
+def texto_kturtlerc(texto):
+    """kturtlerc com os comandos em pt_BR e a janela maximizada.
+
+    O idioma da interface o KDE lê do kdeglobals. O idioma dos COMANDOS (parafrente,
+    paraesquerda) é outra chave, [General Options] currentLanguageCode: sem ela o
+    KTurtle grava en_US, mesmo com o sistema em português (MainWindow::readConfig).
+    Window-Maximized é o que o KMainWindow restaura ao abrir; sem isso a janela
+    volta ao tamanho salvo (no PC de teste, 994x495) depois que o overlay maximiza.
+    """
+    texto = garantir_no_grupo(texto, "General Options", "currentLanguageCode", "pt_BR", so_se_faltar=True)
+    return garantir_no_grupo(texto, "MainWindow", "Window-Maximized", "true")
+
+
+def preparar_kturtle(arquivos=None):
+    """Grava o kturtlerc onde o KDE no Windows procura (%LOCALAPPDATA% e %APPDATA%)."""
+    if arquivos is None:
+        arquivos = []
+        for variavel in ("LOCALAPPDATA", "APPDATA"):
+            raiz = os.environ.get(variavel)
+            if raiz:
+                arquivos.append(os.path.join(raiz, "kturtlerc"))
+    gravados = []
+    for caminho in arquivos:
+        try:
+            texto = ""
+            if os.path.isfile(caminho):
+                with open(caminho, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    texto = f.read()
+            novo = texto_kturtlerc(texto)
+            if novo != texto:
+                os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
+                with open(caminho, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    f.write(novo)
+                gravados.append(caminho)
+        except OSError:
+            continue
+    return gravados
 
 
 def garantir_idioma_kde(arquivos=None):
