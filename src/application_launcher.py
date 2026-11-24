@@ -243,27 +243,47 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
     return True
 
 
-def _args_extensao_sites(cache_root, url):
-    """Extensão dos sites, com o limite de navegação deste tile, se o pacote a trouxe.
+def pasta_extensao_sites(cache_root, url):
+    """Pasta da extensão dos sites, com o limite deste tile, ou '' se o pacote não a trouxe.
 
     A cópia no cache leva as regras do declarativeNetRequest. Sem ela, cai na
-    pasta de origem (só o CSS). Não pede UAC.
+    pasta de origem (só o CSS). Não pede UAC. Devolve a pasta, não a flag:
+    o Chromium só honra um --load-extension, e quem monta é flags_do_chromium.
     """
     if not os.path.isfile(os.path.join(EXTENSAO_SITES, "manifest.json")):
-        return []
+        return ""
     try:
         destino = preparar_extensao(os.path.join(os.fspath(cache_root), "extensao-sites"), url)
     except OSError:
         if os.name == "nt":
             _log_windows("navegador: não consegui gravar o limite de navegação; segue só o CSS")
-        return [f"--load-extension={EXTENSAO_SITES}"]
+        return EXTENSAO_SITES
     if os.name == "nt":
         _log_windows(
             "navegador: navegação de topo limitada a "
             + limites_da_url(url)["resumo"]
             + " (extensão, sem UAC)"
         )
-    return [f"--load-extension={destino}"]
+    return destino
+
+
+def flags_do_chromium(pastas=()):
+    """Um --disable-features e, se houver pasta, um --load-extension.
+
+    O Chromium ignora a segunda flag de cada. As pastas vão juntas, separadas
+    por vírgula. O controle acrescenta a pasta dele na lista; não monta flag.
+    """
+    flags = [f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}"]
+    lista = []
+    for pasta in pastas:
+        if not pasta:
+            continue
+        caminho = os.fspath(pasta)
+        if caminho not in lista:
+            lista.append(caminho)
+    if lista:
+        flags.append("--load-extension=" + ",".join(lista))
+    return flags
 
 
 def garantir_perfil_firefox(profile):
@@ -297,12 +317,17 @@ def garantir_perfil_firefox(profile):
 
 def external_browser_command(
     browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
+    extensoes=(), extensao=None,
 ):
     """Build the isolated kiosk command used for an external web tile.
 
     marionette_port (Firefox) e devtools_port (Edge/Chrome) só vêm quando o tile
     tem login automático salvo: o controle remoto do navegador fica desligado
     nos outros sites.
+
+    extensoes (ou extensao, uma pasta) entram no mesmo --load-extension da
+    extensão dos sites. Quem chama não monta --load-extension nem
+    --disable-features: o Chromium só honra um de cada.
     """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
@@ -315,11 +340,12 @@ def external_browser_command(
             "--disable-session-crashed-bubble",
             "--lang=pt-BR",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço das preferências (só um --disable-features vale: tudo
-            # na mesma lista, em CHROMIUM_RECURSOS_DESLIGADOS)
-            f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}",
         ]
-        command += _args_extensao_sites(cache_root, url)
+        extras = [pasta for pasta in (extensoes or ()) if pasta]
+        if extensao:
+            extras.append(extensao)
+        sites = pasta_extensao_sites(cache_root, url)
+        command += flags_do_chromium(([sites] if sites else []) + extras)
         if os.name == "nt":
             _log_windows("navegador: DoH desligado; extensão sites-limpos no perfil do Edge")
         if devtools_port:

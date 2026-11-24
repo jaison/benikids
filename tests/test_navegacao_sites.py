@@ -12,7 +12,11 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "src"))
 
 import navegacao_sites as nav  # noqa: E402
-from application_launcher import external_browser_command  # noqa: E402
+from application_launcher import (  # noqa: E402
+    CHROMIUM_RECURSOS_DESLIGADOS,
+    external_browser_command,
+    flags_do_chromium,
+)
 
 PREFIXO = "special:external-browser:"
 PHET = "http://127.0.0.1:38431/sites/phet.html"
@@ -184,6 +188,35 @@ class RegrasEManifestoTest(unittest.TestCase):
             self.assertIn("--kiosk", comando)
             self.assertEqual(firefox[-2:], ["--kiosk", "https://kiddogames.fun/"])
             self.assertFalse(any("load-extension" in a or "declarative" in a for a in firefox))
+
+    def test_uma_flag_junta_a_pasta_do_controle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            extra = os.path.join(tmp, "cozy-controle")
+            os.makedirs(extra)
+            por_lista = external_browser_command(
+                "msedge.exe", "https://kiddogames.fun/", tmp, extensoes=[extra])
+            por_uma = external_browser_command(
+                "msedge.exe", "https://kiddogames.fun/", tmp, extensao=extra)
+            for atual in (por_lista, por_uma):
+                carga = [a for a in atual if a.startswith("--load-extension=")]
+                self.assertEqual(len(carga), 1)
+                pastas = carga[0].split("=", 1)[1].split(",")
+                self.assertEqual(pastas[1:], [extra])
+                self.assertTrue(pastas[0].endswith(os.path.join("extensao-sites")))
+                flags = [a for a in atual if a.startswith("--disable-features=")]
+                self.assertEqual(flags, [f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}"])
+                self.assertIn("--lang=pt-BR", atual)
+            self.assertEqual(
+                flags_do_chromium(),
+                [f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}"],
+            )
+            codigo = (RAIZ / "src" / "application_launcher.py").read_text(encoding="utf-8")
+            self.assertEqual(codigo.count("--load-extension="), 1)
+            self.assertEqual(codigo.count("--disable-features="), 1)
+            iniciador = (RAIZ / "src" / "beni_windows.py").read_text(encoding="utf-8")
+            self.assertIn("flags_do_chromium()", iniciador)
+            self.assertNotIn("--disable-features=", iniciador)
+            self.assertNotIn("--load-extension=", iniciador)
 
 
 class ListaPhETTest(unittest.TestCase):

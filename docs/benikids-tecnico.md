@@ -84,6 +84,7 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
   No Linux isso é o `userContent.css` do Firefox. No Windows é a extensão do Edge (`src/edge/sites-limpos/`), as mesmas regras de CSS. Não vai no uBlock Origin Lite: filtrar a Escola Games travava o jogo, e o uBOL não tem filtro cosmético avulso na política.
   As páginas proibidas também ficam bloqueadas por política do Firefox (no Windows, `URLBlocklist` do Edge).
   **No Windows**, a mesma extensão limita a navegação da janela do site aos domínios daquele tile (e, no PhET, só `/sims/html/` e a página local). Outro site volta para o tile. Não pede senha de administrador: as regras vão na cópia da extensão, no cache, ao abrir. O Firefox do Linux não tem essa lista; lá o bloqueio continua sendo o dos caminhos do `policies.json` mais o CSS.
+  O comando do Chromium monta as flags num lugar só (`flags_do_chromium`): um `--disable-features` e um `--load-extension` com a lista de pastas. A extensão de controle entra nessa lista; uma segunda flag de qualquer uma das duas é ignorada pelo navegador.
 - Downloads vão direto para `~/Imagens/Desenhos`, sem o painel do Firefox, que abriria o gerenciador de arquivos.
 
 ### 🎮 Controles (Pais → Sistema → Controles)

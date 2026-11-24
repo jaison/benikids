@@ -146,7 +146,6 @@ def relatar_menu(codigo):
 def preparar_perfil_do_menu(nav):
     """DoH desligado no navegador do menu (área dos pais), sem pedir administrador."""
     from application_launcher import (  # noqa: PLC0415
-        CHROMIUM_RECURSOS_DESLIGADOS,
         ensure_chromium_preferences,
         garantir_perfil_firefox,
     )
@@ -157,12 +156,12 @@ def preparar_perfil_do_menu(nav):
         ensure_chromium_preferences(perfil)
     elif nav:
         garantir_perfil_firefox(perfil)
-    return familia, perfil, CHROMIUM_RECURSOS_DESLIGADOS
+    return familia, perfil
 
 
 def abrir_menu(usar_web):
     nav = navegador()
-    familia, perfil, recursos = preparar_perfil_do_menu(nav)
+    familia, perfil = preparar_perfil_do_menu(nav)
     exe = os.path.join(APP_ROOT, "beni-menu.exe")
     if not usar_web and os.path.isfile(exe):
         argv = [
@@ -179,9 +178,12 @@ def abrir_menu(usar_web):
         return None, "nenhum"
     url = f"http://127.0.0.1:{PORTA}/index.html"
     if familia == "chromium":
+        from application_launcher import flags_do_chromium  # noqa: PLC0415
+
+        # a mesma função dos sites: um --disable-features só, sem extensão aqui
         argv = [nav, f"--user-data-dir={perfil}",
                 "--no-first-run", "--disable-session-crashed-bubble",
-                f"--disable-features={recursos}", "--kiosk", url]
+                *flags_do_chromium(), "--kiosk", url]
         log("menu web: DoH desligado")
     else:
         argv = [nav, "--no-remote", "--profile", perfil, "--kiosk", url]
