@@ -2,7 +2,9 @@
 
 A lista fica em jogos_por_genero.json (um lugar só, Windows e Linux).
 Perfil sem gender não ganha nada: não adivinhamos. Tile que já existe
-não é reescrito — se os pais ocultaram, continua oculto.
+não é reescrito — se os pais ocultaram, continua oculto. Tile que os pais
+apagaram também não volta: o id fica em tilesSeen, no mesmo espírito do
+catalogSeen dos apps do Windows.
 
 No Linux o comando é o mesmo dos jogos da coleção do itch.io
 (navegador-jogos + cozy-jogo.html). No Windows, o token benikids-jogo:,
@@ -11,6 +13,9 @@ resolvido na abertura para a moldura local em file://.
 
 import json
 import os
+import re
+
+_ID_VISTO = re.compile(r"[A-Za-z0-9_-]{1,80}")
 
 PORTA = 38431
 ARQUIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jogos_por_genero.json")
@@ -77,6 +82,8 @@ def tile_de(jogo, plataforma, moldura=None, porta=PORTA):
         "w": int(jogo.get("w") or 0),
         "h": int(jogo.get("h") or 0),
     }
+    if jogo.get("pad"):
+        info["pad"] = int(jogo["pad"])
     caminhos = itch_sync.Caminhos(
         config="", colecoes="", cache="", capas="", log="", trava="",
         moldura=moldura or MOLDURA_LINUX,
@@ -90,6 +97,48 @@ def tile_de(jogo, plataforma, moldura=None, porta=PORTA):
         "visible": True,
         "category": jogo.get("category") or "jogos",
     }
+
+
+def _comando_de_moldura(cmd):
+    if not isinstance(cmd, list):
+        return False
+    texto = " ".join(parte for parte in cmd if isinstance(parte, str))
+    return (
+        "benikids-jogo:#" in texto
+        or "jogo.html#" in texto
+        or "cozy-jogo.html#" in texto
+    )
+
+
+def ids_vistos(perfil):
+    """Ids que este perfil já recebeu da sincronização (coleção ou gênero)."""
+    if not isinstance(perfil, dict):
+        return set()
+    vistos = perfil.get("tilesSeen")
+    if not isinstance(vistos, list):
+        return set()
+    return {v for v in vistos if isinstance(v, str) and _ID_VISTO.fullmatch(v)}
+
+
+def gravar_vistos(perfil, ids):
+    """Acrescenta ids a tilesSeen. Devolve True se a lista mudou.
+
+    Não tira ids antigos: um jogo que saiu e voltou continua "já oferecido"
+    se os pais o tinham apagado. Lista sempre ordenada, para a segunda
+    sincronização não regravar o arquivo à toa.
+    """
+    if not isinstance(perfil, dict):
+        return False
+    atuais = perfil.get("tilesSeen")
+    base = ids_vistos(perfil)
+    extra = {i for i in ids if isinstance(i, str) and _ID_VISTO.fullmatch(i)}
+    if not extra and not isinstance(atuais, list):
+        return False
+    novo = sorted(base | extra)
+    if isinstance(atuais, list) and atuais == novo:
+        return False
+    perfil["tilesSeen"] = novo
+    return True
 
 
 def retirar_de_outros_generos(perfil, arquivo=ARQUIVO):
@@ -116,7 +165,11 @@ def retirar_de_outros_generos(perfil, arquivo=ARQUIVO):
 
 
 def aplicar_perfil(perfil, plataforma="linux", moldura=None, porta=PORTA, arquivo=ARQUIVO):
-    """Acrescenta os jogos do gênero que o perfil ainda não tem. Devolve quantos."""
+    """Acrescenta os jogos do gênero que o perfil ainda não tem. Devolve quantos.
+
+    Id que já esteve no perfil e foi apagado (tilesSeen) não volta. Os jogos
+    novos entram no fim: a ordem que os pais arrastaram não muda.
+    """
     if not isinstance(perfil, dict):
         return 0
     lista = carregar(arquivo).get(perfil.get("gender"), [])
@@ -126,13 +179,30 @@ def aplicar_perfil(perfil, plataforma="linux", moldura=None, porta=PORTA, arquiv
     if not isinstance(tiles, list):
         return 0
     presentes = {t.get("id") for t in tiles if isinstance(t, dict)}
+    vistos = ids_vistos(perfil)
     acrescentados = 0
     for jogo in lista:
-        if jogo["id"] in presentes:
+        if jogo["id"] in presentes or jogo["id"] in vistos:
             continue
         tiles.append(tile_de(jogo, plataforma, moldura=moldura, porta=porta))
         presentes.add(jogo["id"])
         acrescentados += 1
+    # Jogo que já está no perfil não muda de nome nem de lugar. Só a folga da
+    # moldura (pad=) entra no comando, se ele ainda for o da moldura: sem isso
+    # o GameMaker que já foi instalado continua com a barra de rolagem.
+    por_id = {jogo["id"]: jogo for jogo in lista}
+    for tile in tiles:
+        if not isinstance(tile, dict):
+            continue
+        jogo = por_id.get(tile.get("id"))
+        if not jogo or not jogo.get("pad"):
+            continue
+        if not _comando_de_moldura(tile.get("cmd")):
+            continue
+        novo = tile_de(jogo, plataforma, moldura=moldura, porta=porta)["cmd"]
+        if tile.get("cmd") != novo:
+            tile["cmd"] = novo
+    gravar_vistos(perfil, [jogo["id"] for jogo in lista])
     return acrescentados
 
 

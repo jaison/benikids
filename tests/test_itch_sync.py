@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -360,6 +361,160 @@ class ItchSyncTests(unittest.TestCase):
             ["special:external-browser:http://127.0.0.1:38431/sites/phet.html"],
         )
         self.assertIn("comando(s) antigo(s) de jogo convertido(s) para a moldura local", log)
+
+    def test_rele_o_config_depois_do_download(self):
+        cfg = {"profiles": [{
+            "id": "ela", "name": "Perfil", "gender": "menina", "timerMinutes": 40,
+            "tiles": [{"id": "paint", "label": "Velho", "emoji": "🎨",
+                       "cmd": ["tuxpaint"], "visible": True}],
+        }]}
+
+        def baixar(url, binario=False, tentativas=4):
+            if not binario and url == itch_sync.COLECAO_BEA and not getattr(baixar, "feito", False):
+                baixar.feito = True
+                atual = json.loads((self.dir / "config.json").read_text(encoding="utf-8"))
+                atual["pinHash"] = "hash-dos-pais"
+                atual["profiles"][0]["timerMinutes"] = 15
+                atual["profiles"][0]["tiles"] = [
+                    {"id": "paint", "label": "Novo desenho", "emoji": "🎨",
+                     "cmd": ["tuxpaint"], "visible": True},
+                    {"id": "itch-dog-wash", "label": "Banho", "emoji": "🎮",
+                     "cmd": ["navegador-jogos", "x"], "visible": False, "category": "passatempo"},
+                ]
+                (self.dir / "config.json").write_text(json.dumps(atual), encoding="utf-8")
+            return baixar_paginas(PAGINAS)(url, binario=binario, tentativas=tentativas)
+
+        novo, log, _, _ = self.rodar(cfg, baixar=baixar)
+        perfil = novo["profiles"][0]
+        ids = [t["id"] for t in perfil["tiles"]]
+        self.assertEqual(novo["pinHash"], "hash-dos-pais")
+        self.assertEqual(perfil["timerMinutes"], 15)
+        self.assertEqual(perfil["tiles"][0]["label"], "Novo desenho")
+        self.assertLess(ids.index("paint"), ids.index("itch-dog-wash"))
+        dog = next(t for t in perfil["tiles"] if t["id"] == "itch-dog-wash")
+        self.assertFalse(dog["visible"])
+        self.assertEqual(dog["label"], "Banho")
+        self.assertEqual(dog["category"], "passatempo")
+        self.assertIn("itch-little-chef-prototype", ids)
+        self.assertIn("config.json atualizado", log)
+
+    def test_tile_apagado_nao_volta_e_a_ordem_fica(self):
+        cfg = {"profiles": [{
+            "id": "ela", "name": "Perfil", "gender": "menina",
+            "tilesSeen": ["itch-dog-wash", "bea-dollmaker"],
+            "tiles": [
+                {"id": "paint", "label": "Desenhar", "emoji": "🎨",
+                 "cmd": ["tuxpaint"], "visible": True},
+                {"id": "itch-little-chef-prototype", "label": "Cozinha", "emoji": "🎮",
+                 "cmd": ["navegador-jogos", "x"], "visible": True, "category": "passatempo"},
+            ],
+        }]}
+        novo, _, _, _ = self.rodar(cfg)
+        ids = [t["id"] for t in novo["profiles"][0]["tiles"]]
+        self.assertNotIn("itch-dog-wash", ids)
+        self.assertNotIn("bea-dollmaker", ids)
+        self.assertEqual(ids[0], "paint")
+        self.assertEqual(ids[1], "itch-little-chef-prototype")
+        chef = novo["profiles"][0]["tiles"][1]
+        self.assertEqual(chef["label"], "Cozinha")
+        self.assertEqual(chef["category"], "passatempo")
+        self.assertIn("itch-dog-wash", novo["profiles"][0]["tilesSeen"])
+        self.assertIn("bea-kitty", ids)
+
+    def test_id_com_autor_so_quando_o_nome_colide(self):
+        embed_b = "https://html-classic.itch.zone/html/2/index.html"
+        brutos = [
+            {"link": "https://ana.itch.io/platformer",
+             "info": {"embed": "https://html-classic.itch.zone/html/1/index.html"}},
+            {"link": "https://bia.itch.io/platformer", "info": {"embed": embed_b}},
+        ]
+        self.assertEqual(
+            itch_sync.ids_da_colecao(brutos, []),
+            ["itch-platformer", "itch-bia-platformer"],
+        )
+        frag = "w=1&h=1&u=" + urllib.parse.quote(embed_b, safe="")
+        tiles = [{"id": "itch-platformer", "cmd": ["navegador-jogos", "file:///tmp/cozy-jogo.html#" + frag]}]
+        self.assertEqual(
+            itch_sync.ids_da_colecao(brutos, tiles),
+            ["itch-ana-platformer", "itch-platformer"],
+        )
+        self.assertEqual(
+            itch_sync.ids_da_colecao(
+                [{"link": "https://demo.itch.io/dog-wash", "info": {"embed": embed_b}}],
+                [{"id": "itch-dog-wash", "cmd": ["navegador-jogos", "x"]}],
+            ),
+            ["itch-dog-wash"],
+        )
+        self.assertEqual(len(set(itch_sync.ids_da_colecao(brutos, tiles))), 2)
+
+    def test_nao_grava_config_com_id_duplicado(self):
+        cfg = {"profiles": [{
+            "id": "ela", "name": "Perfil", "gender": "menina", "tiles": [],
+        }]}
+
+        def mesclar(tiles_atuais, tiles_colecao, vistos=None):
+            tile = {
+                "id": "itch-igual", "label": "Igual", "emoji": "🎮",
+                "cmd": ["navegador-jogos", "x"], "visible": True, "category": "jogos",
+            }
+            return [dict(tile), dict(tile)]
+
+        with mock.patch.object(itch_sync, "mesclar_tiles", mesclar):
+            novo, log, antes, depois = self.rodar(cfg)
+        self.assertEqual(antes, depois)
+        self.assertIn("id de tile repetido", log)
+        self.assertEqual(novo["profiles"][0]["tiles"], [])
+
+    def test_moldura_so_aceita_https_no_itch_zone(self):
+        self.assertTrue(itch_sync.embed_permitido(
+            "https://html-classic.itch.zone/html/5076665/itch_1/index.html"))
+        self.assertTrue(itch_sync.embed_permitido("https://html.itch.zone/html/1/index.html"))
+        self.assertTrue(itch_sync.embed_permitido("https://assets.itch.zone/html/1/index.html"))
+        self.assertFalse(itch_sync.embed_permitido("http://html.itch.zone/html/1/index.html"))
+        self.assertFalse(itch_sync.embed_permitido("https://evil.com/jogo"))
+        self.assertFalse(itch_sync.embed_permitido("https://html.itch.zone.evil.com/jogo"))
+        self.assertFalse(itch_sync.embed_permitido("https://itch.zone/jogo"))
+        self.assertFalse(itch_sync.embed_permitido("javascript:alert(1)"))
+        frag_ok = "w=10&h=10&u=" + urllib.parse.quote(
+            "https://html.itch.zone/html/1/index.html", safe="")
+        frag_http = "w=10&h=10&u=" + urllib.parse.quote(
+            "http://html.itch.zone/html/1/index.html", safe="")
+        self.assertTrue(itch_sync._fragmento_valido(frag_ok))
+        self.assertFalse(itch_sync._fragmento_valido(frag_http))
+        self.assertIsNone(itch_sync.fragmento_da_moldura("benikids-jogo:#" + frag_http))
+        moldura = (REPOSITORIO / "src" / "jogo.html").read_text(encoding="utf-8")
+        self.assertEqual(
+            moldura,
+            (REPOSITORIO / "beni" / "chromium" / "cozy-jogo.html").read_text(encoding="utf-8"),
+        )
+        self.assertIn("enderecoPermitido", moldura)
+        self.assertIn("scrolling=\"no\"", moldura)
+        self.assertIn("overflow:hidden", moldura)
+        sandbox = moldura.split('sandbox="', 1)[1].split('"', 1)[0]
+        self.assertNotIn("allow-top-navigation", sandbox)
+        self.assertNotIn("allow-popups", sandbox)
+        self.assertNotIn("allow-downloads", sandbox)
+        self.assertIn("pad=", moldura)
+
+    def test_file_uri_codifica_o_caminho_no_linux(self):
+        info = {
+            "embed": "https://html-classic.itch.zone/html/1/index.html",
+            "w": 960, "h": 540,
+        }
+        caminho = "/home/Lívia Kids/cozy-jogo.html"
+        caminhos = self.caminhos_minimos()
+        caminhos.moldura = caminho
+        cmd = itch_sync.comando_do_jogo(info, "linux", caminhos)
+        base, frag = cmd[1].split("#", 1)
+        self.assertEqual(base, Path(caminho).as_uri())
+        self.assertNotIn(" ", base)
+        self.assertNotIn("Lívia", base)
+        self.assertTrue(itch_sync._fragmento_valido(frag))
+        antigo = ["navegador-jogos", "file:///home/Lívia Kids/cozy-jogo.html#" + frag]
+        self.assertEqual(
+            itch_sync.atualizar_uri_da_moldura(antigo, caminho),
+            cmd,
+        )
 
     def test_segunda_sincronizacao_nao_regrava(self):
         cfg = {"profiles": [{"id": "ela", "name": "Perfil", "gender": "menina", "tiles": []}]}

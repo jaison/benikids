@@ -40,6 +40,7 @@ from activity_store import (
 from config_store import (
     CURRENT_CONFIG_VERSION,
     atomic_write_config,
+    config_lock,
     migrate_config,
     read_config,
 )
@@ -296,7 +297,7 @@ def _load_stored_cfg_from_disk():
         allow_pin_hash=True,
     )
     if migrated:
-        atomic_write_config(CFG, data)
+        write_stored_cfg(data)
         log_runtime_event(
             "config.migrated",
             configVersion=data.get("configVersion", CURRENT_CONFIG_VERSION),
@@ -369,6 +370,12 @@ def themed_index_html(cfg, hour=None):
     return html.replace(INDEX_BODY_TAG, index_body_tag(cfg, hour), 1).encode("utf-8")
 
 
+def write_stored_cfg(data):
+    """Grava o config.json com a mesma trava e a mesma escrita atômica."""
+    with config_lock(CFG):
+        atomic_write_config(CFG, data)
+
+
 def save_stored_cfg(data):
     validated = validate_stored_config(
         data,
@@ -379,7 +386,7 @@ def save_stored_cfg(data):
         # número aleatório da criança no relatório de uso (perfis criados depois do cadastro)
         if not perfil.get("telemetryId"):
             perfil["telemetryId"] = os.urandom(16).hex()
-    atomic_write_config(CFG, validated)
+    write_stored_cfg(validated)
     return validated
 
 
@@ -392,7 +399,7 @@ def save_cfg(data):
             existing_pin_hash=data.get("pinHash", ""),
             allow_pin_hash=True,
         )
-        atomic_write_config(CFG, stored)
+        write_stored_cfg(stored)
         return active_config(stored)
 
     validated = validate_config(

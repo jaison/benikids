@@ -1,8 +1,15 @@
 """Versioned configuration storage for Cozy Kids Launcher."""
 
+import contextlib
 import json
 import os
 import tempfile
+import threading
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - no Windows a trava é a da thread (o sync roda no servidor).
+    fcntl = None
 
 from profile_config import migrate_legacy_profile
 
@@ -46,6 +53,48 @@ def migrate_config(data):
 def read_config(path):
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+_locks_guard = threading.Lock()
+_thread_locks = {}
+
+
+def _thread_lock(path):
+    key = os.path.abspath(path)
+    with _locks_guard:
+        lock = _thread_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _thread_locks[key] = lock
+        return lock
+
+
+@contextlib.contextmanager
+def config_lock(path):
+    """Trava o config.json entre threads e, no Linux, entre processos.
+
+    O servidor (save_stored_cfg) e a sincronização do itch (outro processo no
+    Linux, via cozy-itch-sync) gravam o mesmo arquivo. Sem esta trava, quem
+    termina por último cobre o que o outro acabou de salvar.
+    """
+    lock = _thread_lock(path)
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    lock_path = os.path.join(directory, os.path.basename(os.path.abspath(path)) + ".lock")
+    with lock:
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        with os.fdopen(descriptor, "a+b") as handle:
+            try:
+                os.chmod(lock_path, 0o600)
+            except OSError:
+                pass
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def atomic_write_config(path, data):
