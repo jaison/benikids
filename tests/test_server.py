@@ -2018,6 +2018,17 @@ class ServerApiTests(unittest.TestCase):
         reset.assert_called_once_with()
         falso.ativar_processo.assert_called_once_with(10, True)
 
+    def test_navegador_dos_jogos_poe_a_pasta_da_extensao_numa_so_flag(self):
+        with tempfile.TemporaryDirectory() as home:
+            pasta = os.path.join(home, "cozy-controle")
+            with mock.patch.object(server_module, "HOME", home), \
+                    mock.patch.object(server_module.controles, "pasta_extensao_edge", return_value=pasta):
+                command = server_module.external_browser_command("msedge.exe", "https://x.org/")
+        self.assertEqual([a for a in command if a.startswith("--load-extension")],
+                         ["--load-extension=" + pasta])
+        self.assertEqual([a for a in command if a.startswith("--disable-features")],
+                         ["--disable-features=Translate,DisableLoadExtensionCommandLineSwitch"])
+
     def test_processo_descende_de(self):
         pais = {5: 4, 4: 3, 3: 1, 7: 7}
         self.assertTrue(server_module.processo_descende_de(5, 3, pais))

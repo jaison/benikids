@@ -206,35 +206,63 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
     return True
 
 
+def pastas_das_extensoes(extras=None):
+    """Pastas que entram no único --load-extension do Chromium.
+
+    Cada recurso devolve a PASTA (controles.pasta_extensao_edge; o ramo dos
+    sites, a pasta da extensão de navegação), nunca a flag. Acrescente a pasta
+    nesta lista. O Chromium honra um --load-extension e um --disable-features;
+    não emita a flag em outro lugar.
+    """
+    pastas = []
+    for pasta in extras or []:
+        if pasta and pasta not in pastas:
+            pastas.append(pasta)
+    return pastas
+
+
+def flags_das_extensoes(pastas):
+    """Um --disable-features e, se houver pasta, um --load-extension com todas.
+
+    Translate reforça translate.enabled=false. DisableLoadExtensionCommandLineSwitch
+    faz o Edge novo aceitar --load-extension (a extensão de controle dos jogos e
+    a dos sites, na mesma lista, separadas por vírgula).
+    """
+    recursos = ["Translate"]
+    if pastas:
+        recursos.append("DisableLoadExtensionCommandLineSwitch")
+    flags = ["--disable-features=" + ",".join(recursos)]
+    if pastas:
+        flags.append("--load-extension=" + ",".join(pastas))
+    return flags
+
+
 def external_browser_command(
     browser, url, cache_root, profile_id="", marionette_port=None, devtools_port=None,
-    extensao=None,
+    extensoes=None,
 ):
     """Build the isolated kiosk command used for an external web tile.
 
     marionette_port (Firefox) e devtools_port (Edge/Chrome) só vêm quando o tile
     tem login automático salvo: o controle remoto do navegador fica desligado
     nos outros sites.
+
+    extensoes: pastas (não flags). O ramo dos sites acrescenta a pasta dele em
+    `pastas` antes de flags_das_extensoes, sem um segundo --load-extension.
     """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
         profile = external_chromium_profile(cache_root, profile_id)
         ensure_chromium_preferences(profile)
+        pastas = pastas_das_extensoes(extensoes)
         command = [
             browser,
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço da preferência translate.enabled=false (só um --disable-features
-            # vale: some outra função desligada aqui, na mesma lista).
-            # DisableLoadExtensionCommandLineSwitch: o Edge novo ignora
-            # --load-extension sem isto (a extensão de controle dos jogos).
-            "--disable-features=Translate"
-            + (",DisableLoadExtensionCommandLineSwitch" if extensao else ""),
         ]
-        if extensao:
-            command.append(f"--load-extension={extensao}")
+        command += flags_das_extensoes(pastas)
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,
             # só em 127.0.0.1

@@ -176,11 +176,25 @@ class AmbienteEEdgeTests(unittest.TestCase):
 
     def test_edge_carrega_a_extensao_num_unico_disable_features(self):
         with tempfile.TemporaryDirectory() as tmp:
+            uma = os.path.join(tmp, "cozy-controle")
+            outra = os.path.join(tmp, "sites-limpos")
             comando = application_launcher.external_browser_command(
-                "msedge.exe", "https://x.org/", tmp, extensao=os.path.join(tmp, "cozy-controle"))
-        self.assertIn(f"--load-extension={os.path.join(tmp, 'cozy-controle')}", comando)
+                "msedge.exe", "https://x.org/", tmp, extensoes=[uma])
+            juntas = application_launcher.external_browser_command(
+                "msedge.exe", "https://x.org/", tmp, extensoes=[uma, outra, uma])
+        self.assertIn(f"--load-extension={uma}", comando)
         flags = [a for a in comando if a.startswith("--disable-features")]
         self.assertEqual(flags, ["--disable-features=Translate,DisableLoadExtensionCommandLineSwitch"])
+        self.assertEqual([a for a in comando if a.startswith("--load-extension")],
+                         [f"--load-extension={uma}"])
+        # duas pastas, uma flag só: o Chromium ignora a segunda
+        self.assertEqual([a for a in juntas if a.startswith("--load-extension")],
+                         [f"--load-extension={uma},{outra}"])
+        self.assertEqual([a for a in juntas if a.startswith("--disable-features")], flags)
+        sem = application_launcher.external_browser_command("msedge.exe", "https://x.org/", tmp)
+        self.assertEqual([a for a in sem if a.startswith("--disable-features")],
+                         ["--disable-features=Translate"])
+        self.assertFalse(any(a.startswith("--load-extension") for a in sem))
 
     def test_script_do_windows_marca_a_plataforma_e_o_linux_nao(self):
         texto = controles.script_navegador([], {}, plataforma="windows")

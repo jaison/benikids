@@ -773,14 +773,18 @@ def abridor_do_sistema():
 
 def external_browser_command(browser, url, profile_id="", marionette_port=None, devtools_port=None):
     cache_root = os.path.join(HOME, ".cache", "cozy-kids-launcher")
-    # Extensão de controle (a mesma ideia do Chromium no Linux). No Edge ela
-    # só entra com --load-extension no perfil dos jogos, sem política de máquina
-    # e sem UAC. Sem os arquivos no pacote, o Edge abre como antes.
-    extensao = controles.pasta_extensao_edge()
+    # Extensão de controle (a mesma ideia do Chromium no Linux). Entra como
+    # PASTA na lista única de application_launcher (um --load-extension, um
+    # --disable-features). Sem os arquivos no pacote, a lista fica vazia e o
+    # Edge abre como antes. Sem política de máquina e sem UAC.
+    pastas = []
+    pasta = controles.pasta_extensao_edge()
+    if pasta:
+        pastas.append(pasta)
     return build_external_browser_command(
         browser, url, cache_root, profile_id=profile_id,
         marionette_port=marionette_port, devtools_port=devtools_port,
-        extensao=extensao,
+        extensoes=pastas,
     )
 
 
