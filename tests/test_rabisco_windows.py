@@ -200,6 +200,15 @@ class RabiscoWindowsTest(unittest.TestCase):
         self.assertFalse(mudou)
         self.assertIs(outra, novo)
 
+    def test_servidor_so_sincroniza_no_windows(self):
+        texto = (RAIZ / "src" / "server.py").read_text(encoding="utf-8")
+        inicio = texto.index("apps novos do catálogo")
+        fim = texto.index("telemetria_service", inicio)
+        bloco = texto[inicio:fim]
+        self.assertIn("rabisco_windows.sincronizar", bloco)
+        guarda = texto.rfind("if os.name", 0, inicio)
+        self.assertIn('os.name == "nt"', texto[guarda:inicio])
+
 
 if __name__ == "__main__":
     unittest.main()

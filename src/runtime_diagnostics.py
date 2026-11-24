@@ -41,6 +41,7 @@ _SAFE_EVENT_FIELDS = {
     "setup.completed": {"profiles"},
     "telemetria.apagar": {"result"},
     "catalogo.sincronizado": set(),
+    "rabisco.sincronizado": set(),
     # área dos pais aberta pelo menu nativo: a página se recuperou de uma tela vazia
     "cliente.recuperado": {"etapa", "erro"},
     "request.rejected": {"statusCode"},
