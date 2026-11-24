@@ -1984,6 +1984,40 @@ class ServerApiTests(unittest.TestCase):
                 self.assertFalse(server_module.menu_cobre_a_tela(
                     agora=time.time() + server_module.MENU_PARTIDA_SEGUNDOS + 1))
 
+    def test_menu_na_frente_conta_a_janela_filha_do_menu(self):
+        registro = {"pid": 10}
+        with mock.patch.object(server_module, "owned_process", return_value=registro), \
+                mock.patch.object(server_module, "load_cfg", return_value={}), \
+                mock.patch.object(server_module, "usage_status", return_value={"active": False}):
+            with mock.patch.object(server_module, "pid_da_janela_ativa", return_value=99), \
+                    mock.patch.object(server_module, "pais_dos_processos", return_value={99: 10, 10: 1}):
+                self.assertTrue(server_module.menu_na_frente())
+            with mock.patch.object(server_module, "pid_da_janela_ativa", return_value=10), \
+                    mock.patch.object(server_module, "pais_dos_processos", return_value={}):
+                self.assertTrue(server_module.menu_na_frente())
+            with mock.patch.object(server_module, "pid_da_janela_ativa", return_value=55), \
+                    mock.patch.object(server_module, "pais_dos_processos", return_value={55: 1, 99: 10}):
+                self.assertFalse(server_module.menu_na_frente())
+        with mock.patch.object(server_module, "owned_process", return_value=registro), \
+                mock.patch.object(server_module, "load_cfg", return_value={}), \
+                mock.patch.object(server_module, "usage_status", return_value={"active": True}), \
+                mock.patch.object(server_module, "pid_da_janela_ativa", return_value=99), \
+                mock.patch.object(server_module, "pais_dos_processos", return_value={99: 10}):
+            self.assertFalse(server_module.menu_na_frente())
+
+    def test_start_select_no_windows_traz_o_menu_com_os_filhos(self):
+        falso = mock.Mock()
+        with mock.patch.object(server_module, "owned_process_alive", return_value=True), \
+                mock.patch.object(server_module, "reset_active_tile") as reset, \
+                mock.patch.object(server_module, "owned_process", return_value={"pid": 10}), \
+                mock.patch.object(server_module, "log_runtime_event"), \
+                mock.patch.object(server_module.os, "name", "nt"), \
+                mock.patch.dict(sys.modules, {"plataforma_windows": falso}):
+            with mock.patch.object(server_module.controles, "log_controle"):
+                server_module.fechar_app_pelo_controle()
+        reset.assert_called_once_with()
+        falso.ativar_processo.assert_called_once_with(10, True)
+
     def test_processo_descende_de(self):
         pais = {5: 4, 4: 3, 3: 1, 7: 7}
         self.assertTrue(server_module.processo_descende_de(5, 3, pais))

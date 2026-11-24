@@ -944,13 +944,16 @@ def cliente_voltar_contador():
 
 def menu_na_frente():
     """O controle só vira teclado do menu quando a janela do menu está na frente
-    e nenhum app/site está aberto (jogos de navegador leem o controle sozinhos)."""
+    e nenhum app/site está aberto (jogos de navegador leem o controle sozinhos).
+
+    Vale o pid gravado do menu ou um descendente. No menu web a janela do Edge
+    é de um processo filho; comparar só com o pid do pai deixava o controle parado."""
     browser = owned_process(BROWSER_PIDFILE, "browser")
     if not browser:
         return False
     # No Windows o pid vem do GetForegroundWindow (pid_da_janela_ativa); no Linux,
-    # do xdotool, o mesmo de antes.
-    if pid_da_janela_ativa() != browser.get("pid"):
+    # do xdotool. A árvore cobre o menu web, em que a janela não é o processo pai.
+    if not processo_descende_de(pid_da_janela_ativa(), browser.get("pid")):
         return False
     try:
         return not usage_status(load_cfg()).get("active")
@@ -1054,8 +1057,13 @@ def fechar_app_pelo_controle():
         return
     if os.name == "nt":
         try:
+            import janelas_seguras
             import plataforma_windows
-            plataforma_windows.ativar_processo(browser["pid"])
+            # com_filhos: no menu web a janela é de um processo filho do Edge.
+            # O limite é o mesmo do vigia, para a thread do controle não ficar
+            # presa numa janela que não responde.
+            janelas_seguras.rodar_com_limite(
+                plataforma_windows.ativar_processo, 1.0, browser["pid"], True)
         except Exception:  # noqa: BLE001
             pass
         return
