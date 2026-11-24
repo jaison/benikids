@@ -456,9 +456,17 @@ function renderAdmin(){
     const row=document.createElement('div');
     row.className='tileform';
     row.style.display=pageTileIndexes.has(idx)?'grid':'none';
-    const emoji=document.createElement('input');
-    emoji.value=tile.emoji||'';
-    emoji.onchange=e=>{ tile.emoji=e.target.value; renderAppearancePreview(); };
+    let emojiCell;
+    if(String(tile.emoji||'').startsWith('img:')){
+      // capa: a lista mostra a imagem, nunca o caminho "img:covers/..."
+      emojiCell=createTileVisual(tile.emoji,'emoji');
+      emojiCell.setAttribute('aria-label',tile.label||'Capa');
+    }else{
+      const emoji=document.createElement('input');
+      emoji.value=tile.emoji||'';
+      emoji.onchange=e=>{ tile.emoji=e.target.value; renderAppearancePreview(); };
+      emojiCell=emoji;
+    }
     const label=document.createElement('input');
     label.value=tile.label||'';
     label.onchange=e=>{ tile.label=e.target.value; renderAppearancePreview(); };
@@ -639,7 +647,7 @@ function renderAdmin(){
       reorderTile(from,to);
     });
 
-    row.append(leading,emoji,label,visibleWrap,select,browserWrap,del);
+    row.append(leading,emojiCell,label,visibleWrap,select,browserWrap,del);
     forms.appendChild(row);
   });
   renderAdminBulkActions(filteredTileIndexes);

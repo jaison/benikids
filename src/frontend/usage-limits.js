@@ -31,7 +31,7 @@ function usageGroups(){
   }
   for(const g of groups){
     g.label=g.members.map(c=>c.label).join(' + ');
-    g.emoji=g.members.map(c=>c.emoji).join('');
+    g.emoji=g.members.map(c=>typeof emojiComoTexto==='function'?emojiComoTexto(c.emoji):c.emoji).join('');
   }
   return groups;
 }
@@ -40,7 +40,10 @@ function usageAlternativesText(excludeId){
   const own=usageCategory(excludeId), ownPool=own?(own.pool||own.id):excludeId;
   const options=(usageStatus.categories||[]).filter(c=>c.id!==excludeId&&(c.pool||c.id)!==ownPool&&!c.exhausted&&(c.availableSeconds===null||c.availableSeconds>0));
   if(!options.length) return '';
-  return 'Você ainda pode brincar de '+options.map(c=>c.label+' '+c.emoji+(c.availableSeconds!==null?' ('+usageMinutes(c.availableSeconds)+' min)':'')).join(' ou ')+'.';
+  return 'Você ainda pode brincar de '+options.map(c=>{
+    const emoji=typeof emojiComoTexto==='function'?emojiComoTexto(c.emoji):'';
+    return c.label+(emoji?' '+emoji:'')+(c.availableSeconds!==null?' ('+usageMinutes(c.availableSeconds)+' min)':'');
+  }).join(' ou ')+'.';
 }
 
 // ---------- Regra de aprendizado (ontem Aprender < meta → hoje Jogar menor) ----------
@@ -113,7 +116,8 @@ function renderUsageMeters(){
     if(item.noteLong) pill.title=item.noteLong;
     const emoji=document.createElement('span');
     emoji.className='usage-emoji';
-    emoji.textContent=item.exhausted?'🔒':item.emoji;
+    const escrito=typeof emojiComoTexto==='function'?emojiComoTexto(item.emoji):item.emoji;
+    emoji.textContent=item.exhausted?'🔒':(escrito||'⭐');
     const text=document.createElement('span');
     text.className='usage-text';
     const name=document.createElement('span');
@@ -153,6 +157,33 @@ function maybeShowAppTravado(data){
   return true;
 }
 
+// O servidor manda configStamp no mesmo /api/usage/status (a cada 5 s). Se o
+// config mudou, os tiles recarregam sozinhos. Com app aberto, página escondida
+// ou a área dos pais aberta, espera voltar para não atropelar quem está usando.
+let configStampVisto=null;
+let configMudouFora=false;
+function menuPodeRecarregarTiles(){
+  if(typeof loadConfig!=='function') return false;
+  if(document.hidden) return false;
+  const admin=document.getElementById('admin');
+  if(admin&&!admin.classList.contains('hidden')) return false;
+  if(usageStatus&&usageStatus.active&&usageStatus.active.tileId) return false;
+  return true;
+}
+async function aplicarCarimboDoConfig(data){
+  if(!data||data.configStamp===undefined||data.configStamp===null) return;
+  const stamp=String(data.configStamp);
+  if(configStampVisto===null){ configStampVisto=stamp; return; }
+  if(stamp!==configStampVisto){
+    configStampVisto=stamp;
+    configMudouFora=true;
+  }
+  if(!configMudouFora||!menuPodeRecarregarTiles()) return;
+  configMudouFora=false;
+  try{ await loadConfig(); }catch(e){ configMudouFora=true; }
+}
+function recarregarTilesSeOConfigMudou(){ aplicarCarimboDoConfig(usageStatus); }
+
 async function pollUsage(){
   try{
     const response=await fetch('/api/usage/status',{cache:'no-store'});
@@ -167,6 +198,7 @@ async function pollUsage(){
     maybeShowUsageExpiry();
     maybeShowAppTravado(data);
     if(!document.getElementById('admin').classList.contains('hidden')) renderUsageLimitSettingsStatus();
+    await aplicarCarimboDoConfig(data);
   }catch(e){}
 }
 function startUsagePolling(){
@@ -248,7 +280,9 @@ function ensureCategoryLimits(){
 function categoryDisplay(id){
   const entry=(cfg.categoryLimits&&cfg.categoryLimits.categories||{})[id]||{};
   const builtin=USAGE_DEFAULT_CATEGORIES[id]||{};
-  return {label:entry.label||builtin.label||id,emoji:entry.emoji||builtin.emoji||'⭐'};
+  const bruto=entry.emoji||builtin.emoji||'⭐';
+  const emoji=typeof emojiComoTexto==='function'?(emojiComoTexto(bruto)||'⭐'):bruto;
+  return {label:entry.label||builtin.label||id,emoji};
 }
 function parseLimitInput(input){
   const raw=input.value.trim();

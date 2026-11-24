@@ -128,7 +128,8 @@ function renderScheduleControls(){
   for(const tile of cfg.tiles){
     const option=document.createElement('option');
     option.value=tile.id;
-    option.textContent=(tile.emoji&&!String(tile.emoji).startsWith('img:')?tile.emoji+' ':'')+(tile.label||tile.id);
+    const emoji=emojiComoTexto(tile.emoji);
+    option.textContent=(emoji?emoji+' ':'')+(tile.label||tile.id);
     select.appendChild(option);
   }
   if(!cfg.tiles.some(tile=>tile.id===selectedAppScheduleId)) selectedAppScheduleId=cfg.tiles[0]?cfg.tiles[0].id:'';
