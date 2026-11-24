@@ -44,6 +44,43 @@ class JogosPorGeneroTest(unittest.TestCase):
                 self.assertEqual(tile["cmd"][0], "navegador-jogos")
                 self.assertIn("cozy-jogo.html#", tile["cmd"][1])
         self.assertEqual([t["id"] for t in menino["tiles"]], ["paint"])
+        vistos = set(menina["tilesSeen"])
+        self.assertTrue({"bea-dollmaker", "bea-kitty", "bea-darling", "bea-missy"} <= vistos)
+        cmds = {t["id"]: t["cmd"][1] for t in menina["tiles"] if t["id"].startswith("bea-")}
+        self.assertIn("pad=20", cmds["bea-darling"])
+        self.assertIn("pad=20", cmds["bea-missy"])
+        self.assertNotIn("pad=", cmds["bea-dollmaker"])
+        self.assertNotIn("pad=", cmds["bea-kitty"])
+
+    def test_folga_entra_no_comando_que_ja_existe(self):
+        perfil = {
+            "id": "ela", "gender": "menina",
+            "tiles": [{
+                "id": "bea-darling", "label": "Nome dos pais", "emoji": "💄",
+                "cmd": ["navegador-jogos",
+                        "file:///tmp/cozy-jogo.html#w=1366&h=768&u=https%3A%2F%2Fhtml-classic.itch.zone%2Fhtml%2F1%2Findex.html"],
+                "visible": False, "category": "passatempo",
+            }],
+        }
+        self.assertEqual(jogos_genero.aplicar_perfil(perfil, "linux"), 3)
+        darling = next(t for t in perfil["tiles"] if t["id"] == "bea-darling")
+        self.assertIn("pad=20", darling["cmd"][1])
+        self.assertFalse(darling["visible"])
+        self.assertEqual(darling["label"], "Nome dos pais")
+        self.assertEqual(darling["category"], "passatempo")
+        self.assertEqual(perfil["tiles"][0]["id"], "bea-darling")
+
+    def test_jogo_apagado_nao_volta(self):
+        perfil = {
+            "id": "ela", "gender": "menina", "tilesSeen": ["bea-darling"],
+            "tiles": [{"id": "paint", "cmd": ["tuxpaint"]}],
+        }
+        self.assertEqual(jogos_genero.aplicar_perfil(perfil, "linux"), 3)
+        ids = [t["id"] for t in perfil["tiles"]]
+        self.assertNotIn("bea-darling", ids)
+        self.assertIn("bea-missy", ids)
+        self.assertEqual(jogos_genero.aplicar_perfil(perfil, "linux"), 0)
+        self.assertNotIn("bea-darling", [t["id"] for t in perfil["tiles"]])
 
     def test_perfil_sem_gender_nao_muda(self):
         perfil = {"id": "sem", "tiles": [{"id": "paint", "visible": True}]}

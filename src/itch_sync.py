@@ -9,9 +9,15 @@ cozy-itch-sync). Cada perfil recebe os jogos de navegador (HTML5) da coleção:
 2. senão, gender "menina" usa a coleção bea e "menino" a coleção beni;
 3. perfil sem gender não recebe coleção.
 
-Jogo novo entra ligado, na categoria "jogos". O que os pais mudaram
-(visível, categoria, nome) fica. Jogo que saiu da coleção some. Sem internet,
-ou se a página não vier no formato esperado, o config.json não muda.
+Jogo novo entra ligado, na categoria "jogos", no fim da lista — a ordem
+que os pais arrastaram fica. O que os pais mudaram (visível, categoria, nome)
+fica. Jogo que saiu da coleção some. Jogo que os pais apagaram não volta
+(o id fica em tilesSeen). Sem internet, ou se a página não vier no formato
+esperado, os tiles da coleção não mudam.
+
+A gravação relê o config.json na hora, já com a trava do servidor, e só
+reaplica os tiles da coleção e os jogos por gênero. PIN, tempo e o resto
+do que os pais salvaram durante o download permanecem.
 """
 import html
 import json
@@ -22,7 +28,10 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+
+from config_store import atomic_write_config, config_lock
 
 # Coleções públicas do projeto. Sem nome de criança, e-mail ou lugar.
 COLECAO_BEA = "https://itch.io/c/8339492/bea"
@@ -186,6 +195,89 @@ def slug(link):
     return re.sub(r"[^A-Za-z0-9_-]", "-", texto)
 
 
+def partes_do_link(link):
+    """Devolve (autor, jogo) a partir de https://autor.itch.io/jogo."""
+    encontrado = re.match(r"https?://([a-z0-9-]+)\.itch\.io/([a-z0-9_-]+)", str(link), re.I)
+    if not encontrado:
+        texto = re.sub(r"[^a-z0-9]+", "-", str(link).lower()).strip("-")[:40]
+        return "", texto
+    autor = re.sub(r"[^A-Za-z0-9_-]", "-", encontrado.group(1))[:30]
+    jogo = re.sub(r"[^A-Za-z0-9_-]", "-", encontrado.group(2))[:40]
+    return autor, jogo
+
+
+def _id_livre(candidato, usados, ocupados):
+    candidato = re.sub(r"[^A-Za-z0-9_-]", "-", candidato or "")[:80].strip("-")
+    if candidato and candidato not in usados and candidato not in ocupados:
+        return candidato
+    base = (candidato or "itch-jogo")[:70].strip("-")
+    for n in range(2, 50):
+        alt = f"{base}-{n}"[:80]
+        if alt not in usados and alt not in ocupados:
+            return alt
+    return None
+
+
+def ids_da_colecao(brutos, tiles_atuais):
+    """Um id por jogo. O id curto (itch-dog-wash) fica, se já existir ou se estiver livre.
+
+    Dois jogos com o mesmo nome ganham o autor no id (itch-autor-jogo) só a
+    partir do segundo. Nunca devolve o mesmo id duas vezes, nem um id que já
+    pertence a um tile que não é desta coleção.
+    """
+    tiles_atuais = tiles_atuais if isinstance(tiles_atuais, list) else []
+    ocupados = set()
+    itch_ids = set()
+    embed_para_id = {}
+    for tile in tiles_atuais:
+        if not isinstance(tile, dict) or not isinstance(tile.get("id"), str):
+            continue
+        tid = tile["id"]
+        if tid.startswith("itch-"):
+            itch_ids.add(tid)
+            embed = embed_do_tile(tile)
+            if embed and embed not in embed_para_id:
+                embed_para_id[embed] = tid
+        else:
+            ocupados.add(tid)
+
+    escolhidos = [None] * len(brutos)
+    usados = set()
+    for i, bruto in enumerate(brutos):
+        embed = (bruto.get("info") or {}).get("embed") or ""
+        eid = embed_para_id.get(embed)
+        if eid and eid not in usados:
+            escolhidos[i] = eid
+            usados.add(eid)
+
+    grupos = {}
+    for i, bruto in enumerate(brutos):
+        if escolhidos[i] is not None:
+            continue
+        autor, jogo = partes_do_link(bruto.get("link"))
+        grupos.setdefault(jogo or "jogo", []).append((i, autor))
+
+    for jogo, itens in grupos.items():
+        curto = ("itch-" + jogo)[:80]
+        livres = list(itens)
+        curto_livre = curto not in usados and curto not in ocupados
+        # Id curto (itch-dog-wash) fica com o primeiro jogo deste nome, seja
+        # porque o PC já tem esse id, seja porque ninguém o usa ainda.
+        if curto_livre and livres:
+            indice, _autor = livres.pop(0)
+            escolhidos[indice] = curto
+            usados.add(curto)
+        for indice, autor in livres:
+            candidato = ("itch-" + autor + "-" + jogo)[:80] if autor else ""
+            if not candidato or candidato == curto:
+                candidato = ("itch-outro-" + jogo)[:80]
+            livre = _id_livre(candidato, usados, ocupados | (itch_ids - usados))
+            escolhidos[indice] = livre
+            if livre:
+                usados.add(livre)
+    return escolhidos
+
+
 def arquivo_da_capa(nome, ext):
     """O emoji do tile cabe em 32 caracteres: "img:covers/" + arquivo."""
     base = nome[:20]
@@ -216,6 +308,14 @@ def fragmento(info):
         uw, uh = info["unity"]
         # a página do Unity centraliza canvas + faixa (38 px); mostra só o canvas
         return "w=%d&h=%d&fh=%d&u=%s" % (uw, uh, uh + 38, embed)
+    try:
+        folga = int(info.get("pad") or 0)
+    except (TypeError, ValueError):
+        folga = 0
+    if folga > 0:
+        # GameMaker: o canvas é fixo e inline. A folga joga a barra para fora
+        # da área visível. Não usar em jogo que ocupa a janela inteira (Godot).
+        return "w=%d&h=%d&pad=%d&u=%s" % (info.get("w", 0), info.get("h", 0), folga, embed)
     return "w=%d&h=%d&u=%s" % (info.get("w", 0), info.get("h", 0), embed)
 
 
@@ -239,13 +339,64 @@ def caminho_da_moldura():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "jogo.html")
 
 
+def _embed_do_fragmento(frag):
+    if not isinstance(frag, str) or not frag:
+        return ""
+    try:
+        valores = urllib.parse.parse_qs(frag, keep_blank_values=False).get("u") or []
+    except ValueError:
+        return ""
+    if len(valores) != 1 or not isinstance(valores[0], str):
+        return ""
+    return valores[0]
+
+
+def embed_permitido(url):
+    """Só https em html.itch.zone, html-classic.itch.zone e demais *.itch.zone.
+
+    Os jogos das coleções e os bea-* de hoje abrem em html-classic.itch.zone.
+    html.itch.zone é o host novo do itch. img.itch.zone e qualquer outro
+    subdomínio também passam; itch.zone sozinho (sem subdomínio) não.
+    """
+    if not isinstance(url, str) or not url or len(url) > 2000:
+        return False
+    try:
+        partes = urllib.parse.urlsplit(url)
+        porta = partes.port
+    except ValueError:
+        return False
+    if partes.scheme != "https" or partes.username is not None or partes.password is not None:
+        return False
+    if porta not in (None, 443):
+        return False
+    host = (partes.hostname or "").lower().rstrip(".")
+    if not host or host == "itch.zone" or not host.endswith(".itch.zone"):
+        return False
+    if ".." in host or not re.fullmatch(r"[a-z0-9.-]+", host):
+        return False
+    return True
+
+
 def _fragmento_valido(frag):
     if not isinstance(frag, str) or not _FRAG_MOLDURA.fullmatch(frag):
         return False
     if "w=" not in frag or "h=" not in frag:
         return False
-    # o iframe só recebe http(s); javascript: e file: não passam
-    return "u=https%3A%2F%2F" in frag or "u=http%3A%2F%2F" in frag
+    # javascript: e file: não passam; http também não (só https no itch.zone)
+    return embed_permitido(_embed_do_fragmento(frag))
+
+
+def embed_do_tile(tile):
+    cmd = tile.get("cmd") if isinstance(tile, dict) else None
+    if not isinstance(cmd, list):
+        return ""
+    for parte in cmd:
+        if not isinstance(parte, str) or "#" not in parte:
+            continue
+        embed = _embed_do_fragmento(parte.split("#", 1)[1])
+        if embed:
+            return embed
+    return ""
 
 
 def fragmento_da_moldura(url):
@@ -264,15 +415,20 @@ def comando_da_moldura(frag):
     return ["special:external-browser:" + TOKEN_MOLDURA + "#" + frag]
 
 
+def uri_arquivo(caminho):
+    """file:/// com acentos e espaços codificados, no Windows e no Linux."""
+    path = pathlib.Path(caminho)
+    if not path.is_absolute():
+        path = pathlib.Path(os.path.abspath(str(path)))
+    return path.as_uri()
+
+
 def url_da_moldura(url, moldura=None):
     """file:///…/jogo.html#fragmento, com acentos e espaços codificados. Ou None."""
     frag = fragmento_da_moldura(url)
     if not frag:
         return None
-    caminho = pathlib.Path(moldura or caminho_da_moldura())
-    if not caminho.is_absolute():
-        caminho = pathlib.Path(os.path.abspath(caminho))
-    return caminho.as_uri() + "#" + frag
+    return uri_arquivo(moldura or caminho_da_moldura()) + "#" + frag
 
 
 def converter_comando_gravado(cmd):
@@ -320,7 +476,23 @@ def comando_do_jogo(info, plataforma, caminhos):
         # com a pílula, o ‹ Voltar e o limite da categoria do tile. A URL
         # file:// só nasce na abertura (url_da_moldura).
         return comando_da_moldura(frag)
-    return ["navegador-jogos", "file://%s#%s" % (caminhos.moldura, frag)]
+    return ["navegador-jogos", uri_arquivo(caminhos.moldura) + "#" + frag]
+
+
+def atualizar_uri_da_moldura(cmd, moldura):
+    """Codifica o file:// já gravado no Linux. O fragmento (#w=&h=&u=) fica."""
+    if not isinstance(cmd, list) or len(cmd) != 2 or cmd[0] != "navegador-jogos":
+        return cmd
+    url = cmd[1]
+    if not isinstance(url, str) or "#" not in url:
+        return cmd
+    if "jogo.html#" not in url and "cozy-jogo.html#" not in url:
+        return cmd
+    frag = url.split("#", 1)[1]
+    if not _fragmento_valido(frag):
+        return cmd
+    novo = ["navegador-jogos", uri_arquivo(moldura) + "#" + frag]
+    return novo if novo != cmd else cmd
 
 
 def url_da_colecao(perfil, mapa):
@@ -338,29 +510,66 @@ def url_da_colecao(perfil, mapa):
     return None, None
 
 
-def mesclar_tiles(tiles_atuais, tiles_colecao):
-    """Preserva visível, categoria e nome. Tira o itch-* que saiu da coleção."""
+def _atualizar_tile(velho, novo):
+    tile = dict(novo)
+    tile["visible"] = velho.get("visible", True) if isinstance(velho, dict) else True
+    tile["category"] = velho.get("category", "jogos") if isinstance(velho, dict) else "jogos"
+    if isinstance(velho, dict) and velho.get("label"):
+        tile["label"] = velho["label"]
+    if isinstance(velho, dict):
+        return {**velho, **tile}
+    return tile
+
+
+def mesclar_tiles(tiles_atuais, tiles_colecao, vistos=None):
+    """Mantém a ordem. Atualiza o itch-* que continua. Tira o que saiu.
+
+    Id em `vistos` que não está mais na lista foi apagado pelos pais: não
+    volta. Jogo novo (não visto e não presente) entra no fim.
+    """
     atuais = tiles_atuais if isinstance(tiles_atuais, list) else []
-    antigos = {
-        t["id"]: t
-        for t in atuais
-        if isinstance(t, dict) and str(t.get("id", "")).startswith("itch-")
-    }
-    novos = []
+    vistos = set(vistos or [])
+    colecao = {}
     for tile in tiles_colecao:
-        velho = dict(antigos.get(tile["id"], {}))
-        tile = dict(tile)
-        tile["visible"] = velho.get("visible", True)
-        tile["category"] = velho.get("category", "jogos")
-        if velho.get("label"):
-            tile["label"] = velho["label"]
-        novos.append({**velho, **tile})
-    resto = [
-        t
-        for t in atuais
-        if not (isinstance(t, dict) and str(t.get("id", "")).startswith("itch-"))
-    ]
-    return novos + resto
+        if isinstance(tile, dict) and tile.get("id") and tile["id"] not in colecao:
+            colecao[tile["id"]] = tile
+    resultado = []
+    presentes = set()
+    for tile in atuais:
+        if not isinstance(tile, dict):
+            resultado.append(tile)
+            continue
+        tid = str(tile.get("id", ""))
+        if tid.startswith("itch-"):
+            if tid not in colecao:
+                continue
+            resultado.append(_atualizar_tile(tile, colecao[tid]))
+            presentes.add(tid)
+        else:
+            resultado.append(tile)
+            if tid:
+                presentes.add(tid)
+    for tid, tile in colecao.items():
+        if tid in presentes or tid in vistos:
+            continue
+        resultado.append(dict(tile))
+        presentes.add(tid)
+    return resultado
+
+
+def tem_id_duplicado(cfg):
+    if not isinstance(cfg, dict):
+        return False
+    for perfil in cfg.get("profiles") or []:
+        if not isinstance(perfil, dict):
+            continue
+        ids = []
+        for tile in perfil.get("tiles") or []:
+            if isinstance(tile, dict):
+                ids.append(tile.get("id"))
+        if len(ids) != len(set(ids)):
+            return True
+    return False
 
 
 def gravar_json(caminho, dados):
@@ -457,7 +666,12 @@ def _sincronizar(caminhos, baixar, plataforma):
         except Exception as erro:
             log(caminhos.log, f"{pid}: não consegui ler a coleção ({erro}); mantendo como está")
             continue
-        tiles = []
+        repetidos = {}
+        for link, _titulo, _capa in jogos:
+            _autor, jogo = partes_do_link(link)
+            chave = jogo or "jogo"
+            repetidos[chave] = repetidos.get(chave, 0) + 1
+        brutos = []
         for link, titulo, capa_lista in jogos:
             try:
                 info = info_do_jogo(link, cache, baixar)
@@ -467,62 +681,128 @@ def _sincronizar(caminhos, baixar, plataforma):
             if not info["embed"]:
                 log(caminhos.log, f"  {titulo}: sem versão de navegador, ignorado")
                 continue
-            nome = slug(link)
+            autor, jogo = partes_do_link(link)
+            # Capa com o nome curto de sempre. Só entra o autor quando dois
+            # jogos da coleção têm o mesmo nome (senão o arquivo da capa colide).
+            if repetidos.get(jogo or "jogo", 0) > 1 and autor:
+                nome_capa = (autor + "-" + (jogo or "jogo"))[:40]
+            else:
+                nome_capa = slug(link)
             try:
-                icone = salvar_capa(capa_lista or info["capa"], nome, caminhos.capas, baixar) or "🎮"
+                icone = salvar_capa(capa_lista or info["capa"], nome_capa, caminhos.capas, baixar) or "🎮"
             except Exception as erro:
                 log(caminhos.log, f"  capa falhou ({erro})")
                 icone = "🎮"
-            tiles.append({
-                "id": "itch-" + nome,
-                "label": titulo[:60],
-                "emoji": icone,
-                "cmd": comando_do_jogo(info, plataforma, caminhos),
-                "visible": True,
-                "category": "jogos",
+            brutos.append({
+                "link": link,
+                "titulo": titulo[:60],
+                "icone": icone,
+                "info": info,
             })
-        por_perfil[perfil.get("id")] = tiles
+        por_perfil[perfil.get("id")] = brutos
         algum = True
         if origem == "json":
             como = "itch-colecoes.json"
         else:
             como = f"gênero {origem}"
-        log(caminhos.log, f"{pid}: {len(tiles)} jogo(s) de navegador na coleção ({como})")
+        log(caminhos.log, f"{pid}: {len(brutos)} jogo(s) de navegador na coleção ({como})")
 
     if algum:
         gravar_json(caminhos.cache, cache)
 
-    # Jogos por gênero (vestir/maquiagem) não dependem da página da coleção:
-    # entram mesmo sem internet. Tile que já existe não muda — por isso a
-    # moldura antiga (http://127.0.0.1/jogo.html) é convertida aqui, mesmo
-    # quando a coleção não pôde ser lida.
+    # A rede pode ter levado minutos. Relê o config com a trava do servidor e
+    # reaplica só a coleção e os jogos por gênero em cima do que está no disco.
+    _aplicar_e_gravar(caminhos, por_perfil, plataforma)
+    return 0
+
+
+def montar_tiles(brutos, tiles_atuais, plataforma, caminhos):
+    """Tiles da coleção, com id estável. Devolve (tiles, títulos sem id único)."""
+    ids = ids_da_colecao(brutos, tiles_atuais)
+    tiles = []
+    pulados = []
+    for bruto, tid in zip(brutos, ids):
+        if not tid:
+            pulados.append(bruto.get("titulo") or bruto.get("link") or "jogo")
+            continue
+        tiles.append({
+            "id": tid,
+            "label": bruto.get("titulo") or tid,
+            "emoji": bruto.get("icone") or "🎮",
+            "cmd": comando_do_jogo(bruto.get("info") or {}, plataforma, caminhos),
+            "visible": True,
+            "category": "jogos",
+        })
+    return tiles, pulados
+
+
+def _aplicar(cfg, por_perfil, plataforma, caminhos):
+    """Mexe só em tiles da coleção, jogos por gênero e tilesSeen. Devolve (mudou, acrescentou, convertidos)."""
+    import copy
+
     import jogos_genero
 
     convertidos = converter_comandos_velhos(cfg)
-    if convertidos:
-        log(caminhos.log, f"{convertidos} comando(s) antigo(s) de jogo convertido(s) para a moldura local")
     mudou = convertidos > 0
     acrescentou = 0
-    for perfil in cfg.get("profiles", []):
+    for perfil in cfg.get("profiles") or []:
         if not isinstance(perfil, dict):
             continue
         if perfil.get("id") in por_perfil:
-            lista = mesclar_tiles(perfil.get("tiles", []), por_perfil[perfil["id"]])
-            if lista != perfil.get("tiles"):
+            tiles = perfil.get("tiles") if isinstance(perfil.get("tiles"), list) else []
+            novos, pulados = montar_tiles(por_perfil[perfil["id"]], tiles, plataforma, caminhos)
+            for titulo in pulados:
+                log(caminhos.log, f"  {titulo}: não coube um id único, ignorado")
+            lista = mesclar_tiles(tiles, novos, jogos_genero.ids_vistos(perfil))
+            if lista != tiles:
                 perfil["tiles"] = lista
                 mudou = True
-        novos = jogos_genero.aplicar_perfil(
+            if jogos_genero.gravar_vistos(perfil, [t["id"] for t in novos]):
+                mudou = True
+        vistos_antes = copy.deepcopy(perfil.get("tilesSeen"))
+        tiles_antes = copy.deepcopy(perfil.get("tiles"))
+        novos_genero = jogos_genero.aplicar_perfil(
             perfil, plataforma, moldura=caminhos.moldura, porta=caminhos.porta,
         )
-        if novos:
-            acrescentou += novos
-            log(caminhos.log, f"{perfil.get('id')}: {novos} jogo(s) por gênero acrescentado(s)")
-    if mudou or acrescentou:
-        gravar_json(caminhos.config, cfg)
+        if novos_genero:
+            acrescentou += novos_genero
+            log(caminhos.log, f"{perfil.get('id')}: {novos_genero} jogo(s) por gênero acrescentado(s)")
+        if perfil.get("tiles") != tiles_antes or perfil.get("tilesSeen") != vistos_antes:
+            mudou = True
+        if plataforma != "windows":
+            for tile in perfil.get("tiles") or []:
+                if not isinstance(tile, dict):
+                    continue
+                novo_cmd = atualizar_uri_da_moldura(tile.get("cmd"), caminhos.moldura)
+                if novo_cmd != tile.get("cmd"):
+                    tile["cmd"] = novo_cmd
+                    mudou = True
+    return mudou, acrescentou, convertidos
+
+
+def _aplicar_e_gravar(caminhos, por_perfil, plataforma):
+    with config_lock(caminhos.config):
+        try:
+            with open(caminhos.config, encoding="utf-8") as arquivo:
+                cfg = json.load(arquivo)
+        except (OSError, ValueError):
+            log(caminhos.log, "config.json não pôde ser relido; nada gravado")
+            return
+        if not isinstance(cfg, dict):
+            log(caminhos.log, "config.json não pôde ser relido; nada gravado")
+            return
+        mudou, acrescentou, convertidos = _aplicar(cfg, por_perfil, plataforma, caminhos)
+        if convertidos:
+            log(caminhos.log, f"{convertidos} comando(s) antigo(s) de jogo convertido(s) para a moldura local")
+        if not mudou and not acrescentou:
+            if por_perfil:
+                log(caminhos.log, "nada mudou")
+            return
+        if tem_id_duplicado(cfg):
+            log(caminhos.log, "config.json ficaria com id de tile repetido; nada gravado")
+            return
+        atomic_write_config(caminhos.config, cfg)
         log(caminhos.log, "config.json atualizado")
-    elif por_perfil:
-        log(caminhos.log, "nada mudou")
-    return 0
 
 
 def sincronizar(caminhos=None, baixar=None, plataforma=None, usar_trava=True):
