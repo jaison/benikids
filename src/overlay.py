@@ -375,6 +375,9 @@ def rotulo_da_pilula(uso, timer, cor_padrao):
     "aviso"}. Devolve (texto, cor) ou ("", None)."""
     if timer and timer.get("expirado"):
         return "⏰ Acabou!", TIMER_COR_FIM
+    # Aprender parado: o tempo não está correndo até a criança mexer.
+    if uso and uso.get("pausado"):
+        return "⏸ mexa para contar", cor_padrao
     t = timer.get("restante") if timer else None
     u = uso.get("restante") if uso else None
     if t is not None and (u is None or t < u):
@@ -1052,7 +1055,11 @@ class AppOverlay:
             self.usage_active = active
             remaining = int(active.get("remainingSeconds") or 0)
             self.update_usage_label(active, remaining)
-            if remaining <= COUNTDOWN_SECONDS:
+            if active.get("paused"):
+                # o tempo de Aprender parou: a contagem grande volta quando contar de novo
+                if self.countdown_window is not None:
+                    self.hide_countdown()
+            elif remaining <= COUNTDOWN_SECONDS:
                 deadline = time.monotonic() + remaining
                 if self.countdown_deadline is None or abs(deadline - self.countdown_deadline) > 1.5:
                     self.countdown_deadline = deadline
@@ -1071,7 +1078,8 @@ class AppOverlay:
 
     def update_usage_label(self, active, remaining):
         self.uso_pilula = {"restante": remaining, "limite": active.get("limitSeconds"),
-                           "emoji": active.get("categoryEmoji")}
+                           "emoji": active.get("categoryEmoji"),
+                           "pausado": bool(active.get("paused"))}
         self.atualizar_pilula()
 
     def atualizar_pilula(self):

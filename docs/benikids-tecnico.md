@@ -12,6 +12,7 @@ dentro, como publicar uma atualização e as correções para hardware antigo.
   - A lista mostra só a categoria escolhida, com **⬅ Voltar** (ou Esc).
   - Quando o tempo acaba, o cartão fica cinza com 🔒 "Amanhã tem mais!".
 - **Medidores** verde/amarelo/vermelho no launcher. Durante o jogo, uma barra discreta mostra o tempo restante. Ela fica meio transparente, dá para arrastar para outro canto e tem o ❌ para fechar.
+- **Em Aprender, parado não conta.** Se a atividade fica 90 segundos sem teclado, mouse, toque ou controle, a pílula troca o tempo por "⏸ mexa para contar". Assim que a criança mexe, volta a contar. Esses segundos não entram no tempo de hoje nem na meta de amanhã. Jogar e Passatempo contam como antes, mesmo parados.
 - Nos **sites** aparece também um botão **‹ Voltar** no canto inferior esquerdo.
 - Nos **10 segundos finais**, uma contagem grande avisa ("Seu tempo de jogos está acabando! 8…") e sugere o que ainda dá para fazer ("Você ainda pode brincar de Aprender (18 min)").
 - Com o **reforço de aprendizagem** ligado:
@@ -56,6 +57,7 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
   - o próprio launcher fecha o jogo no limite reduzido.
 - Os pais veem o motivo, por exemplo: "Hoje: Jogar reduzido para 15 min (de 30) porque ontem Aprender foi 0/30 min".
 - Vem desligado e é ligado por perfil.
+- **Parado em Aprender não conta** (sempre ligado, sem opção): só entra no uso o tempo em que houve teclado, mouse, toque ou controle nos últimos 90 segundos. Deixar o Khan aberto e ir embora não completa a meta. A frase fica em Pais → Tempo de tela, no quadro do limite e de novo junto da regra de aprendizado.
 
 ### 🔑 Login automático nos sites (Pais → Crianças)
 - Quadro **"Login automático nos sites"**, com e-mail/usuário e senha **por criança**.
@@ -156,7 +158,7 @@ login → ~/.config/autostart → cozy-iniciar
 | `src/edge/sites-limpos/` | extensão do Edge: CSS dos sites e, ao abrir, o limite de navegação do tile |
 | `scripts/windows/` | instalador e configuração inicial do pacote do Windows (montado pelo GitHub Actions em `menu-nativo.yml`) |
 | `cliente/` | **menu nativo** (`beni-menu`, Rust + gpui-fast): a tela das crianças sem navegador. Veja [cliente/LEIA-ME.md](../cliente/LEIA-ME.md) |
-| `src/usage_limits.py`, `src/frontend/usage-limits.*` | tempo de tela por categoria, dia da semana e reforço de aprendizagem |
+| `src/usage_limits.py`, `src/frontend/usage-limits.*` | tempo de tela por categoria, dia da semana e reforço de aprendizagem. Em Aprender, a contagem pausa após 90 s sem teclado, mouse, toque ou controle (`paused` em `/api/usage/status`; a pílula mostra "⏸ mexa para contar"). No Windows a ociosidade é o `GetLastInputInfo` (não vê controle). No Linux é o `XScreenSaverQueryInfo` (`libxss1`), com `xprintidle` se a biblioteca não existir; o controle entra pelo `controles.py`. Se não der para medir (Wayland), o tempo conta e o log avisa uma vez. |
 | `src/site_logins.py`, `src/frontend/site-logins.*` | login automático nos sites (senhas em `~/.config/cozy-kids-launcher/site-logins.json`) |
 | `src/frontend/escolha.*` | tela Aprender/Passatempo/Jogar |
 | `src/sites/phet.html` | pré-tela de matérias do PhET |

@@ -260,6 +260,13 @@ class PilulaTests(unittest.TestCase):
         uso = {"restante": 600, "limite": 1800, "emoji": "🎮"}
         self.assertEqual(overlay.rotulo_da_pilula(uso, fim, "cor"), ("⏰ Acabou!", overlay.TIMER_COR_FIM))
 
+    def test_paused_learning_asks_to_move(self):
+        uso = {"restante": 28 * 60, "limite": 30 * 60, "emoji": "📚", "pausado": True}
+        timer = {"restante": 40 * 60, "expirado": False, "aviso": False}
+        self.assertEqual(overlay.rotulo_da_pilula(uso, timer, "cor"), ("⏸ mexa para contar", "cor"))
+        fim = {"restante": 0, "expirado": True, "aviso": False}
+        self.assertEqual(overlay.rotulo_da_pilula(uso, fim, "cor")[0], "⏰ Acabou!")
+
 
 class PrimeiraJanelaTests(unittest.TestCase):
     def test_waits_for_the_window_then_brings_it_once(self):

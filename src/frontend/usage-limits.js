@@ -454,6 +454,10 @@ function learningRuleSettings(limits){
   const rule=Object.assign({},LEARNING_RULE_DEFAULTS,limits.learningRule||{});
   const box=document.createElement('div');
   box.className='usage-learning-rule';
+  const nota=document.createElement('p');
+  nota.className='muted';
+  nota.textContent='Em Aprender, o tempo só conta quando a criança está mexendo no computador.';
+  box.appendChild(nota);
   const toggle=document.createElement('label');
   toggle.className='chk usage-learning-toggle';
   const check=document.createElement('input');
