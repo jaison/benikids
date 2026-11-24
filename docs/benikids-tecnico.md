@@ -71,8 +71,8 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 - **DNS CleanBrowsing Family** em qualquer Wi‑Fi:
   - bloqueia sites adultos, proxies e VPNs;
   - força a Busca Segura do Google/Bing e o Modo Restrito do YouTube.
-- Os navegadores não conseguem contornar o filtro, porque o DNS‑over‑HTTPS está desligado.
-- **No Windows** o mesmo filtro entra na instalação, no lote que já pede a senha do administrador (não há um UAC só para o DNS). Vale para as placas de rede ativas, IPv4 e IPv6. Uma placa que aparecer depois (Wi‑Fi novo) é reaplicada pela tarefa agendada `Benikids DNS Familia`, que roda como o sistema, sem pedir senha de novo. **Sair** não desliga o filtro: é proteção do computador. Para desligar, Pais → Sistema → **Filtro de internet** (o Windows pede a senha). O log fica em `C:\ProgramData\Benikids\dns-familia.log`.
+- Vale para o programa que usa o DNS do sistema. No Linux, o Firefox tem o DNS‑over‑HTTPS travado e o Chromium dos jogos desliga o DoH. No Windows, o Edge do computador e o Chrome instalado também desligam o DoH. Outro navegador com DNS seguro (o Firefox, por exemplo) pode furar.
+- **No Windows** o mesmo filtro entra na instalação, no lote que já pede a senha do administrador (não há um UAC só para o DNS). Vale para as placas de rede ativas. O IPv4 recebe o CleanBrowsing; se o IPv6 da placa não aceitar, fica sem servidor DNS (não continua no do roteador). Uma placa que aparecer depois (Wi‑Fi novo) é reaplicada pela tarefa agendada `Benikids DNS Familia`, que roda como o sistema, sem pedir senha de novo. **Sair** não desliga o filtro: é proteção do computador. Para desligar, Pais → Sistema → **Filtro de internet** (o Windows pede a senha). O log fica em `C:\ProgramData\Benikids\dns-familia.log`.
 - **uBlock Origin** nos sites, já ajustado para os jogos do Escola Games abrirem sem anúncio.
 - **Sites limpos com CSS próprio**:
   - Escola Games sem o menu "Jogos";
@@ -420,9 +420,11 @@ um app aberto.
 
 ### Windows: DNS com filtro e sites (`src/dns_familia.py`)
 
-Os IPs são os do Linux (`185.228.168.168`, `185.228.169.168`, `2a0d:2a00:1::`, `2a0d:2a00:2::`). O lote elevado da instalação grava `C:\ProgramData\Benikids\dns-familia.ps1`, põe `HKLM\SOFTWARE\Benikids\DnsFamilia = 1` e cria a tarefa `Benikids DNS Familia` como SYSTEM. A tarefa sobe com o Windows e também no evento 10000 (rede conectou). Se esse evento não existir na máquina, a subida ainda reaplica. Com o registro em 0 a tarefa sai na hora e não mexe no DNS.
+Os IPs são os do Linux (`185.228.168.168`, `185.228.169.168`, `2a0d:2a00:1::`, `2a0d:2a00:2::`). O lote elevado da instalação grava `C:\ProgramData\Benikids\dns-familia.ps1` (ACL: SYSTEM e Administradores com controle total, Usuários só leitura, sem herança), põe `HKLM\SOFTWARE\Benikids\DnsFamilia = 1` e cria a tarefa `Benikids DNS Familia` como SYSTEM, com o caminho do script entre aspas. A tarefa sobe com o Windows e também no evento 10000 (rede conectou). Se esse evento não existir na máquina, a subida ainda reaplica. Com o registro em 0 a tarefa sai na hora e não mexe no DNS.
 
-O Edge do computador ganha a política `DnsOverHttpsMode=off`. Os navegadores que o Benikids abre (sites e menu) também desligam o DoH na linha de comando (`--disable-features=…DnsOverHttps`) ou, no Firefox, `network.trr.mode=5`. O log do filtro é `C:\ProgramData\Benikids\dns-familia.log`; o do navegador é `%USERPROFILE%\.cache\cozy-kids-launcher\beni-windows.log`.
+Se `Set-DnsClientServerAddress` do IPv6 falhar, o script roda `netsh interface ipv6 set dnsservers … address=none` e registra. Não usa `ResetServerAddresses` nesse caso: isso devolveria o DNS do roteador. O log esperado é `ipv6=…` ou `ipv6 sem cleanbrowsing` seguido de `ipv6 sem servidor (o do roteador nao vale)`.
+
+O Edge do computador ganha a política `DnsOverHttpsMode=off`. O mesmo lote do filtro põe `DnsOverHttpsMode=off` em `HKLM\SOFTWARE\Policies\Google\Chrome` e `…\Chromium`, e tira esses valores ao desligar o filtro. Não há NRPT: uma regra para todos os nomes atrapalha impressora, VPN e nome local. O DoH do próprio Windows não troca o CleanBrowsing por outro provedor (esses IPs não estão na lista automática), então não mexemos nele. Os navegadores que o Benikids abre (sites e menu) também desligam o DoH na linha de comando (`--disable-features=…DnsOverHttps`) ou, no Firefox, `network.trr.mode=5`. Um Firefox (ou outro navegador) aberto fora, com DNS seguro, continua podendo furar. O log do filtro é `C:\ProgramData\Benikids\dns-familia.log`; o do navegador é `%USERPROFILE%\.cache\cozy-kids-launcher\beni-windows.log`.
 
 ### Testes
 `python3 -m unittest discover -s tests` roda **388 testes**, os do projeto original e os novos:

@@ -16,6 +16,12 @@ mexe no DNS, e as placas ativas voltam para o DNS automático.
 
 Se o IPv6 da placa não aceitar o CleanBrowsing, a tarefa tira os servidores
 DNS do IPv6 (não deixa o do roteador). As consultas seguem pelo IPv4 filtrado.
+
+O Chrome (e o Chromium) instalado ganha DnsOverHttpsMode=off no mesmo lote:
+senão o "DNS seguro" dele ignora o DNS do Windows. Não usamos NRPT (uma regra
+para todo nome): ela também pega impressora, VPN e nome da rede de casa. O Edge
+já tem a mesma política em politicas_edge.py. Outro navegador (o Firefox, por
+exemplo) ainda pode furar com o DNS seguro dele.
 """
 
 import os
@@ -32,6 +38,11 @@ SCRIPT = PASTA + r"\dns-familia.ps1"
 _SID_SYSTEM = "S-1-5-18"
 _SID_ADMINS = "S-1-5-32-544"
 _SID_USUARIOS = "S-1-5-32-545"
+# O Chrome lê isto mesmo fora de domínio. O Chromium usa a outra chave.
+CHAVES_DOH = (
+    r"HKLM:\SOFTWARE\Policies\Google\Chrome",
+    r"HKLM:\SOFTWARE\Policies\Chromium",
+)
 LOG = PASTA + r"\dns-familia.log"
 CHAVE = r"HKLM:\SOFTWARE\Benikids"
 CHAVE_WINREG = r"SOFTWARE\Benikids"
@@ -156,6 +167,30 @@ def _argumento_da_tarefa():
     return '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + SCRIPT + '"'
 
 
+def linhas_doh_navegador(ligado):
+    """Chrome e Chromium: desliga o DoH próprio, ou devolve quando o filtro sai.
+
+    Não apaga a chave inteira: pode ter outra política. O Edge fica em
+    politicas_edge.py (DnsOverHttpsMode=off) e não volta quando o filtro sai.
+    """
+    linhas = []
+    for chave in CHAVES_DOH:
+        if ligado:
+            linhas.append(
+                f"if (-not (Test-Path {_ps(chave)})) {{ New-Item -Path {_ps(chave)} -Force | Out-Null }}"
+            )
+            linhas.append(
+                f"New-ItemProperty -Path {_ps(chave)} -Name 'DnsOverHttpsMode' -Value 'off' "
+                "-PropertyType String -Force | Out-Null"
+            )
+        else:
+            linhas.append(
+                f"Remove-ItemProperty -Path {_ps(chave)} -Name 'DnsOverHttpsMode' "
+                "-ErrorAction SilentlyContinue"
+            )
+    return linhas
+
+
 def linhas_ligar():
     """Linhas do PowerShell elevado: grava o script, a tarefa e liga o filtro."""
     return [
@@ -182,6 +217,8 @@ def linhas_ligar():
         _linhas_log("tarefa agendada (placa nova nao pede senha)"),
         _linhas_chave(),
         f"New-ItemProperty -Path {_ps(CHAVE)} -Name {_ps(VALOR)} -Value 1 -PropertyType DWord -Force | Out-Null",
+        *linhas_doh_navegador(True),
+        _linhas_log("doh do chrome desligado"),
         f"& {_ps(SCRIPT)}",
         _linhas_log("filtro ligado"),
     ]
@@ -197,6 +234,7 @@ def linhas_desligar():
         f"Stop-ScheduledTask -TaskName {_ps(TAREFA)} -ErrorAction SilentlyContinue",
         _linhas_chave(),
         f"New-ItemProperty -Path {_ps(CHAVE)} -Name {_ps(VALOR)} -Value 0 -PropertyType DWord -Force | Out-Null",
+        *linhas_doh_navegador(False),
         "Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {",
         "  Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses -ErrorAction SilentlyContinue",
         "}",

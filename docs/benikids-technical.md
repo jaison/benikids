@@ -69,7 +69,7 @@ Parents can move any app to another category in Parents → Screen time.
 - **CleanBrowsing Family DNS** on any Wi‑Fi:
   - blocks adult sites, proxies and VPNs;
   - enforces Google/Bing SafeSearch and YouTube Restricted Mode.
-- Browsers can't bypass the filter, because DNS‑over‑HTTPS is turned off.
+- This covers programs that use the system DNS. On Linux, Firefox has DNS‑over‑HTTPS locked and the games' Chromium turns DoH off. On Windows, the computer's Edge and the installed Chrome do too. Another browser with secure DNS (Firefox, for example) can still bypass it.
 - **uBlock Origin** on sites, tuned so Escola Games' games open without ads.
 - **Sites cleaned up with custom CSS**:
   - Escola Games without the "Games" menu;

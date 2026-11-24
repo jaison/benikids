@@ -3,6 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -52,6 +53,11 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertIn("-Value 1 -PropertyType DWord", texto)
         self.assertIn("dns-familia: tarefa agendada (placa nova nao pede senha)", texto)
         self.assertIn("dns-familia: filtro ligado", texto)
+        self.assertIn("dns-familia: doh do chrome desligado", texto)
+        self.assertIn(r"HKLM:\SOFTWARE\Policies\Google\Chrome", texto)
+        self.assertIn(r"HKLM:\SOFTWARE\Policies\Chromium", texto)
+        self.assertIn("-Name 'DnsOverHttpsMode' -Value 'off'", texto)
+        self.assertLess(texto.index("doh do chrome desligado"), texto.index("filtro ligado"))
         self.assertIn("if (-not (Test-Path 'HKLM:\\SOFTWARE\\Benikids'))", texto)
         self.assertNotIn("New-Item -Path 'HKLM:\\SOFTWARE\\Benikids' -Force", texto)
         self.assertNotIn("Unregister-ScheduledTask", texto)
@@ -69,6 +75,9 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertIn("-Value 0 -PropertyType DWord", texto)
         self.assertIn("-ResetServerAddresses", texto)
         self.assertIn("dns-familia: filtro desligado (dns automatico)", texto)
+        self.assertIn("Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Google\\Chrome' -Name 'DnsOverHttpsMode'", texto)
+        self.assertIn("Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Chromium' -Name 'DnsOverHttpsMode'", texto)
+        self.assertNotIn("-Value 'off'", texto)
         self.assertNotIn("Unregister-ScheduledTask", texto)
         self.assertNotIn("exit-kids", texto)
         self.assertNotIn("185.228.168.168", texto)
@@ -101,7 +110,7 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertFalse(dns.falta(WinregFalso(0)))
 
     def test_fora_do_windows_nao_pede_nada(self):
-        with unittest.mock.patch.object(dns.os, "name", "posix"):
+        with mock.patch.object(dns.os, "name", "posix"):
             self.assertFalse(dns.falta())
             self.assertEqual(dns.ler(), {"ligado": False, "configurado": False})
             self.assertFalse(dns.aplicar(True))
