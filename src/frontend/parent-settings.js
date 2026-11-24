@@ -19,36 +19,81 @@ function parseBrowserAllowedOrigins(value){
 
 // Update check
 let installedVersion='0.0.0';
-async function checkUpdate(){
-  // Atualizações automáticas (beni-atualizar): só mostra o estado.
+function aplicarEstadoAtualizacao(st){
+  const msg=document.getElementById('updateMsg');
+  installedVersion=st.installedVersion||installedVersion||'0.0.0';
+  const versionDisplay=document.getElementById('versionDisplay');
+  if(versionDisplay) versionDisplay.textContent=(uiText.versionLabel||'Versão')+': '+installedVersion;
+  const row=document.getElementById('updateRow');
+  if(row) row.style.display='none';
+  renderUiState(msg,st.messageKind||'empty',st.message||'Não deu para verificar (sem internet?).');
+}
+async function lerAtualizacao(){
+  const statusR=await fetch('/api/update/status',{cache:'no-store'});
+  if(!statusR.ok) throw new Error('fetch failed');
+  return statusR.json();
+}
+async function mostrarAtualizacao(){
+  // Só lê o que já foi procurado. Não chama o GitHub.
   const btn=document.getElementById('checkUpdateBtn');
   const msg=document.getElementById('updateMsg');
-  document.getElementById('updateRow').style.display='none';
-  btn.disabled=true;
+  if(btn) btn.disabled=true;
   renderUiState(msg,'loading',uiText.updateLoading);
   try{
-    const statusR=await fetch('/api/update/status',{cache:'no-store'});
-    if(!statusR.ok) throw new Error('fetch failed');
-    const st=await statusR.json();
-    installedVersion=st.installedVersion||'0.0.0';
-    document.getElementById('versionDisplay').textContent=(uiText.versionLabel||'Versão')+': '+installedVersion;
-    const quando=v=>{ if(!v) return ''; const d=new Date(v); return isNaN(d)?v:d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}); };
-    let texto, tipo='success';
-    if(!st.autoUpdate){
-      texto='Atualizações automáticas desligadas neste computador (rode ./instalar.sh para ligar).'; tipo='error';
-    }else if(st.staged){
-      texto='Versão '+st.staged+' baixada. '+(st.installHint ? st.installHint : st.forced
-        ?'Vai ser instalada assim que nenhum app estiver aberto.'
-        :'Vai ser instalada quando o notebook for ligado de novo (ou de madrugada, se ficar ligado).');
-    }else{
-      texto='Em dia (versão '+installedVersion+'). Atualizações automáticas ligadas'+(st.lastCheck?'; última verificação: '+quando(st.lastCheck):'')+'.';
-    }
-    if(st.lastError){ texto+=' ⚠ '+st.lastError; if(!st.staged) tipo='error'; }
-    renderUiState(msg,tipo,texto);
+    aplicarEstadoAtualizacao(await lerAtualizacao());
   }catch(e){
-    renderUiState(msg,'error',uiText.updateError||'Update check failed',checkUpdate);
+    renderUiState(msg,'error',uiText.updateError||'Update check failed',mostrarAtualizacao);
   }finally{
-    btn.disabled=false;
+    if(btn) btn.disabled=false;
+  }
+}
+async function checkUpdate(){
+  // Procura agora: no Windows fala com o GitHub; no Linux pede ao serviço.
+  const btn=document.getElementById('checkUpdateBtn');
+  const msg=document.getElementById('updateMsg');
+  const row=document.getElementById('updateRow');
+  if(row) row.style.display='none';
+  if(btn) btn.disabled=true;
+  renderUiState(msg,'loading',uiText.updateLoading);
+  try{
+    const r=await fetch('/api/update/verificar',{method:'POST',cache:'no-store'});
+    const corpo=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error('fetch failed');
+    if(corpo.pending){
+      const antes=corpo.lastCheck||'';
+      const inicio=Date.now();
+      let st=corpo;
+      let viu=false;
+      while(Date.now()-inicio<180000){
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        st=await lerAtualizacao();
+        if(st.checking) viu=true;
+        if(viu&&!st.checking) break;
+        if(!st.checking&&(st.lastCheck||'')!==antes) break;
+        const jaEraAgora=st.lastCheck&&(Date.now()-new Date(st.lastCheck).getTime())<3*60*1000;
+        if(!st.checking&&(st.lastCheck||'')===antes&&jaEraAgora) break;
+        if(!viu&&Date.now()-inicio>15000) break;
+      }
+      const recente=st.lastCheck&&(Date.now()-new Date(st.lastCheck).getTime())<3*60*1000;
+      if(st.checking){
+        st=Object.assign({},st,{
+          message:'Ainda estou procurando. Toque em Ver atualizações de novo daqui a pouco.',
+          messageKind:'empty'
+        });
+      }else if(!viu&&(st.lastCheck||'')===antes&&!recente){
+        st=Object.assign({},st,{
+          message:'Pedi a verificação. Se esta frase não mudar, as atualizações automáticas seguem de hora em hora.',
+          messageKind:'empty'
+        });
+      }
+      aplicarEstadoAtualizacao(st);
+    }else{
+      aplicarEstadoAtualizacao(corpo.message?corpo:await lerAtualizacao());
+    }
+  }catch(e){
+    renderUiState(msg,'error','Não deu para verificar (sem internet?).',checkUpdate);
+  }finally{
+    if(btn) btn.disabled=false;
   }
 }
 async function startupUpdateCheck(){
@@ -89,8 +134,8 @@ function activateAdminSection(section,focusHeading=false){
   document.querySelectorAll('[data-admin-panel]').forEach(panel=>{
     panel.hidden=panel.dataset.adminPanel!==section;
   });
-  // a situação da atualização é só leitura local: mostra sem precisar do botão
-  if(changed&&section==='system'&&typeof checkUpdate==='function') checkUpdate();
+  // ao abrir a seção, mostra o que já se sabe; o botão é que procura de novo
+  if(changed&&section==='system'&&typeof mostrarAtualizacao==='function') mostrarAtualizacao();
   if(section==='children'&&typeof loadSiteLogins==='function') loadSiteLogins();
   if(section==='system'&&typeof loadControles==='function') loadControles();
   if(section!=='system'&&typeof pararAssistenteControle==='function'&&controleAssistente) pararAssistenteControle();

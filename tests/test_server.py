@@ -2441,6 +2441,7 @@ class FrontendSafetyTests(unittest.TestCase):
     def test_frontend_uses_the_local_update_status_endpoint(self):
         source = frontend_source()
         self.assertIn("fetch('/api/update/status'", source)
+        self.assertIn("fetch('/api/update/verificar'", source)
         self.assertNotIn("raw.githubusercontent.com/TrissyGE/cozy-kids-launcher/main/VERSION", source)
 
     def test_diagnostics_download_is_local_and_bilingual(self):

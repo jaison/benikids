@@ -1,0 +1,11 @@
+[Unit]
+Description=Beni Launcher: procurar atualização quando os pais pedem
+
+[Path]
+# O servidor (usuário das crianças) grava este arquivo. Não é um comando:
+# só acorda o serviço que já roda beni-atualizar verificar.
+PathModified=/var/lib/beni-launcher/gatilho/agora
+Unit=beni-atualizar-verificar.service
+
+[Install]
+WantedBy=multi-user.target

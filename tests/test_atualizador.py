@@ -1,4 +1,5 @@
 """Atualizador automático (beni/sistema/beni-atualizar) e mudanças de catálogo."""
+import datetime
 import importlib.machinery
 import importlib.util
 import io
@@ -106,6 +107,68 @@ class AutoUpdateStatusTest(unittest.TestCase):
                 missing = server_module.auto_update_status(str(Path(tmp) / "nada"), str(Path(tmp) / "nada"))
                 self.assertFalse(missing["autoUpdate"])
                 self.assertEqual(missing["installedVersion"], "1.0.0")
+                self.assertNotIn("versão mais nova", missing["message"])
+                self.assertIn("desligadas", missing["message"])
+
+    def test_linux_text_does_not_say_up_to_date_without_a_recent_check(self):
+        import server as server_module
+
+        quando = datetime.datetime(2026, 11, 23, 19, 21, tzinfo=datetime.timezone(datetime.timedelta(hours=-3)))
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "estado.json"
+            timer = Path(tmp) / "timer"
+            timer.write_text("x")
+            state.write_text(json.dumps({"ultimaVerificacao": quando.isoformat(), "disponivel": "1.0.6"}))
+            with mock.patch.object(server_module, "get_version", return_value="1.0.6"):
+                antigo = server_module.auto_update_status(
+                    str(state), str(timer), agora=quando + datetime.timedelta(hours=5))
+                self.assertNotIn("versão mais nova", antigo["message"])
+                self.assertNotIn("Em dia", antigo["message"])
+                self.assertIn("Toque em Ver atualizações", antigo["message"])
+                fresco = server_module.auto_update_status(
+                    str(state), str(timer), agora=quando + datetime.timedelta(seconds=30))
+                self.assertEqual(
+                    fresco["message"],
+                    "Você tem a versão mais nova (1.0.6). Verificado agora.",
+                )
+                state.write_text(json.dumps({
+                    "baixada": "1.0.8", "ultimaVerificacao": quando.isoformat(),
+                }))
+                baixada = server_module.auto_update_status(str(state), str(timer), agora=quando)
+                self.assertIn("Versão 1.0.8 baixada", baixada["message"])
+                state.write_text(json.dumps({
+                    "erro": "sem acesso ao GitHub (URLError)",
+                    "ultimaVerificacao": quando.isoformat(),
+                }))
+                sem_rede = server_module.auto_update_status(str(state), str(timer), agora=quando)
+                self.assertEqual(sem_rede["message"], "Não deu para verificar (sem internet?).")
+                self.assertEqual(sem_rede["messageKind"], "error")
+
+    def test_linux_button_writes_a_trigger_and_does_not_need_root(self):
+        import server as server_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            alvo = Path(tmp) / "gatilho" / "agora"
+            self.assertEqual(server_module.pedir_verificacao_linux(str(alvo)), "indisponivel")
+            alvo.parent.mkdir()
+            self.assertEqual(server_module.pedir_verificacao_linux(str(alvo)), "pedido")
+            self.assertEqual(alvo.read_text(), "1\n")
+
+    def test_updater_skips_a_second_check_within_a_minute(self):
+        agora = datetime.datetime(2026, 11, 24, 15, 0, tzinfo=datetime.timezone.utc)
+        recente = {"ultimaVerificacao": agora.isoformat()}
+        self.assertTrue(atualizar.verificacao_muito_recente(recente, agora=agora + datetime.timedelta(seconds=30)))
+        self.assertFalse(atualizar.verificacao_muito_recente(recente, agora=agora + datetime.timedelta(seconds=61)))
+        self.assertFalse(atualizar.verificacao_muito_recente({}, agora=agora))
+
+    def test_installer_wires_the_parent_trigger_without_making_the_state_dir_writable(self):
+        texto = (ROOT / "beni/sistema/instalar-sistema.sh").read_text(encoding="utf-8")
+        self.assertIn("beni-atualizar-agora.path", texto)
+        self.assertIn("install -d -m 0755 /var/lib/beni-launcher\n", texto)
+        self.assertIn("install -d -m 1777 /var/lib/beni-launcher/gatilho", texto)
+        unit = (ROOT / "beni/sistema/beni-atualizar-agora.path").read_text(encoding="utf-8")
+        self.assertIn("PathModified=/var/lib/beni-launcher/gatilho/agora", unit)
+        self.assertIn("Unit=beni-atualizar-verificar.service", unit)
 
 
 class CatalogMigrationTest(unittest.TestCase):

@@ -41,6 +41,10 @@ import urllib.request
 CONF = "/etc/beni-launcher/atualizar.conf"
 STATE_DIR = "/var/lib/beni-launcher"
 STATE = os.path.join(STATE_DIR, "estado.json")
+# Os pais pedem uma procura agora gravando este arquivo (a pasta é 1777).
+# O systemd dispara beni-atualizar-verificar.service; o conteúdo não é comando.
+GATILHO = os.path.join(STATE_DIR, "gatilho", "agora")
+MINIMO_ENTRE_VERIFICACOES = 60
 STAGED = os.path.join(STATE_DIR, "baixada")
 BACKUP = os.path.join(STATE_DIR, "copia-anterior")
 LOG = "/var/log/beni-atualizar.log"
@@ -124,6 +128,22 @@ def now():
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def verificacao_muito_recente(state, agora=None, minimo=MINIMO_ENTRE_VERIFICACOES):
+    """True se a última procura terminou há menos de `minimo` segundos."""
+    texto = state.get("ultimaVerificacao") if isinstance(state, dict) else None
+    if not isinstance(texto, str):
+        return False
+    try:
+        quando = datetime.datetime.fromisoformat(texto)
+    except ValueError:
+        return False
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=datetime.datetime.now().astimezone().tzinfo)
+    agora = agora or datetime.datetime.now().astimezone()
+    delta = (agora - quando).total_seconds()
+    return 0 <= delta < minimo
+
+
 def fetch(url, timeout=30):
     request = urllib.request.Request(url, headers=UA)
     return urllib.request.urlopen(request, timeout=timeout)
@@ -200,10 +220,22 @@ def download_native_menu(release, dest):
 # ----------------------------------------------------------------- verificar
 
 def cmd_verificar():
+    if verificacao_muito_recente(load_state()):
+        log("verificar: a última procura foi há menos de um minuto")
+        return 0
     conf = read_conf()
     user = user_info(conf)
     installed = installed_version(user)
-    save_state(instalada=installed, ultimaVerificacao=now(), repositorio=conf["REPO"])
+    # ultimaVerificacao só no fim: a área dos pais espera a procura terminar
+    # (o campo verificando diz que ainda está em andamento).
+    save_state(instalada=installed, repositorio=conf["REPO"], verificando=True)
+    try:
+        return _cmd_verificar(conf, user, installed)
+    finally:
+        save_state(ultimaVerificacao=now(), verificando=False)
+
+
+def _cmd_verificar(conf, user, installed):
     if os.path.exists(os.path.join(STATE_DIR, "pacotes-pendentes")) and os.path.isfile(SYSTEM_SCRIPT):
         result = subprocess.run(["bash", SYSTEM_SCRIPT, "--so-pacotes", user.pw_name],
                                 cwd=os.path.dirname(SYSTEM_SCRIPT), stdout=subprocess.PIPE,
