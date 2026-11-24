@@ -92,13 +92,17 @@ class SitesWindowsTest(unittest.TestCase):
         manifesto = json.loads((extensao / "manifest.json").read_text())
         self.assertEqual(manifesto["manifest_version"], 3)
         juntos = "\n".join((extensao / nome).read_text() for nome in (
-            "escolagames.css", "colorir.css", "autodraw.css"))
+            "escolagames.css", "colorir.css", "autodraw.css",
+            "comuns.css", "kiddogames.css", "musiclab.css", "phet.css"))
         for seletor in (
             'a[href*="/jogos-divertidos"]',
             '[data-hideable-key="jogos-em-ingles"]',
             "header, .oxy-header-wrapper, footer",
             "#main-menu > ul > li:nth-child(3)",
             "#aix-link",
+            ".share-cta, #shareBtn, #sX, #sFB, #sPin",
+            'a[href*="givecampus"]',
+            'a[href*="play.google.com"]',
         ):
             self.assertIn(seletor, firefox)
             self.assertIn(seletor, juntos)

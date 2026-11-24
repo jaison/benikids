@@ -1,0 +1,7 @@
+/* Dentro da simulação, o menu PhET não leva ao site, à doação nem ao STUDIO.
+   O link da própria simulação (/sims/html/) continua. */
+a[href*="givecampus"],
+a[href*="/donate"],
+a[href*="phet.colorado.edu/"]:not([href*="/sims/html/"]) {
+  display: none !important;
+}

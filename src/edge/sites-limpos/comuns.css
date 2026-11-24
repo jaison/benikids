@@ -1,0 +1,16 @@
+/* Compartilhar, doação e loja de aplicativos, em qualquer site do tile.
+   Login fica: Khan Academy e Teach Your Monster entram por ele. */
+a[href*="facebook.com"],
+a[href*="instagram.com"],
+a[href*="tiktok.com"],
+a[href*="twitter.com"],
+a[href*="://x.com"],
+a[href*="pinterest.com"],
+a[href*="apps.apple.com"],
+a[href*="play.google.com"],
+a[href*="itunes.apple.com"],
+a[href*="givecampus.com"],
+a[href*="donate.code.org"],
+a[href*="/donate"] {
+  display: none !important;
+}
