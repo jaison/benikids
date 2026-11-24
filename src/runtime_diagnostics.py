@@ -58,6 +58,8 @@ _SAFE_EVENT_FIELDS = {
     "update.checked": {"source", "updateAvailable", "version"},
     "update.failed": {"exceptionType"},
     "update.triggered": set(),
+    # pausa do Aprender por ociosidade: a frase pronta, sem dado da criança
+    "usage.aprender": {"texto"},
 }
 _SAFE_LEVELS = {"debug", "info", "warning", "error", "critical"}
 _SAFE_ACTION_TYPES = {"app", "media", "none", "web"}
@@ -130,7 +132,7 @@ def _safe_detail(name, value):
         return value
     if name == "etapa" and value in _SAFE_ETAPAS:
         return value
-    if name == "erro" and isinstance(value, str):
+    if name in ("erro", "texto") and isinstance(value, str):
         # mensagem de erro do navegador: sem textos entre aspas (podem trazer dados
         # da configuração), só caracteres comuns, no máximo 300
         texto = re.sub(r"\"[^\"]*\"|'[^']*'|`[^`]*`", '"…"', value)

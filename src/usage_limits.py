@@ -4,18 +4,24 @@ Uma categoria pode dividir o limite de outra ("pool": "jogos"): o Passatempo,
 por exemplo, gasta dos mesmos 30 min dos Jogos.
 
 O tempo só conta enquanto um app/site lançado pelo launcher está aberto.
-O uso acumula por dia (data local; zera à meia-noite) e por perfil, e fica
-persistido em ~/.local/state/cozy-kids-launcher/usage-today.json para
-sobreviver a reinícios do servidor. O mesmo arquivo guarda um histórico curto
+Em Aprender (categoria "educativo"), segundos sem teclado, mouse, toque ou
+controle não entram: a criança não ganha tempo de jogo só deixando a atividade
+aberta e parada. O uso acumula por dia (data local; zera à meia-noite) e por
+perfil, e fica persistido em ~/.local/state/cozy-kids-launcher/usage-today.json
+para sobreviver a reinícios do servidor. O mesmo arquivo guarda um histórico curto
 ("history": segundos por categoria dos últimos HISTORY_DAYS dias), usado pela
 regra de aprendizado: se ontem a criança não cumpriu a meta de Aprender, hoje
 o limite de Jogar fica reduzido (ver learning_rule_status).
 """
 
 import copy
+import ctypes
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -32,6 +38,13 @@ MAX_LIMIT_MINUTES = 24 * 60
 SAVE_INTERVAL_SECONDS = 5.0
 # Margem antes de o servidor fechar o app sozinho, caso o overlay não o faça.
 ENFORCE_GRACE_SECONDS = 3
+# Em Aprender, passado este tempo sem teclado, mouse, toque ou controle, a
+# contagem pausa. Dá para ler ou pensar um pouco sem perder o tempo.
+OCIOSO_APRENDER_SEGUNDOS = 90
+MENSAGEM_VOLTA_APRENDER = "uso: aprender voltou a contar"
+MENSAGEM_SEM_DETECCAO = (
+    "uso: aprender sem detecção de ociosidade, o tempo conta sempre"
+)
 
 # Categorias conhecidas. Outras podem ser criadas no config.json com
 # label/emoji próprios em categoryLimits.categories.
@@ -629,6 +642,177 @@ def compute_status(profile, usage_entry, active=None, now=None, history=None):
     }
 
 
+def mensagem_pausa_aprender(segundos=OCIOSO_APRENDER_SEGUNDOS):
+    return f"uso: aprender pausado (sem teclado/mouse há {int(segundos)} s)"
+
+
+def ociosidade_efetiva(teclado, controle):
+    """Segundos sem entrada que valem para pausar o Aprender.
+
+    teclado None: não deu para medir (não pausar, para não punir a criança).
+    controle None: este sistema não viu controle; vale só teclado, mouse e toque.
+    """
+    if teclado is None:
+        return None
+    if controle is None:
+        return float(teclado)
+    return min(float(teclado), float(controle))
+
+
+def segundos_sem_teclado():
+    """Segundos desde o último teclado, mouse ou toque.
+
+    None se este computador não deixa medir (Mac de desenvolvimento, Wayland
+    sem a extensão, biblioteca ausente). Aí o Aprender conta sempre.
+    """
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return float(plataforma_windows.segundos_sem_uso())
+        except Exception:  # noqa: BLE001 — falhou a medição: não pausa
+            return None
+    if not sys.platform.startswith("linux"):
+        return None
+    return _segundos_linux()
+
+
+class _XScreenSaverInfo(ctypes.Structure):
+    _fields_ = [
+        ("window", ctypes.c_ulong),
+        ("state", ctypes.c_int),
+        ("kind", ctypes.c_int),
+        ("til_or_since", ctypes.c_ulong),
+        ("idle", ctypes.c_ulong),
+        ("event_mask", ctypes.c_ulong),
+    ]
+
+
+# "xss" | "xprintidle" | "nenhum" | None (ainda não tentou)
+_linux_modo = None
+_xss_libs = None
+
+
+def _xss_carregar():
+    """(libX11, libXss) ou None. XDefaultRootWindow é macro: usa as duas funções."""
+    global _xss_libs
+    if _xss_libs is False:
+        return None
+    if _xss_libs:
+        return _xss_libs
+    try:
+        x11 = ctypes.CDLL("libX11.so.6")
+        xss = ctypes.CDLL("libXss.so.1")
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        x11.XDefaultScreen.argtypes = [ctypes.c_void_p]
+        x11.XDefaultScreen.restype = ctypes.c_int
+        x11.XRootWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        x11.XRootWindow.restype = ctypes.c_ulong
+        xss.XScreenSaverQueryInfo.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_XScreenSaverInfo),
+        ]
+        xss.XScreenSaverQueryInfo.restype = ctypes.c_int
+    except (AttributeError, OSError):
+        _xss_libs = False
+        return None
+    _xss_libs = (x11, xss)
+    return _xss_libs
+
+
+def _xss_segundos():
+    libs = _xss_carregar()
+    if not libs:
+        return None
+    x11, xss = libs
+    tela = x11.XOpenDisplay(None)
+    if not tela:
+        return None
+    try:
+        info = _XScreenSaverInfo()
+        raiz = x11.XRootWindow(tela, x11.XDefaultScreen(tela))
+        if not xss.XScreenSaverQueryInfo(tela, raiz, ctypes.byref(info)):
+            return None
+        return info.idle / 1000.0
+    except Exception:  # noqa: BLE001 — uma falha não pode derrubar o contador
+        return None
+    finally:
+        try:
+            x11.XCloseDisplay(tela)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _xprintidle_segundos():
+    caminho = shutil.which("xprintidle")
+    if not caminho:
+        return None
+    try:
+        saida = subprocess.check_output(
+            [caminho], timeout=1.5, text=True, stderr=subprocess.DEVNULL,
+        )
+        return int(saida.strip()) / 1000.0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _segundos_linux():
+    """XScreenSaverQueryInfo; se a biblioteca não existe, o comando xprintidle.
+
+    Se nenhum funcionar, devolve None para sempre (não tenta de novo a cada
+    segundo). Uma falha depois de já ter medido conta aquele instante, em vez
+    de desligar a pausa para o resto da sessão.
+    """
+    global _linux_modo
+    if _linux_modo == "nenhum":
+        return None
+    if _linux_modo == "xprintidle":
+        valor = _xprintidle_segundos()
+        return 0.0 if valor is None else valor
+    if _linux_modo == "xss":
+        valor = _xss_segundos()
+        return 0.0 if valor is None else valor
+    valor = _xss_segundos()
+    if valor is not None:
+        _linux_modo = "xss"
+        return valor
+    valor = _xprintidle_segundos()
+    if valor is not None:
+        _linux_modo = "xprintidle"
+        return valor
+    _linux_modo = "nenhum"
+    return None
+
+
+def medir_ociosidade(controle=None):
+    """Função para o UsageTracker: segundos sem entrada, no máximo 1 vez por segundo.
+
+    controle(): segundos sem uso do controle, ou None se não houve / não há leitura.
+    """
+    cache = {"em": 0.0, "valor": None}
+    trava = threading.Lock()
+
+    def medir():
+        agora = time.monotonic()
+        with trava:
+            if cache["em"] and agora - cache["em"] < 1.0:
+                return cache["valor"]
+        teclado = segundos_sem_teclado()
+        extra = None
+        if teclado is not None and controle is not None:
+            try:
+                extra = controle()
+            except Exception:  # noqa: BLE001 — controle é extra, não pode pausar à toa
+                extra = None
+        valor = ociosidade_efetiva(teclado, extra)
+        with trava:
+            cache["em"] = agora
+            cache["valor"] = valor
+        return valor
+
+    return medir
+
+
 # ----------------------------------------------------------------- tracker
 
 class UsageTracker:
@@ -639,12 +823,17 @@ class UsageTracker:
     stop_tile(): fecha o app aberto (mesmo efeito do ❌).
     """
 
-    def __init__(self, path, load_profiles, tile_alive, stop_tile, clock=time.time):
+    def __init__(self, path, load_profiles, tile_alive, stop_tile, clock=time.time,
+                 ociosidade=None, log=None):
         self.path = os.fspath(path)
         self.load_profiles = load_profiles
         self.tile_alive = tile_alive
         self.stop_tile = stop_tile
         self.clock = clock
+        # () -> segundos sem teclado/mouse/toque/controle, ou None se não deu para medir.
+        # None (o argumento): testes e quem não liga a pausa; o Aprender conta como antes.
+        self.ociosidade = ociosidade
+        self.log = log
         self.lock = threading.RLock()
         self.usage = load_usage(self.path, self.clock())
         self.active = None
@@ -657,6 +846,9 @@ class UsageTracker:
         # roteiro 31: app "Não respondendo" não conta (o vigia da pílula pausa e retoma)
         self.pausado = False
         self.descontado = 0.0
+        # Aprender aberto e sem entrada há OCIOSO_APRENDER_SEGUNDOS: aqueles segundos não entram
+        self.aprender_parado = False
+        self._ociosidade_indisponivel = False
 
     # -- ciclo de vida
     def start(self):
@@ -690,6 +882,7 @@ class UsageTracker:
             self.last_tick = self.clock()
             self.pausado = False  # app novo: conta desde já
             self.descontado = 0.0
+            self._sincronizar_pausa_aprender()
 
     def adopt(self, profile_id, tile_id, category, tile_alive):
         """Retoma um tile que ainda está aberto (ex.: após reiniciar o servidor)."""
@@ -724,6 +917,7 @@ class UsageTracker:
             self._accrue()
             self.active = None
             self.last_tick = None
+            self._sincronizar_pausa_aprender()
             self._save(force=True)
 
     # -- contagem
@@ -745,13 +939,72 @@ class UsageTracker:
             profile_id, {"totalSeconds": 0.0, "categories": {}}
         )
 
+    def _log(self, texto):
+        if self.log is None:
+            return
+        try:
+            self.log(texto)
+        except Exception:  # noqa: BLE001 — o log não pode parar a contagem
+            pass
+
+    def _medir_ociosidade(self):
+        """Segundos sem entrada. None = não deu para medir (conta sempre).
+
+        Sem a função injetada, devolve 0: o Aprender conta, como antes desta regra.
+        """
+        if self.ociosidade is None:
+            return 0.0
+        if self._ociosidade_indisponivel:
+            return None
+        try:
+            valor = self.ociosidade()
+        except Exception:  # noqa: BLE001
+            valor = None
+        if valor is None:
+            self._ociosidade_indisponivel = True
+            self._log(MENSAGEM_SEM_DETECCAO)
+            return None
+        try:
+            return float(valor)
+        except (TypeError, ValueError):
+            self._ociosidade_indisponivel = True
+            self._log(MENSAGEM_SEM_DETECCAO)
+            return None
+
+    def _definir_pausa_aprender(self, parado):
+        parado = bool(parado)
+        if parado == self.aprender_parado:
+            return
+        self.aprender_parado = parado
+        if parado:
+            self._log(mensagem_pausa_aprender())
+        elif self.active and self.active.get("category") == LEARNING_CATEGORY:
+            self._log(MENSAGEM_VOLTA_APRENDER)
+
+    def _sincronizar_pausa_aprender(self):
+        """True se o Aprender está aberto e ocioso além do limite. As outras categorias não pausam."""
+        ativo = self.active or {}
+        if ativo.get("category") != LEARNING_CATEGORY:
+            self._definir_pausa_aprender(False)
+            return False
+        segundos = self._medir_ociosidade()
+        if segundos is None:
+            self._definir_pausa_aprender(False)
+            return False
+        parado = segundos >= OCIOSO_APRENDER_SEGUNDOS
+        self._definir_pausa_aprender(parado)
+        return parado
+
     def _accrue(self):
         now = self.clock()
         self._roll_day()
+        ocioso = self._sincronizar_pausa_aprender()
         if self.active and self.last_tick is not None:
             delta = now - self.last_tick
             if self.pausado and 0 < delta <= 10:
                 self.descontado += delta
+                delta = 0
+            elif ocioso and 0 < delta <= 10:
                 delta = 0
             # Ignora saltos (suspensão do notebook, relógio ajustado).
             if 0 < delta <= 10:
@@ -784,6 +1037,7 @@ class UsageTracker:
                 self._accrue()
                 self.active = None
                 self.last_tick = None
+                self._sincronizar_pausa_aprender()
                 self._save(force=True)
                 return
             self._accrue()
@@ -855,6 +1109,12 @@ class UsageTracker:
             payload["date"] = self.usage["date"]
             payload["profileId"] = profile_id
             payload["now"] = int(self.clock())
+            pausado = bool(
+                self.aprender_parado and active and active.get("category") == LEARNING_CATEGORY
+            )
+            payload["paused"] = pausado
+            if isinstance(payload.get("active"), dict):
+                payload["active"]["paused"] = pausado
             if self.last_expiry and self.last_expiry.get("profileId") == profile_id:
                 payload["lastExpiry"] = copy.deepcopy(self.last_expiry)
             return payload

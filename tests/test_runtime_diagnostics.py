@@ -75,6 +75,13 @@ class RuntimeDiagnosticsTests(unittest.TestCase):
         self.assertTrue(event["details"]["erro"].startswith("SyntaxError: Unexpected token"))
         self.assertLessEqual(len(event["details"]["erro"]), 300)
 
+    def test_pausa_do_aprender_entra_no_log_sem_dado_pessoal(self):
+        frase = "uso: aprender pausado (sem teclado/mouse há 90 s)"
+        event = runtime_diagnostics.sanitize_event("usage.aprender", details={"texto": frase})
+        self.assertEqual(event["details"]["texto"], frase)
+        with self.assertRaisesRegex(ValueError, "privacy contract"):
+            runtime_diagnostics.sanitize_event("usage.aprender", details={"texto": frase, "nome": "x"})
+
     def test_recovery_attempt_is_bounded_and_privacy_safe(self):
         event = runtime_diagnostics.sanitize_event(
             "launcher.recovered",

@@ -6,6 +6,8 @@ wmctrl
 xdotool
 x11-utils
 x11-xserver-utils
+# ociosidade do Aprender (XScreenSaverQueryInfo); sem ela o tempo conta sempre
+libxss1
 gcc
 flatpak
 network-manager

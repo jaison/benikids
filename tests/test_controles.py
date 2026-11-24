@@ -294,5 +294,14 @@ class ServicoTests(unittest.TestCase):
         self.assertIsNone(token(1, 290, 0, faixas, estado))   # soltou
 
 
+class UsoDoControleTest(unittest.TestCase):
+    def test_sem_evento_nao_parece_recente(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            servico = controles.Controles(os.path.join(pasta, "controles.json"), casa=pasta)
+            self.assertIsNone(servico.segundos_sem_controle())
+            servico._registrar_uso_controle()
+            self.assertLess(servico.segundos_sem_controle(), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

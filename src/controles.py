@@ -456,6 +456,9 @@ class Controles:
         self.segurados = {}       # evento -> códigos de botão apertados agora
         self.combo_desde = {}     # evento -> monotonic em que Start+Select começaram
         self.combo_disparado = set()
+        # último botão ou eixo útil (o Aprender não pausa enquanto o controle mexe;
+        # o GetLastInputInfo / XScreenSaver muitas vezes não veem o joystick)
+        self.ultimo_util = 0.0
 
     # -- configuração gerada
 
@@ -568,6 +571,16 @@ class Controles:
     def capturando(self):
         return self.captura_ate > time.monotonic()
 
+    def _registrar_uso_controle(self):
+        self.ultimo_util = time.monotonic()
+
+    def segundos_sem_controle(self):
+        """Segundos desde o último botão ou eixo útil. None se o controle ainda não foi usado."""
+        ultimo = self.ultimo_util
+        if ultimo <= 0:
+            return None
+        return max(0.0, time.monotonic() - ultimo)
+
     # -- leitura
 
     def garantir_thread(self):
@@ -642,9 +655,11 @@ class Controles:
                         apertados = self.segurados.setdefault(evento, set())
                         (apertados.add if valor else apertados.discard)(codigo)
                         util_ate = time.monotonic() + 3
+                        self._registrar_uso_controle()
                     token = self._token(tipo, codigo, valor, faixas, estado)
                     if token:
                         util_ate = time.monotonic() + 3
+                        self._registrar_uso_controle()
                         self._acionado(dispositivo, token)
             agora = time.monotonic()
             self._verificar_saida(agora)

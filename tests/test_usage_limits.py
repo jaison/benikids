@@ -10,11 +10,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from usage_limits import (  # noqa: E402
     HISTORY_DAYS,
+    MENSAGEM_SEM_DETECCAO,
+    MENSAGEM_VOLTA_APRENDER,
+    OCIOSO_APRENDER_SEGUNDOS,
     UsageTracker,
     compute_status,
     default_category_for_tile,
     limits_for_day,
     load_usage,
+    mensagem_pausa_aprender,
+    ociosidade_efetiva,
+    segundos_sem_teclado,
     validate_category_limits,
     weekday_key,
 )
@@ -384,6 +390,121 @@ class UsageHistoryTest(unittest.TestCase):
                 break
         self.assertTrue(stopped)
         self.assertLess(tracker.usage["profiles"]["default"]["totalSeconds"], 15 * 60 + 15)
+
+
+class AprenderOciosoTest(unittest.TestCase):
+    """Em Aprender, parado não conta. A função de ociosidade é injetada: sem tela nem rede."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.directory.name, "usage-today.json")
+        self.now = 1_700_000_000.0
+        self.idle = 0.0
+        self.logs = []
+        self.profile = {
+            "categoryLimits": POOLED,
+            "tiles": [
+                {"id": "khan", "category": "educativo"},
+                {"id": "luanti", "category": "jogos"},
+            ],
+        }
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def tracker(self, ociosidade=None, path=None):
+        if ociosidade is None:
+            ociosidade = lambda: self.idle  # noqa: E731
+        return UsageTracker(
+            path or self.path, lambda: {}, lambda: True, lambda: None,
+            clock=lambda: self.now, ociosidade=ociosidade, log=self.logs.append,
+        )
+
+    def avancar(self, tracker, segundos):
+        for _ in range(segundos):
+            self.now += 1
+            tracker.tick()
+
+    def segundos(self, tracker, categoria):
+        entrada = tracker.usage["profiles"]["p"]
+        return entrada["totalSeconds"], entrada["categories"].get(categoria, 0.0)
+
+    def test_educativo_ocioso_nao_conta_e_ativo_conta(self):
+        tracker = self.tracker()
+        tracker.set_active("p", "khan", "educativo")
+        self.idle = 0
+        self.avancar(tracker, 4)
+        self.assertEqual(self.segundos(tracker, "educativo"), (4, 4))
+        self.assertFalse(tracker.status("p", self.profile)["paused"])
+        self.idle = OCIOSO_APRENDER_SEGUNDOS
+        self.avancar(tracker, 6)
+        self.assertEqual(self.segundos(tracker, "educativo"), (4, 4))
+        status = tracker.status("p", self.profile)
+        self.assertTrue(status["paused"])
+        self.assertTrue(status["active"]["paused"])
+        self.assertEqual(self.logs, [mensagem_pausa_aprender()])
+        # ainda dentro da folga: conta de novo, e a volta só é logada uma vez
+        self.idle = OCIOSO_APRENDER_SEGUNDOS - 1
+        self.avancar(tracker, 3)
+        self.assertEqual(self.segundos(tracker, "educativo"), (7, 7))
+        self.assertFalse(tracker.status("p", self.profile)["paused"])
+        self.assertEqual(self.logs, [mensagem_pausa_aprender(), MENSAGEM_VOLTA_APRENDER])
+
+    def test_jogos_ocioso_conta_como_antes(self):
+        tracker = self.tracker()
+        tracker.set_active("p", "luanti", "jogos")
+        self.idle = 500
+        self.avancar(tracker, 5)
+        self.assertEqual(self.segundos(tracker, "jogos"), (5, 5))
+        status = tracker.status("p", self.profile)
+        self.assertFalse(status["paused"])
+        self.assertFalse(status["active"]["paused"])
+        self.assertEqual(self.logs, [])
+
+    def test_deteccao_falhou_conta_e_loga_uma_vez(self):
+        tracker = self.tracker(ociosidade=lambda: None)
+        tracker.set_active("p", "khan", "educativo")
+        self.avancar(tracker, 4)
+        self.assertEqual(self.segundos(tracker, "educativo"), (4, 4))
+        self.assertFalse(tracker.status("p", self.profile)["paused"])
+        self.assertEqual(self.logs, [MENSAGEM_SEM_DETECCAO])
+
+        falhas = {"n": 0}
+
+        def estoura():
+            falhas["n"] += 1
+            raise RuntimeError("sem tela")
+
+        self.logs.clear()
+        outro = self.tracker(
+            ociosidade=estoura, path=os.path.join(self.directory.name, "outro.json"),
+        )
+        outro.set_active("p", "khan", "educativo")
+        self.avancar(outro, 3)
+        self.assertEqual(self.segundos(outro, "educativo"), (3, 3))
+        self.assertEqual(self.logs, [MENSAGEM_SEM_DETECCAO])
+        self.assertEqual(falhas["n"], 1)
+
+    def test_controle_recente_segura_a_contagem(self):
+        self.assertIsNone(ociosidade_efetiva(None, 0))
+        self.assertEqual(ociosidade_efetiva(120, None), 120)
+        self.assertEqual(ociosidade_efetiva(120, 10), 10)
+        self.assertLess(ociosidade_efetiva(120, 10), OCIOSO_APRENDER_SEGUNDOS)
+
+    def test_mac_nao_mede_ociosidade(self):
+        if sys.platform != "darwin":
+            self.skipTest("a medição de verdade só é recusada aqui, no Mac de desenvolvimento")
+        self.assertIsNone(segundos_sem_teclado())
+
+    def test_pais_veem_a_frase(self):
+        raiz = os.path.join(os.path.dirname(__file__), "..", "src")
+        frase = "Em Aprender, o tempo só conta quando a criança está mexendo no computador."
+        with open(os.path.join(raiz, "index.html"), encoding="utf-8") as arquivo:
+            html = arquivo.read()
+        with open(os.path.join(raiz, "frontend", "usage-limits.js"), encoding="utf-8") as arquivo:
+            js = arquivo.read()
+        self.assertIn(frase, html)
+        self.assertIn(frase, js)
 
 
 if __name__ == "__main__":

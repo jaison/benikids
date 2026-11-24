@@ -133,7 +133,12 @@ from schedule_rules import (
     availability_summary as schedule_availability_summary,
     tile_availability as schedule_tile_availability,
 )
-from usage_limits import UsageTracker, load_usage, tile_category as usage_tile_category
+from usage_limits import (
+    UsageTracker,
+    load_usage,
+    medir_ociosidade,
+    tile_category as usage_tile_category,
+)
 from speech_feedback import SpeechFeedback
 from timer_state import (
     clear_timer as remove_timer_state,
@@ -911,6 +916,21 @@ def iniciar_vigia_da_pilula():
                      daemon=True).start()
 
 
+def _log_uso(texto):
+    """A mesma frase no log de cada sistema: beni-windows.log e o runtime.jsonl."""
+    if os.name == "nt":
+        telemetria.log_windows(texto)
+    log_runtime_event("usage.aprender", texto=texto)
+
+
+def _segundos_sem_controle():
+    """O serviço de controles só existe no Linux. None = não houve leitura."""
+    servico = _controles
+    if servico is None:
+        return None
+    return servico.segundos_sem_controle()
+
+
 def usage_tracker():
     global _usage_tracker
     with _usage_lock:
@@ -920,6 +940,8 @@ def usage_tracker():
                 stored_profiles_cached,
                 _tile_alive,
                 _stop_tile_for_limit,
+                ociosidade=medir_ociosidade(_segundos_sem_controle),
+                log=_log_uso,
             )
         return _usage_tracker
 
