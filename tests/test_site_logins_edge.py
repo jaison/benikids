@@ -89,7 +89,7 @@ class EdgeCommandTest(unittest.TestCase):
             for profile_id in ("default", "child-1"):
                 command = external_browser_command("msedge.exe", "https://x.org/", root, profile_id=profile_id)
                 self.assertEqual([a for a in command if a.startswith("--disable-features")],
-                                 ["--disable-features=Translate,DnsOverHttps"])
+                                 ["--disable-features=Translate,DnsOverHttps,FileSystemAccessAPI"])
                 self.assertIn("--lang=pt-BR", command)
                 prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
                 self.assertEqual(json.loads(prefs.read_text()), MINIMO)
@@ -108,7 +108,14 @@ class EdgeCommandTest(unittest.TestCase):
 MINIMO = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
-    "profile": {"password_manager_enabled": False},
+    "download_restrictions": 3,
+    "profile": {
+        "password_manager_enabled": False,
+        "default_content_setting_values": {
+            "popups": 2,
+            "automatic_downloads": 2,
+        },
+    },
 }
 
 
@@ -144,7 +151,11 @@ class EdgePreferencesTest(unittest.TestCase):
         expected = json.loads(json.dumps(original))
         expected["translate"]["enabled"] = False
         expected["credentials_enable_service"] = False
+        expected["download_restrictions"] = 3
         expected["profile"]["password_manager_enabled"] = False  # name e exit_type ficam
+        expected["profile"]["default_content_setting_values"] = {
+            "popups": 2, "automatic_downloads": 2,
+        }
         self.assertEqual(data, expected)
 
     def test_password_manager_is_turned_off_without_touching_saved_logins(self):
@@ -154,7 +165,12 @@ class EdgePreferencesTest(unittest.TestCase):
         self.assertTrue(ensure_chromium_preferences(self.profile))
         data = json.loads(self.prefs.read_text())
         self.assertIs(data["credentials_enable_service"], False)
-        self.assertEqual(data["profile"], {"password_manager_enabled": False, "name": "P"})
+        self.assertEqual(data["profile"], {
+            "password_manager_enabled": False,
+            "name": "P",
+            "default_content_setting_values": {"popups": 2, "automatic_downloads": 2},
+        })
+        self.assertEqual(data["download_restrictions"], 3)
         # o mantenedor decidiu não apagar o que o Edge já salvou
         self.assertEqual(login_data.read_bytes(), b"logins salvos")
 
@@ -180,7 +196,7 @@ class EdgePreferencesTest(unittest.TestCase):
         with mock.patch("application_launcher.os.replace", side_effect=PermissionError("em uso")):
             self.assertFalse(ensure_chromium_preferences(self.profile))
             command = external_browser_command("msedge.exe", "https://x.org/", self.tmp.name, profile_id="child-1")
-        self.assertIn("--disable-features=Translate,DnsOverHttps", command)
+        self.assertIn("--disable-features=Translate,DnsOverHttps,FileSystemAccessAPI", command)
         self.assertIn("--lang=pt-BR", command)
         self.assertEqual(json.loads(self.prefs.read_text()), {"x": 1})
         self.assertEqual(os.listdir(self.prefs.parent), ["Preferences"])

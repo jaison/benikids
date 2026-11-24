@@ -157,10 +157,24 @@ def external_chromium_profile(cache_root, profile_id=""):
 # - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
 #   preenche sozinho um login salvo à mão (quem entra é o login automático, com
 #   o login de cada criança). Logins já salvos não são apagados.
+# - download_restrictions=3: neste perfil, nenhum download (o valor do
+#   DownloadRestrictions; aqui é preferência do perfil, não política de
+#   máquina, que atingiria o Edge dos pais). Não há chave em Local State que
+#   desligue o seletor de arquivos ou janela nova.
+# - popups=2 e automatic_downloads=2: o perfil bloqueia window.open e download
+#   automático (2 = bloquear). Ctrl+N e o menu "abrir em nova janela" não passam
+#   por essa chave: o vigia do quiosque fecha a janela.
 CHROMIUM_PREFERENCES = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
-    "profile": {"password_manager_enabled": False},
+    "download_restrictions": 3,
+    "profile": {
+        "password_manager_enabled": False,
+        "default_content_setting_values": {
+            "popups": 2,
+            "automatic_downloads": 2,
+        },
+    },
 }
 
 
@@ -238,7 +252,11 @@ def external_browser_command(
             # Só um --disable-features vale: as funções desligadas vão na mesma
             # lista. Translate reforça a preferência; DnsOverHttps é o mesmo do
             # navegador-jogos no Linux (o quiosque usa o DNS da rede).
-            "--disable-features=Translate,DnsOverHttps",
+            # FileSystemAccessAPI é o seletor novo (showOpenFilePicker). O
+            # diálogo clássico (#32770, <input type=file>) não tem flag: o vigia
+            # fecha essa janela. Não existe flag de linha de comando que impeça
+            # janela nova sem ser política de máquina.
+            "--disable-features=Translate,DnsOverHttps,FileSystemAccessAPI",
         ]
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,
