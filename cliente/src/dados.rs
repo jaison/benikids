@@ -25,6 +25,15 @@ pub fn verdade(v: &Value, chave: &str) -> bool {
     v.get(chave).and_then(Value::as_bool).unwrap_or(false)
 }
 
+/// Emoji para escrever na tela. Capa de jogo ("img:covers/...") não é texto:
+/// o que sobra antes do "img:" (um emoji de verdade) continua; o caminho sai.
+pub fn emoji_visivel(emoji: &str) -> String {
+    match emoji.find("img:") {
+        Some(i) => emoji[..i].to_string(),
+        None => emoji.to_string(),
+    }
+}
+
 pub fn tiles_visiveis(cfg: &Value) -> Vec<Tile> {
     let Some(lista) = cfg.get("tiles").and_then(Value::as_array) else { return vec![] };
     lista
@@ -313,7 +322,7 @@ pub fn medidores(uso: &Value) -> Vec<Medidor> {
             }
         };
         g.nomes.push(texto(c, "label"));
-        g.emojis.push_str(&texto(c, "emoji"));
+        g.emojis.push_str(&emoji_visivel(&texto(c, "emoji")));
         g.usado = match numero(c, "poolUsedSeconds") {
             Some(p) => p,
             None => g.usado + numero(c, "usedSeconds").unwrap_or(0.),
@@ -374,7 +383,12 @@ fn alternativas(uso: &Value, excluir: &str) -> String {
             id != excluir && pool != pool_proprio && !verdade(c, "exhausted") && disp.is_none_or(|d| d > 0.)
         })
         .map(|c| {
-            let mut s = format!("{} {}", texto(c, "label"), texto(c, "emoji"));
+            let emoji = emoji_visivel(&texto(c, "emoji"));
+            let mut s = if emoji.is_empty() {
+                texto(c, "label")
+            } else {
+                format!("{} {emoji}", texto(c, "label"))
+            };
             if let Some(d) = numero(c, "availableSeconds") {
                 s.push_str(&format!(" ({} min)", minutos(d)));
             }
@@ -470,6 +484,13 @@ mod testes {
         assert_eq!(faixa(Some(840.), 900.), Faixa::Ok);
         assert_eq!(faixa(Some(300.), 900.), Faixa::Atencao);
         assert_eq!(faixa(Some(50.), 900.), Faixa::Pouco);
+    }
+
+    #[test]
+    fn capa_nao_vira_texto() {
+        assert_eq!(emoji_visivel("img:covers/dog-wash.png"), "");
+        assert_eq!(emoji_visivel("🎮"), "🎮");
+        assert_eq!(emoji_visivel("🎮img:covers/a.png"), "🎮");
     }
 
     #[test]

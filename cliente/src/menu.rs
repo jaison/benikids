@@ -191,6 +191,135 @@ mod testes_timer {
     }
 }
 
+// ---------------------------------------------------------------- config que muda sozinho
+
+#[derive(Debug, PartialEq)]
+enum PassoConfig {
+    /// primeira leitura, carimbo igual, ou o uso não trouxe carimbo
+    Ignorar,
+    /// o menu está livre: busca o config agora
+    Recarregar,
+    /// tem app ou a área dos pais aberta: espera voltar
+    Adiar,
+}
+
+/// O carimbo vem no /api/usage/status (sondado a cada 5 s). A primeira leitura
+/// só guarda: o config já foi pedido na abertura.
+fn passo_do_config(carimbo: Option<&str>, visto: Option<&str>, app_aberto: bool) -> PassoConfig {
+    let Some(carimbo) = carimbo.filter(|s| !s.is_empty()) else {
+        return PassoConfig::Ignorar;
+    };
+    match visto {
+        Some(visto) if visto != carimbo => {
+            if app_aberto { PassoConfig::Adiar } else { PassoConfig::Recarregar }
+        }
+        _ => PassoConfig::Ignorar,
+    }
+}
+
+fn carimbo_do_uso(uso: &Value) -> Option<String> {
+    match uso.get("configStamp")? {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// App em uso (o servidor conta o tile) ou navegador aberto pelo menu (pais, site, mídia).
+fn app_esta_aberto(uso: &Value, navegador: bool) -> bool {
+    navegador
+        || uso
+            .get("active")
+            .and_then(|a| a.get("tileId"))
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+}
+
+// ---------------------------------------------------------------- abertura que falhou
+
+enum FalhaAoAbrir {
+    /// o tile saiu do menu: recarrega em silêncio
+    Sumiu,
+    Aviso { icone: &'static str, titulo: String, corpo: &'static str },
+}
+
+/// 404 sem "missing" é tile que não existe mais. Os outros avisos usam o nome
+/// do jogo: o caminho da capa ("img:covers/...") nunca aparece escrito.
+fn falha_ao_abrir(status_http: u16, status_json: &str, label: &str) -> FalhaAoAbrir {
+    if status_http == 404 && status_json != "missing" {
+        return FalhaAoAbrir::Sumiu;
+    }
+    let (icone, titulo, corpo) = match status_json {
+        "missing" => ("📦", "Ainda não instalado", "Peça para a mamãe ou o papai instalar este app."),
+        "crashed" => ("😕", "Não deu para abrir", "Este app fechou sozinho. Peça ajuda para a mamãe ou o papai."),
+        _ => ("😕", "Não deu para abrir", "Tente de novo daqui a pouco."),
+    };
+    FalhaAoAbrir::Aviso { icone, titulo: titulo_do_aviso(label, titulo), corpo }
+}
+
+fn titulo_do_aviso(label: &str, titulo: &str) -> String {
+    let label = label.trim();
+    if label.is_empty() || label.contains("img:") {
+        titulo.to_string()
+    } else {
+        format!("{label} — {titulo}")
+    }
+}
+
+/// A tela "Acabou o tempo!" precisa sair ou o relógio andar mesmo com a vigia
+/// (janela Tk) na frente. Com foco, o redesenho normal já chega.
+fn precisa_repintar_sem_foco(tinha_dialogo: bool, tem_dialogo: bool, janela_ativa: bool) -> bool {
+    (tinha_dialogo || tem_dialogo) && !janela_ativa
+}
+
+#[cfg(test)]
+mod testes_config_e_abertura {
+    use super::*;
+
+    #[test]
+    fn carimbo_novo_recarrega_sem_app_e_espera_com_app() {
+        assert_eq!(passo_do_config(Some("2"), None, false), PassoConfig::Ignorar);
+        assert_eq!(passo_do_config(Some("2"), Some("1"), false), PassoConfig::Recarregar);
+        assert_eq!(passo_do_config(Some("2"), Some("1"), true), PassoConfig::Adiar);
+        assert_eq!(passo_do_config(Some("1"), Some("1"), false), PassoConfig::Ignorar);
+        assert_eq!(passo_do_config(None, Some("1"), false), PassoConfig::Ignorar);
+        let uso = serde_json::json!({"active": {"tileId": "itch-dog-wash"}, "configStamp": "9"});
+        assert!(app_esta_aberto(&uso, false));
+        assert!(!app_esta_aberto(&serde_json::json!({"active": null}), false));
+        assert!(app_esta_aberto(&serde_json::json!({}), true));
+        assert_eq!(carimbo_do_uso(&uso).as_deref(), Some("9"));
+    }
+
+    #[test]
+    fn tile_que_saiu_nao_abre_aviso_e_o_aviso_usa_o_nome() {
+        assert!(matches!(falha_ao_abrir(404, "", "Dog Wash"), FalhaAoAbrir::Sumiu));
+        assert!(matches!(falha_ao_abrir(404, "gone", "Dog Wash"), FalhaAoAbrir::Sumiu));
+        match falha_ao_abrir(404, "missing", "Dog Wash") {
+            FalhaAoAbrir::Aviso { titulo, .. } => assert_eq!(titulo, "Dog Wash — Ainda não instalado"),
+            FalhaAoAbrir::Sumiu => panic!("app faltando deve avisar"),
+        }
+        match falha_ao_abrir(503, "crashed", "img:covers/dog-wash.png") {
+            FalhaAoAbrir::Aviso { titulo, .. } => {
+                assert!(!titulo.contains("img:"));
+                assert_eq!(titulo, "Não deu para abrir");
+            }
+            FalhaAoAbrir::Sumiu => panic!("queda deve avisar"),
+        }
+        match falha_ao_abrir(503, "", "Dog Wash") {
+            FalhaAoAbrir::Aviso { titulo, .. } => assert_eq!(titulo, "Dog Wash — Não deu para abrir"),
+            FalhaAoAbrir::Sumiu => panic!("erro deve avisar"),
+        }
+    }
+
+    #[test]
+    fn dialogo_do_tempo_repinta_sem_foco() {
+        assert!(precisa_repintar_sem_foco(true, false, false));
+        assert!(precisa_repintar_sem_foco(true, true, false));
+        assert!(!precisa_repintar_sem_foco(true, false, true));
+        assert!(!precisa_repintar_sem_foco(false, false, false));
+    }
+}
+
 // ---------------------------------------------------------------- estado
 
 #[derive(Clone, PartialEq)]
@@ -242,6 +371,10 @@ pub struct Menu {
     focus: FocusHandle,
     // dados da API
     cfg: Value,
+    /// carimbo do config visto no /api/usage/status (None até a primeira resposta)
+    config_stamp: Option<String>,
+    /// o config mudou enquanto um app estava aberto: recarrega ao voltar
+    config_pendente: bool,
     uso: Value,
     timer: Value,
     disp: Value,
@@ -298,6 +431,8 @@ impl Menu {
             api,
             focus,
             cfg: Value::Null,
+            config_stamp: None,
+            config_pendente: false,
             uso: Value::Null,
             timer: Value::Null,
             disp: json!({"profileAllowed": true, "blockedTileIds": []}),
@@ -379,7 +514,9 @@ impl Menu {
             m.atualizar_disp(cx);
         });
         ciclo(cx, Duration::from_secs(60), |m, cx| {
-            if m.web.is_none() {
+            // o carimbo no uso (5 s) é o caminho rápido; isto cobre um servidor
+            // antigo, sem recarregar a grade por cima de um jogo
+            if m.web.is_none() && !app_esta_aberto(&m.uso, false) {
                 m.carregar_config(cx);
             }
             let b = ler_bateria();
@@ -388,41 +525,79 @@ impl Menu {
                 m.redesenhar(cx);
             }
         });
-        // relógio: redesenha quando o minuto vira
+        // relógio: redesenha quando o minuto vira. Com a tela "Acabou o tempo!"
+        // e a janela sem foco (vigia Tk na frente), pede repaint mesmo assim.
         let mut minuto = agora_local().1;
-        ciclo(cx, Duration::from_secs(5), move |menu, cx| {
-            let m = agora_local().1;
-            if m != minuto {
-                minuto = m;
-                menu.redesenhar(cx);
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(Duration::from_secs(5)).await;
+            let agora = agora_local().1;
+            if agora == minuto {
+                continue;
             }
-        });
+            minuto = agora;
+            let ok = this.update_in(cx, |menu, window, cx| {
+                let dialogo = matches!(menu.janela, Some(Janela::TimerEsgotado { .. }));
+                if dialogo && !menu.ativa {
+                    menu.sujo = false;
+                    cx.notify();
+                    window.refresh();
+                } else {
+                    menu.redesenhar(cx);
+                }
+            });
+            if ok.is_err() && this.update(cx, |menu, cx| menu.redesenhar(cx)).is_err() {
+                break;
+            }
+        })
+        .detach();
     }
 
     fn carregar_config(&mut self, cx: &mut Context<Self>) {
-        self.tarefa(cx, |api| api.get_json("/api/config"), |m, r, cx| match r {
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let r = cx.background_executor().spawn(async move { api.get_json("/api/config") }).await;
+            let copia = r.clone();
+            // update_in pede a janela para o refresh; se ela ainda não existe, aplica sem isso
+            if this.update_in(cx, |m, window, cx| m.aplicar_config(r, Some(window), cx)).is_err() {
+                let _ = this.update(cx, |m, cx| m.aplicar_config(copia, None, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn aplicar_config(&mut self, r: Option<Value>, window: Option<&mut Window>, cx: &mut Context<Self>) {
+        match r {
             Some(v) if v.get("tiles").is_some_and(Value::is_array) => {
-                let primeira = m.cfg.is_null();
-                if v != m.cfg {
-                    m.cfg = v;
-                    m.sincronizar_perfil();
-                    m.corrigir_pagina();
-                    m.redesenhar(cx);
+                let primeira = self.cfg.is_null();
+                if v != self.cfg {
+                    self.cfg = v;
+                    self.sincronizar_perfil();
+                    self.corrigir_pagina();
+                    // mesmo sem foco: a grade mudou (sincronização do itch.io) e o
+                    // menu pode estar visível atrás de outra janela
+                    self.sujo = false;
+                    cx.notify();
+                    if let Some(window) = window {
+                        window.refresh();
+                    }
+                    if !primeira {
+                        log::info!("menu: configuração mudou; tiles recarregados");
+                    }
                 }
-                m.erro_inicio = false;
+                self.erro_inicio = false;
                 if primeira {
-                    log::info!("menu: configuração carregada em {:?}", m.iniciado.elapsed());
+                    log::info!("menu: configuração carregada em {:?}", self.iniciado.elapsed());
                 }
-                if !dados::verdade(&m.cfg, "setupCompleted") && m.cfg.get("setupCompleted").is_some() {
+                if !dados::verdade(&self.cfg, "setupCompleted") && self.cfg.get("setupCompleted").is_some() {
                     // primeira vez: crianças e PIN dos pais (configurar.html, no navegador).
                     // Enquanto não terminar, reabre (abrir_web ignora se já está aberto).
-                    m.abrir_web("/configurar.html", cx);
+                    self.abrir_web("/configurar.html", cx);
                 }
             }
             _ => {
-                if m.cfg.is_null() {
-                    m.erro_inicio = true;
-                    m.redesenhar(cx);
+                if self.cfg.is_null() {
+                    self.erro_inicio = true;
+                    self.redesenhar(cx);
                     // o servidor pode estar subindo: tenta de novo
                     cx.spawn(async move |this, cx| {
                         cx.background_executor().timer(Duration::from_secs(2)).await;
@@ -431,12 +606,40 @@ impl Menu {
                     .detach();
                 }
             }
-        });
+        }
+    }
+
+    fn notar_carimbo(&mut self, uso: &Value, cx: &mut Context<Self>) {
+        let aberto = app_esta_aberto(uso, self.web.is_some());
+        let carimbo = carimbo_do_uso(uso);
+        match passo_do_config(carimbo.as_deref(), self.config_stamp.as_deref(), aberto) {
+            PassoConfig::Ignorar => {
+                if self.config_stamp.is_none() {
+                    self.config_stamp = carimbo;
+                } else if self.config_pendente && !aberto {
+                    self.config_pendente = false;
+                    log::info!("menu: configuração mudou; recarregando os tiles ao voltar");
+                    self.carregar_config(cx);
+                }
+            }
+            PassoConfig::Recarregar => {
+                self.config_stamp = carimbo;
+                self.config_pendente = false;
+                log::info!("menu: configuração mudou; recarregando os tiles");
+                self.carregar_config(cx);
+            }
+            PassoConfig::Adiar => {
+                self.config_stamp = carimbo;
+                self.config_pendente = true;
+                log::info!("menu: configuração mudou com um app aberto; os tiles recarregam quando ele fechar");
+            }
+        }
     }
 
     fn atualizar_uso(&mut self, cx: &mut Context<Self>) {
         self.tarefa(cx, |api| api.get_json("/api/usage/status"), |m, r, cx| {
             let Some(v) = r else { return };
+            m.notar_carimbo(&v, cx);
             if let Some(seq) = aviso_de_travado(&v, m.travado_visto) {
                 m.travado_visto = seq;
                 if m.janela.is_none() {
@@ -468,41 +671,82 @@ impl Menu {
     }
 
     fn atualizar_timer(&mut self, cx: &mut Context<Self>) {
-        self.tarefa(cx, |api| api.get_json("/api/timer/status"), |m, r, cx| {
-            let Some(v) = r else { return };
-            let ativo = dados::verdade(&v, "active");
-            let esgotado = dados::verdade(&v, "expired");
-            let aviso = dados::verdade(&v, "warning");
-            let tela = matches!(m.janela, Some(Janela::TimerEsgotado { .. }));
-            match passo_do_timer(ativo, esgotado, aviso, tela, m.aviso_timer_mostrado) {
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let r = cx.background_executor().spawn(async move { api.get_json("/api/timer/status") }).await;
+            let copia = r.clone();
+            if this.update_in(cx, |m, window, cx| m.aplicar_timer(r, window, cx)).is_err() {
+                let _ = this.update(cx, |m, cx| m.aplicar_timer_sem_janela(copia, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn aplicar_timer(&mut self, r: Option<Value>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(v) = r else { return };
+        let tinha = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+        self.aplicar_estado_do_timer(&v, cx);
+        let tem = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+        if v != self.timer {
+            self.timer = v;
+            self.redesenhar(cx);
+        }
+        if precisa_repintar_sem_foco(tinha, tem, self.ativa) {
+            self.sujo = false;
+            cx.notify();
+            window.refresh();
+        }
+        if tinha && !tem {
+            log::info!(
+                "menu: tempo mudou; a tela Acabou o tempo foi fechada{}",
+                if self.ativa { "" } else { " (sem foco)" }
+            );
+        }
+    }
+
+    fn aplicar_timer_sem_janela(&mut self, r: Option<Value>, cx: &mut Context<Self>) {
+        let Some(v) = r else { return };
+        self.aplicar_estado_do_timer(&v, cx);
+        if v != self.timer {
+            self.timer = v;
+            self.redesenhar(cx);
+        }
+    }
+
+    fn aplicar_estado_do_timer(&mut self, v: &Value, cx: &mut Context<Self>) {
+            let ativo = dados::verdade(v, "active");
+            let esgotado = dados::verdade(v, "expired");
+            let aviso = dados::verdade(v, "warning");
+            let tela = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+            match passo_do_timer(ativo, esgotado, aviso, tela, self.aviso_timer_mostrado) {
                 PassoTimer::Esgotado => {
-                    m.aviso_timer = None;
-                    m.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
+                    self.aviso_timer = None;
+                    self.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
                 }
                 PassoTimer::FecharEsgotado => {
                     // tempo estendido em outro lugar (tela do watchdog, área dos pais, API)
                     // ou estado velho depois de o menu reabrir
-                    m.janela = None;
-                    m.aviso_timer_mostrado = aviso;
+                    self.janela = None;
+                    self.aviso_timer_mostrado = aviso;
                 }
                 PassoTimer::Aviso => {
-                    m.aviso_timer_mostrado = true;
-                    let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
-                    m.mostrar_aviso_timer(minutos_do_timer(restante), cx);
+                    self.aviso_timer_mostrado = true;
+                    let restante = dados::numero(v, "remainingSeconds").unwrap_or(0.);
+                    self.mostrar_aviso_timer(minutos_do_timer(restante), cx);
                 }
                 PassoTimer::Desligado => {
-                    m.aviso_timer_mostrado = false;
-                    m.aviso_timer = None;
+                    self.aviso_timer_mostrado = false;
+                    self.aviso_timer = None;
                 }
                 PassoTimer::Nada => {}
             }
             // O menu consulta o timer a cada 10 s: perto do fim, marca uma consulta
             // para o instante em que o tempo acaba (roteiro 19: reagia ~6 s depois,
             // e nesse meio tempo as teclas iam para o PIN dos pais).
-            let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
+            let restante = dados::numero(v, "remainingSeconds").unwrap_or(0.);
             if let Some(espera) = consulta_no_fim(ativo, esgotado, restante) {
-                m.fim_do_timer += 1;
-                let g = m.fim_do_timer;
+                self.fim_do_timer += 1;
+                let g = self.fim_do_timer;
                 cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(espera).await;
                     let _ = this.update(cx, |m, cx| {
@@ -513,11 +757,6 @@ impl Menu {
                 })
                 .detach();
             }
-            if v != m.timer {
-                m.timer = v;
-                m.redesenhar(cx);
-            }
-        });
     }
 
     fn atualizar_disp(&mut self, cx: &mut Context<Self>) {
@@ -977,13 +1216,16 @@ impl Menu {
                         log::warn!("abrir {}: o servidor respondeu {}", tile.id, r.status);
                         m.inicio = None;
                         let status = r.json().map(|v| dados::texto(&v, "status")).unwrap_or_default();
-                        let (icone, titulo, texto) = match status.as_str() {
-                            "missing" => ("📦", "Ainda não instalado", "Peça para a mamãe ou o papai instalar este app."),
-                            "crashed" => ("😕", "Não deu para abrir", "Este app fechou sozinho. Peça ajuda para a mamãe ou o papai."),
-                            _ => ("😕", "Não deu para abrir", "Tente de novo daqui a pouco."),
-                        };
-                        m.mostrar_aviso(icone, format!("{} {}", tile.emoji, titulo), texto.into());
-                        m.agendar_fechar_mensagem(cx);
+                        match falha_ao_abrir(r.status, &status, &tile.label) {
+                            FalhaAoAbrir::Sumiu => {
+                                log::info!("abrir {}: o jogo saiu do menu; recarregando os tiles", tile.id);
+                                m.carregar_config(cx);
+                            }
+                            FalhaAoAbrir::Aviso { icone, titulo, corpo } => {
+                                m.mostrar_aviso(icone, titulo, corpo.into());
+                                m.agendar_fechar_mensagem(cx);
+                            }
+                        }
                     }
                     Err(e) => {
                         log::warn!("abrir {}: {e}", tile.id);
@@ -1801,7 +2043,11 @@ impl Menu {
             .px(p.z(20.))
             .gap(p.z(12.))
             .cursor_default()
-            .child(div().text_size(p.f(34.)).child(if tempo.esgotada { "🔒" } else { o.emoji }))
+            .child(div().text_size(p.f(34.)).child(if tempo.esgotada {
+                "🔒".to_string()
+            } else {
+                dados::emoji_visivel(o.emoji)
+            }))
             .child(corpo);
         if !texto.is_empty() {
             chip = chip.child(
@@ -2266,7 +2512,11 @@ impl Menu {
         p.pequeno(("medidor", i))
             .cursor_default()
             .gap(p.z(10.))
-            .child(div().text_size(p.f(25.)).child(if item.esgotado { "🔒".to_string() } else { item.emoji.clone() }))
+            .child(div().text_size(p.f(25.)).child(if item.esgotado {
+                "🔒".to_string()
+            } else {
+                dados::emoji_visivel(&item.emoji)
+            }))
             .child(texto)
             .child(
                 div()
@@ -2585,6 +2835,11 @@ impl Menu {
         log::info!("janela do menu {}", if ativa { "ativa" } else { "inativa" });
         self.sujo = false;
         if ativa {
+            if self.config_pendente && !app_esta_aberto(&self.uso, self.web.is_some()) {
+                self.config_pendente = false;
+                log::info!("menu: configuração mudou; recarregando os tiles ao voltar");
+                self.carregar_config(cx);
+            }
             self.atualizar_uso(cx);
             self.atualizar_disp(cx);
             self.atualizar_timer(cx);
