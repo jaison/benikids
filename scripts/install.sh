@@ -1655,6 +1655,12 @@ install -m 0644 "$SRC_DIR/controles.py" "$APP_ROOT/controles.py"
 # Benikids: abrir ao entrar no computador e a tela de primeira configuração
 install -m 0644 "$SRC_DIR/inicio_automatico.py" "$APP_ROOT/inicio_automatico.py"
 install -m 0644 "$SRC_DIR/telemetria.py" "$APP_ROOT/telemetria.py"
+# 1.0.7: o server.py e o application_launcher.py importam estes nos dois sistemas
+install -m 0644 "$SRC_DIR/itch_sync.py" "$APP_ROOT/itch_sync.py"
+install -m 0644 "$SRC_DIR/jogos_genero.py" "$APP_ROOT/jogos_genero.py"
+install -m 0644 "$SRC_DIR/jogos_por_genero.json" "$APP_ROOT/jogos_por_genero.json"
+install -m 0644 "$SRC_DIR/navegacao_sites.py" "$APP_ROOT/navegacao_sites.py"
+install -m 0644 "$SRC_DIR/jogo.html" "$APP_ROOT/jogo.html"
 install -m 0644 "$SRC_DIR/configurar.html" "$APP_ROOT/configurar.html"
 # Benikids: páginas abertas pelo menu nativo (área dos pais, sites, mídia)
 install -m 0644 "$SRC_DIR/cliente.html" "$APP_ROOT/cliente.html"
