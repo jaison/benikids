@@ -10,6 +10,9 @@
 // - Controle que o Chromium já chama de "standard": o direcional e os
 //   analógicos já vêm certos, mas os botões 0–11 seguem a numeração crua;
 //   então só os botões são reordenados.
+// - No Windows, XInput/Xbox já chega na ordem da Gamepad API (o WGI arruma):
+//   esse não é reordenado. Um genérico que o Edge marque como "standard" usa
+//   o mapa dos pais quando ele existe para o VID/PID. Sem mapa, fica como veio.
 (function () {
   "use strict";
   const MAPAS = window.__beniControles || {};
@@ -45,12 +48,16 @@
   function ehUnity() {
     return typeof window.createUnityInstance === "function" || typeof window.UnityLoader === "object";
   }
+  function ehXInput(pad) {
+    // "XInput" ou "Xbox" no id: o WGI já entregou a ordem standard.
+    return /xinput|xbox/i.test((pad && pad.id) || "");
+  }
   function converter(pad) {
-    // No Windows, mapping "standard" já é a ordem da Gamepad API (o WGI do
-    // Edge arruma sozinho). Reordenar de novo trocaria os botões. O Linux não
-    // define __beniPlataforma, então o comportamento de lá não muda.
-    if (window.__beniPlataforma === "windows" && pad.mapping === "standard") return pad;
     const mapa = MAPAS[chave(pad.id)];
+    // Windows: pula o remapeamento só no XInput, ou quando não há mapa salvo
+    // para este VID/PID. Com mapa dos pais, aplica — mesmo se o Edge marcou
+    // "standard" um genérico. O Linux não define __beniPlataforma.
+    if (window.__beniPlataforma === "windows" && (ehXInput(pad) || !mapa)) return pad;
     if (!mapa) return pad;
     const padrao = pad.mapping === "standard";
     const botoes = [];

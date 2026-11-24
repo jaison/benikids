@@ -8,6 +8,7 @@ texto do SDL e a extensão do Edge.
 import ctypes
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -186,11 +187,72 @@ class AmbienteEEdgeTests(unittest.TestCase):
         self.assertIn('window.__beniPlataforma = "windows";', texto)
         linux = controles.script_navegador([], {}, plataforma="")
         self.assertNotIn("__beniPlataforma", linux)
-        caminho = os.path.join(os.path.dirname(__file__), "..", "beni", "chromium", "controle", "controle.js")
+        raiz = os.path.join(os.path.dirname(__file__), "..")
+        caminho = os.path.join(raiz, "beni", "chromium", "controle", "controle.js")
+        windows = os.path.join(raiz, "src", "extensao-controle", "controle.js")
         with open(caminho, encoding="utf-8") as arquivo:
             js = arquivo.read()
+        with open(windows, encoding="utf-8") as arquivo:
+            self.assertEqual(arquivo.read(), js)
+        self.assertIn("ehXInput", js)
         self.assertIn('__beniPlataforma === "windows"', js)
+        self.assertNotIn('mapping === "standard") return pad', js)
         self.assertIn("VID_", js)
+
+    def test_generico_standard_no_windows_usa_o_mapa_e_o_xinput_nao(self):
+        # O Linux não define __beniPlataforma: o XInput com mapa ainda é reordenado lá.
+        arquivo = os.path.join(os.path.dirname(__file__), "..", "src", "extensao-controle", "controle.js")
+        programa = r"""
+const fs = require("fs");
+const vm = require("vm");
+const arquivo = process.argv[1];
+const mapas = {
+  "0079:0006": { botoes: { a: ["b", 2] }, eixos: {} },
+  "045e:028e": { botoes: { a: ["b", 1] }, eixos: {} },
+};
+function pad(id, mapping, apertado) {
+  const buttons = [];
+  for (let i = 0; i < 17; i++) {
+    const on = i === apertado;
+    buttons.push({ pressed: on, touched: on, value: on ? 1 : 0 });
+  }
+  return { id, index: 0, connected: true, timestamp: 1, mapping, axes: [0, 0, 0, 0], buttons };
+}
+function carregar(plataforma) {
+  const g = {
+    window: { __beniControles: mapas, addEventListener() {} },
+    console,
+  };
+  if (plataforma) g.window.__beniPlataforma = plataforma;
+  function Navigator() {}
+  Navigator.prototype.getGamepads = function () { return g._pads; };
+  g.Navigator = Navigator;
+  vm.runInNewContext(fs.readFileSync(arquivo, "utf8"), g, { filename: arquivo });
+  return function (p) { g._pads = [p]; return new Navigator().getGamepads()[0]; };
+}
+function apertado(saida) {
+  return saida.buttons.findIndex(b => b.pressed);
+}
+const win = carregar("windows");
+const linux = carregar("");
+const generico = "USB Gamepad (Vendor: 0079 Product: 0006)";
+const xbox = "Xbox 360 Controller (XInput STANDARD GAMEPAD Vendor: 045e Product: 028e)";
+const semMapa = "USB Gamepad (Vendor: 0810 Product: 0001)";
+const casos = [
+  ["win-generico-standard", apertado(win(pad(generico, "standard", 2))), 0],
+  ["win-xinput-standard", apertado(win(pad(xbox, "standard", 1))), 1],
+  ["win-sem-mapa", apertado(win(pad(semMapa, "standard", 2))), 2],
+  ["win-generico-cru", apertado(win(pad(generico, "", 2))), 0],
+  ["linux-generico-standard", apertado(linux(pad(generico, "standard", 2))), 0],
+  ["linux-xinput-standard", apertado(linux(pad(xbox, "standard", 1))), 0],
+];
+const erros = casos.filter(c => c[1] !== c[2]).map(c => c[0] + " veio " + c[1] + " esperava " + c[2]);
+if (erros.length) { console.error(erros.join("\n")); process.exit(1); }
+console.log("ok");
+"""
+        proc = subprocess.run(
+            ["node", "-e", programa, arquivo], capture_output=True, text=True, check=False)
+        self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
 
 
 if __name__ == "__main__":
