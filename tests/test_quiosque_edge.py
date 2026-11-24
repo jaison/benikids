@@ -45,7 +45,7 @@ class MolduraTests(unittest.TestCase):
         for preciso in ("autoplay", "fullscreen", "gamepad", "pointer-lock"):
             self.assertIn(preciso, allow)
         # o jogo continua no iframe; não há referrerpolicy no elemento (o itch lê o referrer)
-        self.assertIn("f.src=p.get('u')||'about:blank'", windows)
+        self.assertIn("f.src=enderecoPermitido(endereco)?endereco:'about:blank'", windows)
         iframe = re.search(r"<iframe[^>]*>", windows).group(0)
         self.assertNotIn("referrerpolicy", iframe)
 
