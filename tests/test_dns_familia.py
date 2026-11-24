@@ -65,6 +65,19 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertNotIn("exit-kids", texto)
         self.assertNotIn("185.228.168.168", texto)
 
+    def test_ipv6_sem_cleanbrowsing_fica_sem_servidor(self):
+        texto = dns.script_da_tarefa()
+        self.assertNotIn("ipv6 ignorado", texto)
+        # o reset automático devolveria o DNS do roteador; só o desligar usa isso
+        self.assertNotIn("-ResetServerAddresses", texto)
+        self.assertIn("address=none", texto)
+        self.assertIn("ipv6 sem cleanbrowsing", texto)
+        self.assertIn("ipv6 sem servidor (o do roteador nao vale)", texto)
+        self.assertIn("ipv6 continua com o dns anterior", texto)
+        # só esvazia se não conseguiu pôr o CleanBrowsing, e não quando já está vazio à toa
+        self.assertLess(texto.index("ipv6 sem cleanbrowsing"), texto.index("address=none"))
+        self.assertLess(texto.index("$ok6 = $false"), texto.index("address=none"))
+
     def test_tarefa_so_age_com_o_filtro_ligado(self):
         texto = dns.script_da_tarefa()
         self.assertIn("if ($ligado -ne 1) { exit 0 }", texto)

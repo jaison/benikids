@@ -13,6 +13,9 @@ Placa que aparecer mais tarde (Wi-Fi novo): a instalação cria a tarefa
 quando uma rede conecta (evento 10000 do NetworkProfile). Ela só age se o
 registro DnsFamilia estiver em 1. Desligar põe 0: a tarefa continua, mas não
 mexe no DNS, e as placas ativas voltam para o DNS automático.
+
+Se o IPv6 da placa não aceitar o CleanBrowsing, a tarefa tira os servidores
+DNS do IPv6 (não deixa o do roteador). As consultas seguem pelo IPv4 filtrado.
 """
 
 import os
@@ -87,10 +90,27 @@ def script_da_tarefa():
         "  } catch { }",
         "  $tem6 = ((@($atual6) | Where-Object { $_ }) -join ',')",
         "  if ($tem6 -ne ($v6 -join ',')) {",
+        "    $ok6 = $false",
         "    try {",
         "      Set-DnsClientServerAddress -InterfaceIndex $i -AddressFamily IPv6 -ServerAddresses $v6 -ErrorAction Stop",
         "      Benikids-DnsLog ('placa ' + $nome + ' ipv6=' + ($v6 -join ','))",
-        "    } catch { Benikids-DnsLog ('placa ' + $nome + ' ipv6 ignorado: ' + $_.Exception.Message) }",
+        "      $ok6 = $true",
+        "    } catch {",
+        "      Benikids-DnsLog ('placa ' + $nome + ' ipv6 sem cleanbrowsing: ' + $_.Exception.Message)",
+        "    }",
+        # Sem o CleanBrowsing, esvaziar. ResetServerAddresses devolveria o DNS
+        # do roteador, e o IPv6 furaria o filtro. netsh com address=none deixa
+        # a família sem servidor (as consultas ficam no IPv4, que é o nosso).
+        "    if (-not $ok6 -and $tem6 -ne '') {",
+        "      $limpo = $false",
+        "      $saida = & netsh interface ipv6 set dnsservers name=\"$nome\" source=static address=none validate=no 2>&1",
+        "      if ($LASTEXITCODE -eq 0) { $limpo = $true }",
+        "      else { Benikids-DnsLog ('placa ' + $nome + ' ipv6 netsh: ' + (($saida | Out-String).Trim())) }",
+        "      if ($limpo) { Benikids-DnsLog ('placa ' + $nome + ' ipv6 sem servidor (o do roteador nao vale)') }",
+        "      else { Benikids-DnsLog ('placa ' + $nome + ' ipv6 continua com o dns anterior') }",
+        "    } elseif (-not $ok6) {",
+        "      Benikids-DnsLog ('placa ' + $nome + ' ipv6 sem servidor (o do roteador nao vale)')",
+        "    }",
         "  }",
         "}",
         "exit 0",
