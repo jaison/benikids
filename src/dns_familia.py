@@ -26,6 +26,12 @@ IPV6 = ("2a0d:2a00:1::", "2a0d:2a00:2::")
 TAREFA = "Benikids DNS Familia"
 PASTA = r"C:\ProgramData\Benikids"
 SCRIPT = PASTA + r"\dns-familia.ps1"
+# SIDs, não os nomes: no Windows em português o grupo é "Administradores".
+# SYSTEM e Administradores com controle total; Usuários só leitura. A herança
+# do ProgramData daria escrita a quem usa o computador, e a tarefa é SYSTEM.
+_SID_SYSTEM = "S-1-5-18"
+_SID_ADMINS = "S-1-5-32-544"
+_SID_USUARIOS = "S-1-5-32-545"
 LOG = PASTA + r"\dns-familia.log"
 CHAVE = r"HKLM:\SOFTWARE\Benikids"
 CHAVE_WINREG = r"SOFTWARE\Benikids"
@@ -129,12 +135,34 @@ def _linhas_chave():
     return f"if (-not (Test-Path {_ps(CHAVE)})) {{ New-Item -Path {_ps(CHAVE)} | Out-Null }}"
 
 
+def linhas_acl_do_script():
+    """ACL do .ps1, no mesmo lote elevado que o grava.
+
+    Sem herança: o ProgramData deixa Usuários criarem arquivo. Quem troca este
+    script é executado como SYSTEM na próxima rede. Usuários ficam só com leitura.
+    """
+    grants = " ".join(
+        f"'*{sid}:({direito})'"
+        for sid, direito in ((_SID_SYSTEM, "F"), (_SID_ADMINS, "F"), (_SID_USUARIOS, "R"))
+    )
+    return [
+        "icacls " + _ps(SCRIPT) + " /inheritance:r /grant:r " + grants + " | Out-Null",
+        "if ($LASTEXITCODE -ne 0) { throw 'acl do dns-familia.ps1 falhou' }",
+    ]
+
+
+def _argumento_da_tarefa():
+    """O -File vai entre aspas: o caminho não pode partir no agendador."""
+    return '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + SCRIPT + '"'
+
+
 def linhas_ligar():
     """Linhas do PowerShell elevado: grava o script, a tarefa e liga o filtro."""
     return [
         f"New-Item -ItemType Directory -Force -Path {_ps(PASTA)} | Out-Null",
         "@'\n" + script_da_tarefa() + "\n'@ | Set-Content -LiteralPath " + _ps(SCRIPT) + " -Encoding UTF8",
-        f"$acao = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument {_ps('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ' + SCRIPT)}",
+        *linhas_acl_do_script(),
+        f"$acao = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument {_ps(_argumento_da_tarefa())}",
         "$subida = New-ScheduledTaskTrigger -AtStartup",
         "$gatilhos = @($subida)",
         "try {",

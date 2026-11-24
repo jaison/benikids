@@ -55,6 +55,14 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertIn("if (-not (Test-Path 'HKLM:\\SOFTWARE\\Benikids'))", texto)
         self.assertNotIn("New-Item -Path 'HKLM:\\SOFTWARE\\Benikids' -Force", texto)
         self.assertNotIn("Unregister-ScheduledTask", texto)
+        self.assertIn('-File "C:\\ProgramData\\Benikids\\dns-familia.ps1"', texto)
+        self.assertIn("icacls 'C:\\ProgramData\\Benikids\\dns-familia.ps1' /inheritance:r", texto)
+        self.assertIn("'*S-1-5-18:(F)'", texto)
+        self.assertIn("'*S-1-5-32-544:(F)'", texto)
+        self.assertIn("'*S-1-5-32-545:(R)'", texto)
+        self.assertLess(texto.index("Set-Content"), texto.index("/inheritance:r"))
+        self.assertLess(texto.index("/inheritance:r"), texto.index("Register-ScheduledTask"))
+        self.assertIn("throw 'acl do dns-familia.ps1 falhou'", texto)
 
     def test_desligar_devolve_o_dns_automatico_e_deixa_a_tarefa(self):
         texto = "\n".join(dns.linhas_desligar())
