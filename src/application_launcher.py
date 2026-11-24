@@ -11,6 +11,7 @@ import time
 
 from app_detection import browser_family
 from browser_policy import is_safe_web_url
+from navegacao_sites import limites_da_url, preparar_extensao
 from process_state import owned_process_alive, terminate_owned_process
 
 
@@ -150,7 +151,7 @@ def external_chromium_profile(cache_root, profile_id=""):
 #   o login de cada criança). Logins já salvos não são apagados.
 # Um só --disable-features vale. Translate já estava. DnsOverHttps: o navegador
 # não troca o DNS do Windows (CleanBrowsing) por um DoH próprio. A última chave
-# reabre o --load-extension, que o Chromium novo ignora (a extensão de CSS).
+# reabre o --load-extension, que o Chromium novo ignora (a extensão dos sites).
 CHROMIUM_RECURSOS_DESLIGADOS = "Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch"
 EXTENSAO_SITES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edge", "sites-limpos")
 CSS_FIREFOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "firefox", "userContent.css")
@@ -215,11 +216,27 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
     return True
 
 
-def _args_extensao_sites():
-    """Extensão só de CSS (Escola Games, Colorir, Autodraw), se o pacote a trouxe."""
-    if os.path.isfile(os.path.join(EXTENSAO_SITES, "manifest.json")):
+def _args_extensao_sites(cache_root, url):
+    """Extensão dos sites, com o limite de navegação deste tile, se o pacote a trouxe.
+
+    A cópia no cache leva as regras do declarativeNetRequest. Sem ela, cai na
+    pasta de origem (só o CSS). Não pede UAC.
+    """
+    if not os.path.isfile(os.path.join(EXTENSAO_SITES, "manifest.json")):
+        return []
+    try:
+        destino = preparar_extensao(os.path.join(os.fspath(cache_root), "extensao-sites"), url)
+    except OSError:
+        if os.name == "nt":
+            _log_windows("navegador: não consegui gravar o limite de navegação; segue só o CSS")
         return [f"--load-extension={EXTENSAO_SITES}"]
-    return []
+    if os.name == "nt":
+        _log_windows(
+            "navegador: navegação de topo limitada a "
+            + limites_da_url(url)["resumo"]
+            + " (extensão, sem UAC)"
+        )
+    return [f"--load-extension={destino}"]
 
 
 def garantir_perfil_firefox(profile):
@@ -274,7 +291,7 @@ def external_browser_command(
             # --disable-features vale: tudo na mesma lista)
             f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}",
         ]
-        command += _args_extensao_sites()
+        command += _args_extensao_sites(cache_root, url)
         if os.name == "nt":
             _log_windows("navegador: DoH desligado; extensão sites-limpos no perfil do Edge")
         if devtools_port:

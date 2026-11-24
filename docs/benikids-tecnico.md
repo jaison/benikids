@@ -77,10 +77,13 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 - **Sites limpos com CSS próprio**:
   - Escola Games sem o menu "Jogos";
   - Colorir sem a barra de cima, banners e redes sociais;
-  - Autodraw sem "Share" e links externos.
+  - Autodraw sem "Share" e links externos;
+  - Kiddo Games sem "Spread the fun" (X, Facebook, Pinterest);
+  - Music Lab e PhET sem os links que saem do experimento.
 
-  No Linux isso é o `userContent.css` do Firefox. No Windows é uma extensão só de CSS no perfil do Edge do Benikids (`src/edge/sites-limpos/`), as mesmas regras. Não vai no uBlock Origin Lite: filtrar a Escola Games travava o jogo, e o uBOL não tem filtro cosmético avulso na política.
+  No Linux isso é o `userContent.css` do Firefox. No Windows é a extensão do Edge (`src/edge/sites-limpos/`), as mesmas regras de CSS. Não vai no uBlock Origin Lite: filtrar a Escola Games travava o jogo, e o uBOL não tem filtro cosmético avulso na política.
   As páginas proibidas também ficam bloqueadas por política do Firefox (no Windows, `URLBlocklist` do Edge).
+  **No Windows**, a mesma extensão limita a navegação da janela do site aos domínios daquele tile (e, no PhET, só `/sims/html/` e a página local). Outro site volta para o tile. Não pede senha de administrador: as regras vão na cópia da extensão, no cache, ao abrir. O Firefox do Linux não tem essa lista; lá o bloqueio continua sendo o dos caminhos do `policies.json` mais o CSS.
 - Downloads vão direto para `~/Imagens/Desenhos`, sem o painel do Firefox, que abriria o gerenciador de arquivos.
 
 ### 🎮 Controles (Pais → Sistema → Controles)
@@ -148,7 +151,7 @@ login → ~/.config/autostart → cozy-iniciar
 | `src/catalogo/windows.json`, `src/instalar_apps.py` | catálogo de apps do Windows e a instalação pelo `winget` |
 | `src/dns_familia.py` | DNS CleanBrowsing no Windows (lote com UAC + tarefa agendada) e o interruptor da área dos pais |
 | `src/sites/tiles.json`, `src/sites_windows.py` | tiles `special:` que um Windows já instalado recebe uma vez |
-| `src/edge/sites-limpos/` | extensão só de CSS do Edge (Escola Games, Colorir, Autodraw) |
+| `src/edge/sites-limpos/` | extensão do Edge: CSS dos sites e, ao abrir, o limite de navegação do tile |
 | `scripts/windows/` | instalador e configuração inicial do pacote do Windows (montado pelo GitHub Actions em `menu-nativo.yml`) |
 | `cliente/` | **menu nativo** (`beni-menu`, Rust + gpui-fast): a tela das crianças sem navegador. Veja [cliente/LEIA-ME.md](../cliente/LEIA-ME.md) |
 | `src/usage_limits.py`, `src/frontend/usage-limits.*` | tempo de tela por categoria, dia da semana e reforço de aprendizagem |
