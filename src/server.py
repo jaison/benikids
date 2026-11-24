@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import catalogo_windows
 import controles
 import inicio_automatico
+import itch_sync
 import telemetria
 import site_logins
 from app_detection import (
@@ -25,6 +26,7 @@ from app_detection import (
 )
 from application_launcher import (
     ApplicationLauncher,
+    PortaoDeAbertura,
     direct_app_command,
     external_browser_command as build_external_browser_command,
     resolve_tile_action,
@@ -38,6 +40,7 @@ from activity_store import (
 from config_store import (
     CURRENT_CONFIG_VERSION,
     atomic_write_config,
+    config_lock,
     migrate_config,
     read_config,
 )
@@ -96,7 +99,12 @@ from parent_auth import (
     PIN_FAILURE_WINDOW_SECONDS,
     PIN_KDF_ITERATIONS,
     admin_session_cookie,
+    aguardar_espera,
+    cancelar_espera,
     clear_admin_sessions,
+    criar_espera,
+    liberar_espera,
+    trocar_token_pais,
     clear_pin_failures,
     create_admin_session,
     expired_admin_session_cookie,
@@ -289,7 +297,7 @@ def _load_stored_cfg_from_disk():
         allow_pin_hash=True,
     )
     if migrated:
-        atomic_write_config(CFG, data)
+        write_stored_cfg(data)
         log_runtime_event(
             "config.migrated",
             configVersion=data.get("configVersion", CURRENT_CONFIG_VERSION),
@@ -362,6 +370,12 @@ def themed_index_html(cfg, hour=None):
     return html.replace(INDEX_BODY_TAG, index_body_tag(cfg, hour), 1).encode("utf-8")
 
 
+def write_stored_cfg(data):
+    """Grava o config.json com a mesma trava e a mesma escrita atômica."""
+    with config_lock(CFG):
+        atomic_write_config(CFG, data)
+
+
 def save_stored_cfg(data):
     validated = validate_stored_config(
         data,
@@ -372,7 +386,7 @@ def save_stored_cfg(data):
         # número aleatório da criança no relatório de uso (perfis criados depois do cadastro)
         if not perfil.get("telemetryId"):
             perfil["telemetryId"] = os.urandom(16).hex()
-    atomic_write_config(CFG, validated)
+    write_stored_cfg(validated)
     return validated
 
 
@@ -385,7 +399,7 @@ def save_cfg(data):
             existing_pin_hash=data.get("pinHash", ""),
             allow_pin_hash=True,
         )
-        atomic_write_config(CFG, stored)
+        write_stored_cfg(stored)
         return active_config(stored)
 
     validated = validate_config(
@@ -870,6 +884,33 @@ def _stop_tile_for_limit():
     application_launcher().reset_active_tile()
 
 
+def iniciar_vigia_da_pilula():
+    import plataforma_windows
+    import vigia_da_pilula
+
+    def registros():
+        return (owned_process(TILE_PROCESS_PIDFILE, "tile-process", PROCESS_SUPERVISOR),
+                owned_process(OVERLAY_PIDFILE, "overlay", OVERLAY_SCRIPT))
+
+    def relatar(etapa, detalhe, assinatura):
+        telemetria.relatar_problema(etapa, detalhe, assinatura, por_dia=True)
+
+    def ao_fechar(tile):
+        # roteiro 33: o app travado foi fechado pelo vigia; o menu avisa a criança
+        avisar_app_travado(tile)
+        usage_tracker().clear_active()
+        menu = owned_process(BROWSER_PIDFILE, "browser")
+        if menu:
+            import janelas_seguras
+
+            janelas_seguras.rodar_com_limite(plataforma_windows.ativar_processo, 1.0, menu["pid"], True)
+
+    vigia = vigia_da_pilula.VigiaWindows(plataforma_windows, application_launcher, registros,
+                                         uso=usage_tracker(), relatar=relatar, ao_fechar=ao_fechar)
+    threading.Thread(target=vigia.rodar, args=(threading.Event(),), name="vigia-da-pilula",
+                     daemon=True).start()
+
+
 def usage_tracker():
     global _usage_tracker
     with _usage_lock:
@@ -918,6 +959,90 @@ def menu_na_frente():
         return False
 
 
+def pid_da_janela_ativa():
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return plataforma_windows.pid_da_janela_ativa()
+        except Exception:  # noqa: BLE001
+            return None
+    return controles.janela_ativa_pid()
+
+
+def pais_dos_processos():
+    """{pid: pid do pai}."""
+    if os.name == "nt":
+        try:
+            import plataforma_windows
+            return plataforma_windows.processos()
+        except Exception:  # noqa: BLE001
+            return {}
+    tabela = {}
+    try:
+        nomes = os.listdir("/proc")
+    except OSError:
+        return tabela
+    for nome in nomes:
+        if not nome.isdigit():
+            continue
+        try:
+            with open(f"/proc/{nome}/stat", encoding="utf-8", errors="replace") as f:
+                campos = f.read().rsplit(")", 1)[1].split()
+            tabela[int(nome)] = int(campos[1])
+        except (OSError, IndexError, ValueError):
+            continue
+    return tabela
+
+
+def processo_descende_de(pid, ancestral, pais=None):
+    """pid é o próprio ancestral ou um descendente dele (ex.: o navegador que o
+    menu nativo abre para a área dos pais)."""
+    if not pid or not ancestral:
+        return False
+    if pid == ancestral:
+        return True
+    pais = pais_dos_processos() if pais is None else pais
+    vistos = set()
+    while pid and pid not in vistos and len(vistos) < 64:
+        vistos.add(pid)
+        pid = pais.get(pid)
+        if pid == ancestral:
+            return True
+    return False
+
+
+# Menu registrado há pouco (abrindo): ainda sem janela na frente, conta como menu.
+MENU_PARTIDA_SEGUNDOS = 15
+
+
+def menu_cobre_a_tela(agora=None):
+    """O menu está na frente e nenhum app/site está aberto: aí as telas do timer
+    ("Acabou o tempo!", "Faltam N minutos") são as do próprio menu, e o
+    timer_watchdog não mostra as dele (eram duas ao mesmo tempo, com o teclado
+    indo para a de baixo). Com um app ou jogo na frente, quem cobre é o watchdog.
+    - A área dos pais no navegador aberto pelo menu nativo conta como menu (o
+      navegador é processo filho dele e não é um app; o adulto está lá).
+    - Menu abrindo (registrado há menos de MENU_PARTIDA_SEGUNDOS) conta como
+      menu: ao reabrir com o tempo esgotado, a rosa aparecia antes do menu."""
+    browser = owned_process(BROWSER_PIDFILE, "browser")
+    if not browser:
+        return False
+    if owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
+        return False
+    try:
+        if usage_status(load_cfg()).get("active"):
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    agora = time.time() if agora is None else agora
+    try:
+        if agora - os.path.getmtime(BROWSER_PIDFILE) < MENU_PARTIDA_SEGUNDOS:
+            return True
+    except OSError:
+        pass
+    return processo_descende_de(pid_da_janela_ativa(), browser.get("pid"))
+
+
 def fechar_app_pelo_controle():
     """Start + Select seguros: fecha o app aberto como o ✕ do overlay e mostra o menu."""
     if not owned_process_alive(TILE_PROCESS_PIDFILE, "tile-process"):
@@ -940,10 +1065,37 @@ def controles_service():
         return _controles
 
 
+# Roteiro 33: o vigia fechou um app travado; o menu (nativo e web) mostra "O jogo travou
+# e foi fechado." uma vez. Vai junto do /api/usage/status, que os dois já consultam a
+# cada 5 s: {"seq": n, "tileId": ...} por 2 min; o menu guarda o último seq mostrado.
+APP_TRAVADO_AVISO_S = 120
+_app_travado_aviso = {"seq": 0, "tileId": "", "em": 0.0}
+_app_travado_lock = threading.Lock()
+
+
+def avisar_app_travado(tile_id, agora=None):
+    with _app_travado_lock:
+        _app_travado_aviso["seq"] += 1
+        _app_travado_aviso["tileId"] = str(tile_id or "")
+        _app_travado_aviso["em"] = time.monotonic() if agora is None else agora
+
+
+def aviso_app_travado(agora=None):
+    agora = time.monotonic() if agora is None else agora
+    with _app_travado_lock:
+        if not _app_travado_aviso["seq"] or agora - _app_travado_aviso["em"] > APP_TRAVADO_AVISO_S:
+            return None
+        return {"seq": _app_travado_aviso["seq"], "tileId": _app_travado_aviso["tileId"]}
+
+
 def usage_status(cfg):
     profile_id = cfg.get("activeProfileId", "")
     profile = stored_profiles_cached().get(profile_id) or cfg
-    return usage_tracker().status(profile_id, profile)
+    payload = usage_tracker().status(profile_id, profile)
+    aviso = aviso_app_travado()
+    if aviso and isinstance(payload, dict):
+        payload = dict(payload, appTravadoFechado=aviso)
+    return payload
 
 
 def tile_availability(cfg, tile_id, when=None):
@@ -984,6 +1136,21 @@ def app_fechou_sozinho(supervisor, espera=None):
     return True
 
 
+def como_o_app_saiu(codigo):
+    """(etapa da telemetria, código para o detalhe). No Windows o supervisor sai com o
+    código do app; de 0xC0000000 para cima é um NTSTATUS de erro (0xC0000005: acesso
+    inválido à memória), ou seja, o app CAIU: "app.caiu". Senão, "app.fechou_sozinho"."""
+    if not isinstance(codigo, int):
+        return "app.fechou_sozinho", "?"
+    codigo &= 0xFFFFFFFF
+    if codigo >= 0xC0000000:
+        return "app.caiu", f"{codigo:#010X}".replace("0X", "0x")
+    return "app.fechou_sozinho", str(codigo)
+
+
+PORTAO_DE_ABERTURA = PortaoDeAbertura()
+
+
 def launch_owned_tile(
     command,
     mode,
@@ -992,6 +1159,7 @@ def launch_owned_tile(
     profile_id="",
     track_activity=False,
     path_extra="",
+    env_extra=None,
 ):
     process = application_launcher().launch_owned_tile(
         command,
@@ -1001,7 +1169,9 @@ def launch_owned_tile(
         profile_id=profile_id,
         track_activity=track_activity,
         path_extra=path_extra,
+        env_extra=env_extra,
     )
+    PORTAO_DE_ABERTURA.abriu_app()
     profile = stored_profiles_cached().get(profile_id) or {}
     usage_tracker().set_active(
         profile_id,
@@ -1071,6 +1241,15 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
             gender=crianca.get("icon"),
             telemetryId=os.urandom(16).hex(),
         )
+        # Menina recebe os jogos de vestir/maquiagem. Menino não fica com os
+        # que vieram copiados do perfil-modelo. Sem gender a configuração nem chega aqui.
+        import jogos_genero
+        jogos_genero.retirar_de_outros_generos(perfil)
+        jogos_genero.aplicar_perfil(
+            perfil,
+            "windows" if os.name == "nt" else "linux",
+            porta=PORT,
+        )
         if nascimento:
             perfil["birthMonth"] = nascimento
         else:
@@ -1110,6 +1289,10 @@ def telemetria_service():
             ler_historico=lambda: load_usage(USAGE_FILE).get("history", {}),
         ))
     return _TELEMETRIA[0]
+
+
+# Quanto um pedido da página escondida espera pelo PIN antes de voltar vazio.
+PAIS_ESPERA_POR_PEDIDO = 20.0
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1222,6 +1405,72 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.json_response({"status": "error", "message": "Parent authentication required"}, 403)
         return False
 
+    def pedido_do_proprio_computador(self):
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+    def area_dos_pais_nativa(self, passo):
+        """Área dos pais pelo menu nativo (PIN no menu, navegador já aberto e
+        escondido). Ver o fluxo em parent_auth.criar_espera. Nada daqui vai para
+        o log: nem o id da espera, nem o token, nem o PIN."""
+        if not self.pedido_do_proprio_computador():
+            self.json_response({"status": "error", "message": "Local requests only"}, 403)
+            return
+        data = self.read_json_body(required=passo != "preparar")
+        if data is None:
+            return
+        if passo == "preparar":
+            if not load_cfg().get("pinHash", ""):
+                self.json_response({"espera": None, "pinConfigured": False})
+                return
+            self.json_response({"espera": criar_espera(), "pinConfigured": True})
+            return
+        if passo == "liberar":
+            if pin_attempt_blocked():
+                log_runtime_event("auth.throttled", level="warning")
+                self.json_response({"valid": False, "message": "Too many attempts"}, 429)
+                return
+            cfg = load_cfg()
+            pin_hash = cfg.get("pinHash", "")
+            pin = data.get("pin", "")
+            if pin_hash and (not isinstance(pin, str) or not verify_pin(pin_hash, pin)):
+                record_pin_failure()
+                log_runtime_event("auth.failed", level="warning")
+                self.json_response({"valid": False}, 403)
+                return
+            clear_pin_failures()
+            if pin_hash and is_legacy_pin_hash(pin_hash):
+                cfg["pinHash"] = hash_pin(pin)
+                save_cfg(cfg)
+            entregue = liberar_espera(data.get("espera"))
+            log_runtime_event("auth.succeeded")
+            self.json_response({"valid": True, "entregue": entregue})
+            return
+        if passo == "espera":
+            # a página escondida fica aqui até o PIN (long polling: um pedido por vez)
+            estado, token = aguardar_espera(data.get("espera"), PAIS_ESPERA_POR_PEDIDO)
+            if estado == "ocupada":
+                # outro pedido já espera nesta espera: só a página do menu devia estar aqui
+                log_runtime_event("pais.espera_ocupada", level="warning")
+                self.json_response({"estado": estado}, 409)
+                return
+            resposta = {"estado": estado}
+            if token:
+                resposta["token"] = token
+            self.json_response(resposta, 404 if estado == "desconhecida" else 200)
+            return
+        if passo == "entrar":
+            if not trocar_token_pais(data.get("token")):
+                log_runtime_event("auth.failed", level="warning")
+                self.json_response({"status": "error"}, 403)
+                return
+            sessao = create_admin_session()
+            self.json_response({"status": "ok"}, headers={"Set-Cookie": self.admin_cookie(sessao)})
+            return
+        if passo == "cancelar":
+            self.json_response({"status": "ok" if cancelar_espera(data.get("espera")) else "ignored"})
+            return
+        self.json_response({"status": "error", "message": "Unknown action"}, 404)
+
     @staticmethod
     def admin_cookie(token):
         return admin_session_cookie(token)
@@ -1317,12 +1566,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 version=status["latestVersion"],
             )
             return self.json_response(status)
+        if self.path == "/api/dns-familia":
+            if not self.require_admin():
+                return
+            if os.name != "nt":
+                return self.json_response({"status": "error", "message": "Só no Windows"}, 404)
+            import dns_familia
+            return self.json_response({"status": "ok", **dns_familia.ler()})
         if self.path == "/api/features":
             shutdown_ok = bool(comandos_desligar())
             return self.json_response({
                 "shutdownAvailable": shutdown_ok,
                 "speechFeedbackAvailable": speech_feedback().available(),
                 "catalogInstallAvailable": os.name == "nt",
+                "dnsFamiliaAvailable": os.name == "nt",
             })
         if self.path == "/api/browsers":
             return self.json_response(
@@ -1332,6 +1589,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # Menu nativo (beni-menu): quantas vezes uma página aberta por ele pediu
             # para voltar ao menu (ele fecha o navegador quando o número muda).
             return self.json_response({"voltar": cliente_voltar_contador()})
+        if self.path == "/api/timer/tela":
+            # timer_watchdog: quem mostra o "Acabou o tempo!" (o menu ou ele)
+            return self.json_response({"menuNaFrente": menu_cobre_a_tela()})
         if self.path == "/api/timer/status":
             return self.json_response(timer_status(load_cfg()))
         if self.path == "/api/availability/status":
@@ -1772,7 +2032,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.json_response({"status": "error", "message": "Windows only"}, 404)
                 return
             try:
-                subprocess.Popen(
+                # fora do job da sessão: a instalação continua se os pais saírem do Benikids
+                from queda_windows import popen_fora_do_job
+
+                popen_fora_do_job(
                     [sys.executable, os.path.join(APP_ROOT, "instalar_apps.py")],
                     cwd=APP_ROOT, close_fds=True,
                 )
@@ -1780,6 +2043,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.json_response({"status": "error", "message": str(exc)}, 503)
                 return
             self.json_response({"status": "ok"})
+            return
+        if action == "api/dns-familia":
+            # Liga ou desliga o DNS com filtro. Pede o UAC; Sair não desfaz.
+            if not self.require_admin():
+                return
+            if os.name != "nt":
+                self.json_response({"status": "error", "message": "Só no Windows"}, 404)
+                return
+            body = self.read_json_body()
+            if body is None:
+                return
+            if set(body) != {"ligado"} or not isinstance(body.get("ligado"), bool):
+                self.json_response(
+                    {"status": "error", "message": "Esperado: ligado true ou false"}, 400,
+                )
+                return
+            import dns_familia
+            ok = dns_familia.aplicar(body["ligado"])
+            estado = dns_familia.ler()
+            log_runtime_event("dns.familia", level="info" if ok else "warning")
+            if ok:
+                self.json_response({"status": "ok", **estado})
+            else:
+                self.json_response({
+                    "status": "cancelado",
+                    "message": "A senha não foi digitada ou o Windows não deixou.",
+                    **estado,
+                }, 409)
             return
         if action == "api/telemetria/apagar":
             if not self.require_admin():
@@ -1842,6 +2133,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 {"valid": True, "pinConfigured": True},
                 headers={"Set-Cookie": self.admin_cookie(token)},
             )
+            return
+        if action.startswith("api/pais/"):
+            self.area_dos_pais_nativa(action[len("api/pais/"):])
             return
         if action == "api/pin/set":
             cfg = load_cfg()
@@ -2033,6 +2327,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not self.require_admin():
                 return
             reset_active_tile()
+            # O filtro de DNS fica ligado: é proteção do computador, não da sessão.
+            # Desliga em Pais → Sistema → Filtro de internet (pede a senha do Windows).
+            # Sair com PIN encerra o timer da sessão: senão o Benikids reabria já com
+            # "Acabou o tempo!" (roteiro 25). Uma queda ou reinício não passam por aqui,
+            # e aí o timer continua valendo.
+            try:
+                clear_timer()
+            except OSError:
+                pass
             # Signal launcher.sh to exit its while-true loop
             try:
                 write_lifecycle_request(LIFECYCLE_REQUEST_FILE, "parent-exit")
@@ -2154,196 +2457,209 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 return
-            cfg = load_cfg()
-            tile = next((t for t in cfg.get("tiles", []) if t.get("id") == tile_id and t.get("visible", True)), None)
-            if not tile:
-                self.send_response(404)
-                self.end_headers()
-                return
-            availability = tile_availability(cfg, tile_id)
-            if not availability["allowed"]:
-                self.json_response({
-                    "status": "blocked",
-                    "reason": availability["reason"],
-                }, 403)
+            if not PORTAO_DE_ABERTURA.entrar():
+                # roteiro 31: toques represados viravam dezenas de aberturas seguidas
+                log_runtime_event("launch.ignored", level="warning", reason="busy")
+                self.json_response({"status": "busy", "message": "Another app is opening"}, 429)
                 return
             try:
-                launch = resolve_tile_action(tile)
-            except ValueError as exc:
-                self.json_response({"status": "error", "message": str(exc)}, 400)
-                return
-            log_runtime_event("launch.started", actionType=launch["type"])
-
-            if launch["type"] == "media":
-                locations = media_locations()
-                if not locations:
-                    reset_active_tile()
-                    log_runtime_event(
-                        "launch.failed",
-                        level="warning",
-                        actionType="media",
-                        result="missing",
-                    )
-                    self.send_response(302)
-                    self.send_header("Location", "/no-media.html")
+                cfg = load_cfg()
+                tile = next((t for t in cfg.get("tiles", []) if t.get("id") == tile_id and t.get("visible", True)), None)
+                if not tile:
+                    self.send_response(404)
                     self.end_headers()
                     return
-                player = find_media_player()
-                command = (
-                    media_player_command(player, locations)
-                    if player
-                    else [abridor_do_sistema() or "xdg-open", locations[0]]
-                )
+                availability = tile_availability(cfg, tile_id)
+                if not availability["allowed"]:
+                    self.json_response({
+                        "status": "blocked",
+                        "reason": availability["reason"],
+                    }, 403)
+                    return
                 try:
-                    launch_owned_tile(
-                        command,
+                    launch = resolve_tile_action(tile)
+                except ValueError as exc:
+                    self.json_response({"status": "error", "message": str(exc)}, 400)
+                    return
+                log_runtime_event("launch.started", actionType=launch["type"])
+
+                if launch["type"] == "media":
+                    locations = media_locations()
+                    if not locations:
+                        reset_active_tile()
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="media",
+                            result="missing",
+                        )
+                        self.send_response(302)
+                        self.send_header("Location", "/no-media.html")
+                        self.end_headers()
+                        return
+                    player = find_media_player()
+                    command = (
+                        media_player_command(player, locations)
+                        if player
+                        else [abridor_do_sistema() or "xdg-open", locations[0]]
+                    )
+                    try:
+                        launch_owned_tile(
+                            command,
+                            "local",
+                            tile_id=tile_id,
+                            profile_id=cfg.get("activeProfileId", ""),
+                            track_activity=cfg.get("activityTrackingEnabled", False),
+                        )
+                    except OSError:
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="media",
+                            result="failure",
+                        )
+                        self.json_response(
+                            {"status": "error", "message": "Media process could not be started"},
+                            503,
+                        )
+                        return
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+
+                if launch["type"] == "web":
+                    url = launch["url"]
+                    if launch["mode"] == "embedded":
+                        reset_active_tile()
+                        activity_token = ""
+                        if cfg.get("activityTrackingEnabled", False):
+                            activity_token = embedded_activity_sessions().start(
+                                cfg.get("activeProfileId", ""),
+                                tile_id,
+                            )
+                        self.send_response(302)
+                        self.send_header(
+                            "Location",
+                            f"/browser.html?url={quote(url, safe='')}&tile={quote(tile_id, safe='')}"
+                            f"&activity={quote(activity_token, safe='')}",
+                        )
+                        self.end_headers()
+                        return
+                    browser = find_browser(cfg)
+                    command = None
+                    profile_id = cfg.get("activeProfileId", "")
+                    auto_login = site_login_for_launch(browser, url, profile_id)
+                    login_driver = site_login_driver(browser) if auto_login else None
+                    if browser:
+                        command = external_browser_command(
+                            browser, url, profile_id=profile_id,
+                            marionette_port=site_logins.MARIONETTE_PORT if login_driver == "marionette" else None,
+                            devtools_port=site_logins.DEVTOOLS_PORT if login_driver == "devtools" else None,
+                        )
+                    elif abridor_do_sistema():
+                        command = [abridor_do_sistema(), url]
+                    else:
+                        reset_active_tile()
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="web",
+                            result="missing",
+                        )
+                        self.json_response({"status": "error", "message": "No supported browser found"}, 503)
+                        return
+                    try:
+                        launch_owned_tile(
+                            command,
+                            "external",
+                            url=url,
+                            tile_id=tile_id,
+                            profile_id=cfg.get("activeProfileId", ""),
+                            track_activity=cfg.get("activityTrackingEnabled", False),
+                        )
+                    except OSError:
+                        log_runtime_event(
+                            "launch.failed",
+                            level="warning",
+                            actionType="web",
+                            result="failure",
+                        )
+                        self.json_response(
+                            {"status": "error", "message": "Browser process could not be started"},
+                            503,
+                        )
+                        return
+                    if login_driver and command and (
+                        "--marionette" in command
+                        or any(arg.startswith("--remote-debugging-port=") for arg in command)
+                    ):
+                        site, login = auto_login
+                        site_logins.start_auto_login(
+                            site, login["username"], login["password"], url,
+                            log=log_runtime_event, driver=login_driver,
+                        )
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+
+                clean = launch.get("argv", [])
+                if launch["type"] == "none" or not clean:
+                    reset_active_tile()
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+                path_extra = ""
+                env_extra = {}
+                if clean[0].startswith(catalogo_windows.PREFIXO):
+                    resolved = catalogo_windows.comando(clean)
+                    if not resolved:
+                        reset_active_tile()
+                        log_runtime_event("launch.failed", level="warning", actionType="app", result="missing")
+                        self.json_response({"status": "missing", "message": "App not installed"}, 404)
+                        return
+                    path_extra = catalogo_windows.pasta_no_path(clean, resolved)
+                    env_extra = catalogo_windows.ambiente(clean)
+                    clean = resolved
+                clean = direct_app_command(clean)
+                try:
+                    # The supervisor still launches argv directly and never invokes a shell.
+                    supervisor = launch_owned_tile(
+                        clean,
                         "local",
                         tile_id=tile_id,
                         profile_id=cfg.get("activeProfileId", ""),
                         track_activity=cfg.get("activityTrackingEnabled", False),
+                        path_extra=path_extra,
+                        env_extra=env_extra,
                     )
                 except OSError:
                     log_runtime_event(
                         "launch.failed",
                         level="warning",
-                        actionType="media",
+                        actionType="app",
                         result="failure",
                     )
                     self.json_response(
-                        {"status": "error", "message": "Media process could not be started"},
+                        {"status": "error", "message": "Application process could not be started"},
                         503,
                     )
                     return
+                if app_fechou_sozinho(supervisor):
+                    reset_active_tile()
+                    log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
+                    etapa, codigo = como_o_app_saiu(getattr(supervisor, "returncode", None))
+                    telemetria.relatar_problema(
+                        etapa, f"tile={tile_id} codigo={codigo} cmd={clean}", assinatura=f"{etapa}:{tile_id}",
+                        por_dia=True,
+                    )
+                    self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
+                    return
+
                 self.send_response(204)
                 self.end_headers()
                 return
-
-            if launch["type"] == "web":
-                url = launch["url"]
-                if launch["mode"] == "embedded":
-                    reset_active_tile()
-                    activity_token = ""
-                    if cfg.get("activityTrackingEnabled", False):
-                        activity_token = embedded_activity_sessions().start(
-                            cfg.get("activeProfileId", ""),
-                            tile_id,
-                        )
-                    self.send_response(302)
-                    self.send_header(
-                        "Location",
-                        f"/browser.html?url={quote(url, safe='')}&tile={quote(tile_id, safe='')}"
-                        f"&activity={quote(activity_token, safe='')}",
-                    )
-                    self.end_headers()
-                    return
-                browser = find_browser(cfg)
-                command = None
-                profile_id = cfg.get("activeProfileId", "")
-                auto_login = site_login_for_launch(browser, url, profile_id)
-                login_driver = site_login_driver(browser) if auto_login else None
-                if browser:
-                    command = external_browser_command(
-                        browser, url, profile_id=profile_id,
-                        marionette_port=site_logins.MARIONETTE_PORT if login_driver == "marionette" else None,
-                        devtools_port=site_logins.DEVTOOLS_PORT if login_driver == "devtools" else None,
-                    )
-                elif abridor_do_sistema():
-                    command = [abridor_do_sistema(), url]
-                else:
-                    reset_active_tile()
-                    log_runtime_event(
-                        "launch.failed",
-                        level="warning",
-                        actionType="web",
-                        result="missing",
-                    )
-                    self.json_response({"status": "error", "message": "No supported browser found"}, 503)
-                    return
-                try:
-                    launch_owned_tile(
-                        command,
-                        "external",
-                        url=url,
-                        tile_id=tile_id,
-                        profile_id=cfg.get("activeProfileId", ""),
-                        track_activity=cfg.get("activityTrackingEnabled", False),
-                    )
-                except OSError:
-                    log_runtime_event(
-                        "launch.failed",
-                        level="warning",
-                        actionType="web",
-                        result="failure",
-                    )
-                    self.json_response(
-                        {"status": "error", "message": "Browser process could not be started"},
-                        503,
-                    )
-                    return
-                if login_driver and command and (
-                    "--marionette" in command
-                    or any(arg.startswith("--remote-debugging-port=") for arg in command)
-                ):
-                    site, login = auto_login
-                    site_logins.start_auto_login(
-                        site, login["username"], login["password"], url,
-                        log=log_runtime_event, driver=login_driver,
-                    )
-                self.send_response(204)
-                self.end_headers()
-                return
-
-            clean = launch.get("argv", [])
-            if launch["type"] == "none" or not clean:
-                reset_active_tile()
-                self.send_response(204)
-                self.end_headers()
-                return
-            path_extra = ""
-            if clean[0].startswith(catalogo_windows.PREFIXO):
-                resolved = catalogo_windows.comando(clean)
-                if not resolved:
-                    reset_active_tile()
-                    log_runtime_event("launch.failed", level="warning", actionType="app", result="missing")
-                    self.json_response({"status": "missing", "message": "App not installed"}, 404)
-                    return
-                path_extra = catalogo_windows.pasta_no_path(clean, resolved)
-                clean = resolved
-            clean = direct_app_command(clean)
-            try:
-                # The supervisor still launches argv directly and never invokes a shell.
-                supervisor = launch_owned_tile(
-                    clean,
-                    "local",
-                    tile_id=tile_id,
-                    profile_id=cfg.get("activeProfileId", ""),
-                    track_activity=cfg.get("activityTrackingEnabled", False),
-                    path_extra=path_extra,
-                )
-            except OSError:
-                log_runtime_event(
-                    "launch.failed",
-                    level="warning",
-                    actionType="app",
-                    result="failure",
-                )
-                self.json_response(
-                    {"status": "error", "message": "Application process could not be started"},
-                    503,
-                )
-                return
-            if app_fechou_sozinho(supervisor):
-                reset_active_tile()
-                log_runtime_event("launch.failed", level="warning", actionType="app", result="crashed")
-                telemetria.relatar_problema(
-                    "app.fechou_sozinho", f"tile={tile_id} cmd={clean}", assinatura=f"app.fechou_sozinho:{tile_id}"
-                )
-                self.json_response({"status": "crashed", "message": "Application closed right away"}, 503)
-                return
-
-            self.send_response(204)
-            self.end_headers()
-            return
+            finally:
+                PORTAO_DE_ABERTURA.sair()
         self.send_response(404)
         self.end_headers()
 
@@ -2365,6 +2681,7 @@ def main():
         configure_runtime_logging(LOG_FILE)
     except OSError:
         pass
+    telemetria.instalar_excepthook("servidor")
     server_marker = os.path.abspath(__file__)
     if owned_process_alive(PIDFILE, "server", server_marker):
         log_runtime_event("server.duplicate", level="warning")
@@ -2388,10 +2705,29 @@ def main():
                         log_runtime_event("catalogo.sincronizado")
                 except Exception:  # noqa: BLE001
                     pass
+                try:  # sites special: novos chegam uma vez; apagado pelos pais não volta
+                    import sites_windows
+                    atual, mudou = sites_windows.sincronizar(load_stored_cfg())
+                    if mudou:
+                        save_stored_cfg(atual)
+                        log_runtime_event("sites.sincronizados")
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 telemetria_service().iniciar()
             except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor
                 pass
+            try:
+                # coleções do itch.io: 2 min depois de subir e a cada 30 min
+                # (no Linux o cozy-itch-sync também chama a mesma lógica)
+                itch_sync.iniciar()
+            except Exception:  # noqa: BLE001
+                pass
+            if os.name == "nt":
+                try:  # roteiro 31: pílula travada é reaberta; app travado não conta tempo
+                    iniciar_vigia_da_pilula()
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 if os.name != "nt":  # controles USB: só Linux (evdev) por enquanto
                     controles_service().aplicar()

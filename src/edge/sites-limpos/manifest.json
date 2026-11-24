@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Benikids: sites mais limpos",
+  "version": "1.0.0",
+  "description": "Esconde menus, compartilhar, doação e lojas. Ao abrir o site, o Benikids acrescenta o limite de navegação.",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "css": ["comuns.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://escolagames.com.br/*", "*://*.escolagames.com.br/*"],
+      "css": ["escolagames.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://colorir-online.com/*", "*://*.colorir-online.com/*"],
+      "css": ["colorir.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://autodraw.com/*", "*://*.autodraw.com/*"],
+      "css": ["autodraw.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://kiddogames.fun/*", "*://*.kiddogames.fun/*"],
+      "css": ["kiddogames.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://musiclab.chromeexperiments.com/*", "*://*.musiclab.chromeexperiments.com/*"],
+      "css": ["musiclab.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://phet.colorado.edu/*", "*://*.phet.colorado.edu/*"],
+      "css": ["phet.css"],
+      "run_at": "document_start"
+    }
+  ]
+}

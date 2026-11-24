@@ -32,6 +32,7 @@ _SAFE_EVENT_FIELDS = {
     "launcher.recovered": {"attempt"},
     "launch.failed": {"actionType", "result"},
     "launch.started": {"actionType"},
+    "pais.espera_ocupada": set(),
     "pin.changed": set(),
     "pin.removed": set(),
     "profile.created": set(),
@@ -40,6 +41,8 @@ _SAFE_EVENT_FIELDS = {
     "setup.completed": {"profiles"},
     "telemetria.apagar": {"result"},
     "catalogo.sincronizado": set(),
+    "sites.sincronizados": set(),
+    "dns.familia": set(),
     # área dos pais aberta pelo menu nativo: a página se recuperou de uma tela vazia
     "cliente.recuperado": {"etapa", "erro"},
     "request.rejected": {"statusCode"},

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<title>Jogo</title>
+<!-- Cozy Kids Launcher: mostra um jogo de navegador de tamanho fixo ampliado para a tela toda.
+     Uso: cozy-jogo.html#w=960&h=585&u=<endereço do jogo>
+     fh=<altura real da página> (opcional): mostra só os h px de cima e esconde o resto
+     (ex.: a faixa do Unity com o botão de tela cheia).
+
+     Sandbox do iframe. O jogo (https) e esta página (file:) são origens diferentes:
+     allow-scripts junto com allow-same-origin não entrega o arquivo local. Só evita
+     que a origem do jogo vire opaca, senão o save (IndexedDB do Unity e do Ren'Py)
+     some ao fechar. O htmlgame.js do itch só lê ancestorOrigins e o referrer; o
+     sandbox não apaga nenhum dos dois, e esta página não muda o referrerpolicy.
+
+     Entram no sandbox:
+     - allow-scripts: o jogo é JavaScript.
+     - allow-same-origin: o save fica na origem de verdade do jogo.
+     - allow-pointer-lock: o rato pode ficar preso no jogo (o allow= também pede).
+     - allow-forms: um formulário do jogo segue dentro do iframe.
+     Ficam de fora de propósito:
+     - allow-popups e allow-popups-to-escape-sandbox: window.open e target=_blank
+       (o "Powered by Ren'Py") não abrem outra janela do navegador.
+     - allow-downloads: não baixa arquivo (Export Saves, Download Log).
+     - allow-top-navigation e allow-top-navigation-by-user-activation: um clique
+       não troca esta moldura por outro site.
+     - allow-modals: sem alert, confirm ou print, que abrem diálogo do sistema.
+     O allow= (autoplay, fullscreen, gamepad, pointer-lock) é outra lista: o que
+     o navegador deixa o iframe pedir, além do sandbox. -->
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  #moldura{position:absolute;overflow:hidden;transform-origin:0 0}
+  iframe{position:absolute;left:0;top:0;border:0;background:#fff;overflow:hidden}
+</style>
+</head>
+<body>
+<div id="moldura"><iframe id="jogo" scrolling="no" sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms" allow="autoplay; fullscreen; gamepad; pointer-lock" allowfullscreen></iframe></div>
+<script>
+  const p=new URLSearchParams(location.hash.slice(1));
+  const w=+p.get('w')||0, h=+p.get('h')||0, fh=+p.get('fh')||h;
+  const f=document.getElementById('jogo'), m=document.getElementById('moldura');
+  // O jogo só pode ser https em *.itch.zone (html.itch.zone e html-classic.itch.zone
+  // inclusive). Outro endereço fica em branco: a moldura não é um navegador aberto.
+  function enderecoPermitido(valor){
+    if(!valor) return false;
+    let url;
+    try { url=new URL(valor); } catch(e){ return false; }
+    if(url.protocol!=='https:'||url.username||url.password) return false;
+    if(url.port&&url.port!=='443') return false;
+    const host=url.hostname.toLowerCase().replace(/\.$/,'');
+    if(!host||host==='itch.zone'||host.indexOf('..')!==-1) return false;
+    return host.endsWith('.itch.zone')&&/^[a-z0-9.-]+$/.test(host);
+  }
+  function ajustar(){
+    const W=innerWidth, H=innerHeight;
+    if(!w||!h){ Object.assign(m.style,{left:0,top:0,width:W+'px',height:H+'px',transform:'none'});
+                Object.assign(f.style,{width:W+'px',height:H+'px'}); return; }
+    const s=Math.min(W/w,H/h);
+    const folga=+p.get('pad')||0;
+    if(p.has('fh')){
+      // folga para a faixa do Unity (e a barra dela) ficar fora da área visível
+      const pad=20;
+      Object.assign(f.style,{width:(w+pad)+'px',height:(fh+pad)+'px',left:(-pad/2)+'px',top:(-pad/2)+'px'});
+    } else if(folga>0&&folga<=64){
+      // GameMaker (Maquiagem, Vestir Missy): canvas fixo e inline. O iframe
+      // fica um pouco maior e a moldura esconde a sobra, barras inclusive.
+      // Sem pad= (Dog Wash e os outros) o iframe fica exatamente w×h: o Godot
+      // ocupa a janela e uma folga aqui cortaria o jogo.
+      Object.assign(f.style,{width:(w+folga)+'px',height:(h+folga)+'px',left:'0px',top:'0px',overflow:'hidden'});
+    } else {
+      Object.assign(f.style,{width:w+'px',height:h+'px',left:'0px',top:'0px',overflow:'hidden'});
+    }
+    Object.assign(m.style,{width:w+'px',height:h+'px',left:((W-w*s)/2)+'px',top:((H-h*s)/2)+'px',transform:'scale('+s+')'});
+  }
+  addEventListener('resize',ajustar); ajustar();
+  const endereco=p.get('u')||'';
+  f.src=enderecoPermitido(endereco)?endereco:'about:blank';
+  f.addEventListener('load',()=>f.focus());
+  addEventListener('click',()=>f.focus());
+</script>
+</body>
+</html>

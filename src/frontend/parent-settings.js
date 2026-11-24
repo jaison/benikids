@@ -369,6 +369,7 @@ function renderAdmin(){
   document.getElementById('cfgSpeechFeedbackEnabled').checked=cfg.speechFeedbackEnabled===true;
   document.getElementById('cfgStartOnLogin').checked=cfg.startOnLogin!==false;
   document.getElementById('cfgTelemetry').checked=cfg.telemetryEnabled!==false;
+  if(typeof carregarFiltroInternet==='function') carregarFiltroInternet();
   document.getElementById('cfgUsageTelemetry').checked=cfg.usageTelemetryEnabled===true;
   document.getElementById('cfgCelebrationEnabled').checked=cfg.celebrationEnabled===true;
   document.getElementById('cfgAccessibilityLargeText').checked=cfg.accessibilityLargeText===true;
@@ -434,14 +435,9 @@ function renderAdmin(){
   timerSel.onchange=function(){
     timerCustom.style.display=timerSel.value==='custom'?'':'none';
   };
-  const timerBtn=document.getElementById('timerToggleBtn');
-  if(lastTimerStatus.active&&!lastTimerStatus.expired){
-    setIconLabel(timerBtn,'timer',uiText.timerStop||'Stop');
-    document.getElementById('timerStatus').textContent=(uiText.timerRemaining||'Noch {time}').replace('{time}',formatTime(lastTimerStatus.remainingSeconds));
-  }else{
-    setIconLabel(timerBtn,'timer',uiText.timerStart||'Start');
-    document.getElementById('timerStatus').textContent='';
-  }
+  atualizarBotaoTimer();
+  // a área dos pais pode abrir antes do 1º pollTimer: pergunta o estado agora
+  if(!('active' in lastTimerStatus)&&typeof pollTimer==='function') pollTimer();
   const filteredTileIndexes=filteredAdminTileIndexes();
   const filteredPages=Math.max(1,Math.ceil(filteredTileIndexes.length/pageSize()));
   adminPage=Math.min(Math.max(0,adminPage),filteredPages-1);

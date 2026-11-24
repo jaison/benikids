@@ -1,0 +1,355 @@
+{
+  "nivel": "elementary-school",
+  "temas": {
+    "physics": [
+      {
+        "nome": "Atrito",
+        "url": "https://phet.colorado.edu/sims/html/friction/latest/friction_pt_BR.html",
+        "sim": "friction"
+      },
+      {
+        "nome": "Balançando",
+        "url": "https://phet.colorado.edu/sims/html/balancing-act/latest/balancing-act_pt_BR.html",
+        "sim": "balancing-act"
+      },
+      {
+        "nome": "Balões e Eletricidade Estática",
+        "url": "https://phet.colorado.edu/sims/html/balloons-and-static-electricity/latest/balloons-and-static-electricity_pt_BR.html",
+        "sim": "balloons-and-static-electricity"
+      },
+      {
+        "nome": "Densidade",
+        "url": "https://phet.colorado.edu/sims/html/density/latest/density_pt_BR.html",
+        "sim": "density"
+      },
+      {
+        "nome": "Desvio da Luz",
+        "url": "https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_pt_BR.html",
+        "sim": "bending-light"
+      },
+      {
+        "nome": "Energia na Pista de Skate: Básico",
+        "url": "https://phet.colorado.edu/sims/html/energy-skate-park-basics/latest/energy-skate-park-basics_pt_BR.html",
+        "sim": "energy-skate-park-basics"
+      },
+      {
+        "nome": "Estados da Matéria: Básico",
+        "url": "https://phet.colorado.edu/sims/html/states-of-matter-basics/latest/states-of-matter-basics_pt_BR.html",
+        "sim": "states-of-matter-basics"
+      },
+      {
+        "nome": "Formas de Energia e Transformações",
+        "url": "https://phet.colorado.edu/sims/html/energy-forms-and-changes/latest/energy-forms-and-changes_pt_BR.html",
+        "sim": "energy-forms-and-changes"
+      },
+      {
+        "nome": "Forças e Movimento: Noções Básicas",
+        "url": "https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_pt_BR.html",
+        "sim": "forces-and-motion-basics"
+      },
+      {
+        "nome": "Gases: Introdução",
+        "url": "https://phet.colorado.edu/sims/html/gases-intro/latest/gases-intro_pt_BR.html",
+        "sim": "gases-intro"
+      },
+      {
+        "nome": "Gravidade e Órbitas",
+        "url": "https://phet.colorado.edu/sims/html/gravity-and-orbits/latest/gravity-and-orbits_pt_BR.html",
+        "sim": "gravity-and-orbits"
+      },
+      {
+        "nome": "Interferência de Onda",
+        "url": "https://phet.colorado.edu/sims/html/wave-interference/latest/wave-interference_pt_BR.html",
+        "sim": "wave-interference"
+      },
+      {
+        "nome": "John Travoltagem",
+        "url": "https://phet.colorado.edu/sims/html/john-travoltage/latest/john-travoltage_pt_BR.html",
+        "sim": "john-travoltage"
+      },
+      {
+        "nome": "Kit para Montar Circuito DC",
+        "url": "https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_pt_BR.html",
+        "sim": "circuit-construction-kit-dc"
+      },
+      {
+        "nome": "Kit para Montar um Circuito DC - Laboratório Virtual",
+        "url": "https://phet.colorado.edu/sims/html/circuit-construction-kit-dc-virtual-lab/latest/circuit-construction-kit-dc-virtual-lab_pt_BR.html",
+        "sim": "circuit-construction-kit-dc-virtual-lab"
+      },
+      {
+        "nome": "Laboratório de Força Gravitacional: Básico",
+        "url": "https://phet.colorado.edu/sims/html/gravity-force-lab-basics/latest/gravity-force-lab-basics_pt_BR.html",
+        "sim": "gravity-force-lab-basics"
+      },
+      {
+        "nome": "Laboratório do Pêndulo",
+        "url": "https://phet.colorado.edu/sims/html/pendulum-lab/latest/pendulum-lab_pt_BR.html",
+        "sim": "pendulum-lab"
+      },
+      {
+        "nome": "Massas e Molas: Básico",
+        "url": "https://phet.colorado.edu/sims/html/masses-and-springs-basics/latest/masses-and-springs-basics_pt_BR.html",
+        "sim": "masses-and-springs-basics"
+      },
+      {
+        "nome": "Meu Sistema Solar",
+        "url": "https://phet.colorado.edu/sims/html/my-solar-system/latest/my-solar-system_pt_BR.html",
+        "sim": "my-solar-system"
+      },
+      {
+        "nome": "Movimento de Projétil",
+        "url": "https://phet.colorado.edu/sims/html/projectile-motion/latest/projectile-motion_pt_BR.html",
+        "sim": "projectile-motion"
+      },
+      {
+        "nome": "Ondas: Intro",
+        "url": "https://phet.colorado.edu/sims/html/waves-intro/latest/waves-intro_pt_BR.html",
+        "sim": "waves-intro"
+      },
+      {
+        "nome": "Visão Colorida",
+        "url": "https://phet.colorado.edu/sims/html/color-vision/latest/color-vision_pt_BR.html",
+        "sim": "color-vision"
+      },
+      {
+        "nome": "Ímã e Bússola",
+        "url": "https://phet.colorado.edu/sims/html/magnet-and-compass/latest/magnet-and-compass_pt_BR.html",
+        "sim": "magnet-and-compass"
+      },
+      {
+        "nome": "Ímãs e Eletroímãs",
+        "url": "https://phet.colorado.edu/sims/html/magnets-and-electromagnets/latest/magnets-and-electromagnets_pt_BR.html",
+        "sim": "magnets-and-electromagnets"
+      },
+      {
+        "nome": "Óptica Geométrica: Básico",
+        "url": "https://phet.colorado.edu/sims/html/geometric-optics-basics/latest/geometric-optics-basics_pt_BR.html",
+        "sim": "geometric-optics-basics"
+      }
+    ],
+    "math-and-statistics": [
+      {
+        "nome": "Aritmética",
+        "url": "https://phet.colorado.edu/sims/html/arithmetic/latest/arithmetic_pt_BR.html",
+        "sim": "arithmetic"
+      },
+      {
+        "nome": "Associe Frações",
+        "url": "https://phet.colorado.edu/sims/html/fraction-matcher/latest/fraction-matcher_pt_BR.html",
+        "sim": "fraction-matcher"
+      },
+      {
+        "nome": "Balançando",
+        "url": "https://phet.colorado.edu/sims/html/balancing-act/latest/balancing-act_pt_BR.html",
+        "sim": "balancing-act"
+      },
+      {
+        "nome": "Comparar Números",
+        "url": "https://phet.colorado.edu/sims/html/number-compare/latest/number-compare_pt_BR.html",
+        "sim": "number-compare"
+      },
+      {
+        "nome": "Construir uma Fração",
+        "url": "https://phet.colorado.edu/sims/html/build-a-fraction/latest/build-a-fraction_pt_BR.html",
+        "sim": "build-a-fraction"
+      },
+      {
+        "nome": "Construtor de Área",
+        "url": "https://phet.colorado.edu/sims/html/area-builder/latest/area-builder_pt_BR.html",
+        "sim": "area-builder"
+      },
+      {
+        "nome": "Dupla de Números",
+        "url": "https://phet.colorado.edu/sims/html/number-pairs/latest/number-pairs_pt_BR.html",
+        "sim": "number-pairs"
+      },
+      {
+        "nome": "Explorador da Igualdade: Básico",
+        "url": "https://phet.colorado.edu/sims/html/equality-explorer-basics/latest/equality-explorer-basics_pt_BR.html",
+        "sim": "equality-explorer-basics"
+      },
+      {
+        "nome": "Expressões",
+        "url": "https://phet.colorado.edu/sims/html/expression-exchange/latest/expression-exchange_pt_BR.html",
+        "sim": "expression-exchange"
+      },
+      {
+        "nome": "Faz um 10",
+        "url": "https://phet.colorado.edu/sims/html/make-a-ten/latest/make-a-ten_pt_BR.html",
+        "sim": "make-a-ten"
+      },
+      {
+        "nome": "Frações: Igualdade",
+        "url": "https://phet.colorado.edu/sims/html/fractions-equality/latest/fractions-equality_pt_BR.html",
+        "sim": "fractions-equality"
+      },
+      {
+        "nome": "Frações: Intro",
+        "url": "https://phet.colorado.edu/sims/html/fractions-intro/latest/fractions-intro_pt_BR.html",
+        "sim": "fractions-intro"
+      },
+      {
+        "nome": "Frações: Números Mistos",
+        "url": "https://phet.colorado.edu/sims/html/fractions-mixed-numbers/latest/fractions-mixed-numbers_pt_BR.html",
+        "sim": "fractions-mixed-numbers"
+      },
+      {
+        "nome": "Gerador de Funções: Básico",
+        "url": "https://phet.colorado.edu/sims/html/function-builder-basics/latest/function-builder-basics_pt_BR.html",
+        "sim": "function-builder-basics"
+      },
+      {
+        "nome": "Jogos dos Números",
+        "url": "https://phet.colorado.edu/sims/html/number-play/latest/number-play_pt_BR.html",
+        "sim": "number-play"
+      },
+      {
+        "nome": "Laboratório do Pêndulo",
+        "url": "https://phet.colorado.edu/sims/html/pendulum-lab/latest/pendulum-lab_pt_BR.html",
+        "sim": "pendulum-lab"
+      },
+      {
+        "nome": "Modelo de Área: Decimais",
+        "url": "https://phet.colorado.edu/sims/html/area-model-decimals/latest/area-model-decimals_pt_BR.html",
+        "sim": "area-model-decimals"
+      },
+      {
+        "nome": "Modelo de Área: Intro",
+        "url": "https://phet.colorado.edu/sims/html/area-model-introduction/latest/area-model-introduction_pt_BR.html",
+        "sim": "area-model-introduction"
+      },
+      {
+        "nome": "Modelo de Área: Multiplicação",
+        "url": "https://phet.colorado.edu/sims/html/area-model-multiplication/latest/area-model-multiplication_pt_BR.html",
+        "sim": "area-model-multiplication"
+      },
+      {
+        "nome": "Movimento de Projétil",
+        "url": "https://phet.colorado.edu/sims/html/projectile-motion/latest/projectile-motion_pt_BR.html",
+        "sim": "projectile-motion"
+      },
+      {
+        "nome": "Parque da Proporção",
+        "url": "https://phet.colorado.edu/sims/html/proportion-playground/latest/proportion-playground_pt_BR.html",
+        "sim": "proportion-playground"
+      },
+      {
+        "nome": "Quadrilátero",
+        "url": "https://phet.colorado.edu/sims/html/quadrilateral/latest/quadrilateral_pt_BR.html",
+        "sim": "quadrilateral"
+      },
+      {
+        "nome": "Razão e Proporção",
+        "url": "https://phet.colorado.edu/sims/html/ratio-and-proportion/latest/ratio-and-proportion_pt_BR.html",
+        "sim": "ratio-and-proportion"
+      },
+      {
+        "nome": "Reta Numérica: Inteiros",
+        "url": "https://phet.colorado.edu/sims/html/number-line-integers/latest/number-line-integers_pt_BR.html",
+        "sim": "number-line-integers"
+      }
+    ],
+    "chemistry": [
+      {
+        "nome": "Balões e Eletricidade Estática",
+        "url": "https://phet.colorado.edu/sims/html/balloons-and-static-electricity/latest/balloons-and-static-electricity_pt_BR.html",
+        "sim": "balloons-and-static-electricity"
+      },
+      {
+        "nome": "Concentração",
+        "url": "https://phet.colorado.edu/sims/html/concentration/latest/concentration_pt_BR.html",
+        "sim": "concentration"
+      },
+      {
+        "nome": "Densidade",
+        "url": "https://phet.colorado.edu/sims/html/density/latest/density_pt_BR.html",
+        "sim": "density"
+      },
+      {
+        "nome": "Estados da Matéria: Básico",
+        "url": "https://phet.colorado.edu/sims/html/states-of-matter-basics/latest/states-of-matter-basics_pt_BR.html",
+        "sim": "states-of-matter-basics"
+      },
+      {
+        "nome": "Formas de Energia e Transformações",
+        "url": "https://phet.colorado.edu/sims/html/energy-forms-and-changes/latest/energy-forms-and-changes_pt_BR.html",
+        "sim": "energy-forms-and-changes"
+      },
+      {
+        "nome": "Gases: Introdução",
+        "url": "https://phet.colorado.edu/sims/html/gases-intro/latest/gases-intro_pt_BR.html",
+        "sim": "gases-intro"
+      }
+    ],
+    "earth-and-space": [
+      {
+        "nome": "Balões e Eletricidade Estática",
+        "url": "https://phet.colorado.edu/sims/html/balloons-and-static-electricity/latest/balloons-and-static-electricity_pt_BR.html",
+        "sim": "balloons-and-static-electricity"
+      },
+      {
+        "nome": "Densidade",
+        "url": "https://phet.colorado.edu/sims/html/density/latest/density_pt_BR.html",
+        "sim": "density"
+      },
+      {
+        "nome": "Efeito Estufa",
+        "url": "https://phet.colorado.edu/sims/html/greenhouse-effect/latest/greenhouse-effect_pt_BR.html",
+        "sim": "greenhouse-effect"
+      },
+      {
+        "nome": "Gases: Introdução",
+        "url": "https://phet.colorado.edu/sims/html/gases-intro/latest/gases-intro_pt_BR.html",
+        "sim": "gases-intro"
+      },
+      {
+        "nome": "Gravidade e Órbitas",
+        "url": "https://phet.colorado.edu/sims/html/gravity-and-orbits/latest/gravity-and-orbits_pt_BR.html",
+        "sim": "gravity-and-orbits"
+      },
+      {
+        "nome": "Interferência de Onda",
+        "url": "https://phet.colorado.edu/sims/html/wave-interference/latest/wave-interference_pt_BR.html",
+        "sim": "wave-interference"
+      },
+      {
+        "nome": "Laboratório de Força Gravitacional: Básico",
+        "url": "https://phet.colorado.edu/sims/html/gravity-force-lab-basics/latest/gravity-force-lab-basics_pt_BR.html",
+        "sim": "gravity-force-lab-basics"
+      },
+      {
+        "nome": "Meu Sistema Solar",
+        "url": "https://phet.colorado.edu/sims/html/my-solar-system/latest/my-solar-system_pt_BR.html",
+        "sim": "my-solar-system"
+      },
+      {
+        "nome": "Ondas: Intro",
+        "url": "https://phet.colorado.edu/sims/html/waves-intro/latest/waves-intro_pt_BR.html",
+        "sim": "waves-intro"
+      },
+      {
+        "nome": "Ímã e Bússola",
+        "url": "https://phet.colorado.edu/sims/html/magnet-and-compass/latest/magnet-and-compass_pt_BR.html",
+        "sim": "magnet-and-compass"
+      }
+    ],
+    "biology": [
+      {
+        "nome": "Densidade",
+        "url": "https://phet.colorado.edu/sims/html/density/latest/density_pt_BR.html",
+        "sim": "density"
+      },
+      {
+        "nome": "Seleção Natural",
+        "url": "https://phet.colorado.edu/sims/html/natural-selection/latest/natural-selection_pt_BR.html",
+        "sim": "natural-selection"
+      },
+      {
+        "nome": "Visão Colorida",
+        "url": "https://phet.colorado.edu/sims/html/color-vision/latest/color-vision_pt_BR.html",
+        "sim": "color-vision"
+      }
+    ]
+  }
+}

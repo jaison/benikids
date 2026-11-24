@@ -1,14 +1,25 @@
 // Timer logic
 let timerWarningShown=false;
+// Minutos que faltam, arredondados para cima (59 s ainda é "1 minuto"), no singular
+// ou no plural do idioma (roteiro 25: aparecia "Faltam 1 minutes").
+function timerMinutesLeft(sec){
+  return sec>0?Math.ceil(sec/60):0;
+}
 function formatTime(sec){
-  const m=Math.max(0,Math.floor(sec/60));
-  return m+' minutes';
+  const m=timerMinutesLeft(sec);
+  if(m===1) return uiText.timerOneMinute||'1 minute';
+  return (uiText.timerManyMinutes||'{count} minutes').replace('{count}',String(m));
+}
+function formatTimeLeft(sec){
+  const modelo=timerMinutesLeft(sec)===1?(uiText.timerRemainingOne||uiText.timerRemaining):uiText.timerRemaining;
+  return (modelo||'{time} left').replace('{time}',formatTime(sec));
 }
 async function pollTimer(){
   try{
     const r=await fetch('/api/timer/status');
     const data=await r.json();
     lastTimerStatus=data;
+    atualizarBotaoTimer();
     const badge=document.getElementById('timerBadge');
     if(data.active){
       badge.style.display='block';
@@ -52,14 +63,28 @@ function hideTimerBlock(){
   document.getElementById('timerBlockPin').value='';
   document.getElementById('timerBlockErr').textContent='';
 }
+// O botão da área dos pais mostra o estado de verdade e faz o que diz. No menu
+// nativo a área dos pais abria antes do 1º pollTimer: o botão dizia "Iniciar
+// timer" com um timer ligado, e o clique (que olhava o estado) o parava.
+function atualizarBotaoTimer(){
+  const btn=document.getElementById('timerToggleBtn');
+  if(!btn) return;
+  const ligado=!!(lastTimerStatus.active&&!lastTimerStatus.expired);
+  btn.dataset.acao=ligado?'parar':'iniciar';
+  setIconLabel(btn,'timer',ligado?(uiText.timerStop||'Stop'):(uiText.timerStart||'Start'));
+  const st=document.getElementById('timerStatus');
+  if(st) st.textContent=ligado?formatTimeLeft(lastTimerStatus.remainingSeconds):'';
+}
 async function toggleTimer(){
   const btn=document.getElementById('timerToggleBtn');
-  if(lastTimerStatus.active && !lastTimerStatus.expired){
+  const parar=btn.dataset.acao?btn.dataset.acao==='parar':!!(lastTimerStatus.active&&!lastTimerStatus.expired);
+  if(parar){
     // Stop timer
     const r=await fetch('/api/timer/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const data=await r.json();
     if(data.valid){
       timerWarningShown=false;
+      btn.dataset.acao='iniciar';
       setIconLabel(btn,'timer',uiText.timerStart);
       document.getElementById('timerStatus').textContent='';
       pollTimer();
@@ -77,6 +102,7 @@ async function toggleTimer(){
     const r=await fetch('/api/timer/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({minutes:minutes})});
     const data=await r.json();
     if(data.valid){
+      btn.dataset.acao='parar';
       setIconLabel(btn,'timer',uiText.timerStop);
       document.getElementById('timerStatus').textContent=uiText.timerActive;
       pollTimer();
@@ -96,6 +122,26 @@ async function extendFromBlock(minutes){
     document.getElementById('timerBlockPin').value='';
     document.getElementById('timerBlockPin').focus();
   }
+}
+
+// "Sair" da tela "Acabou o tempo!" (roteiro 34): o PIN já digitado ali vale para sair,
+// conferido no mesmo /api/verify-pin. Vazio: a tela de PIN de sempre. Errado: a tela de
+// PIN com o erro de sempre.
+async function exitFromBlock(){
+  const campo=document.getElementById('timerBlockPin');
+  const pin=campo?campo.value:'';
+  if(!cfg.pinConfigured||!pin){ exitKids(); return; }
+  let valido=false;
+  try{
+    const r=await fetch('/api/verify-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
+    const data=await r.json();
+    valido=!!(data&&data.valid);
+  }catch(e){}
+  campo.value='';
+  if(valido){ fetch('/exit-kids',{method:'POST'}).catch(()=>{}); return; }
+  exitKids();
+  const err=document.getElementById('pinErr');
+  if(err) err.textContent=uiText.pinWrong;
 }
 
 // Touch swipe

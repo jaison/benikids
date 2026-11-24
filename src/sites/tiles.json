@@ -1,0 +1,194 @@
+{
+  "tiles": [
+    {
+      "id": "paint",
+      "label": "Desenhar",
+      "emoji": "🎨",
+      "cmd": [
+        "special:external-browser:https://kleki.com/"
+      ],
+      "visible": true,
+      "category": "passatempo"
+    },
+    {
+      "id": "autodraw",
+      "label": "Autodraw",
+      "emoji": "✏️",
+      "cmd": [
+        "special:external-browser:https://www.autodraw.com/"
+      ],
+      "visible": true,
+      "category": "passatempo"
+    },
+    {
+      "id": "colorir",
+      "label": "Colorir",
+      "emoji": "🖍️",
+      "cmd": [
+        "special:external-browser:https://colorir-online.com/"
+      ],
+      "visible": true,
+      "category": "passatempo"
+    },
+    {
+      "id": "teachyourmonster",
+      "label": "Teach Your Monster",
+      "emoji": "👾",
+      "cmd": [
+        "special:external-browser:https://www.teachyourmonster.org/account/play"
+      ],
+      "visible": true,
+      "category": "passatempo"
+    },
+    {
+      "id": "kiddogames",
+      "label": "Kiddo Games",
+      "emoji": "🐸",
+      "cmd": [
+        "special:external-browser:https://kiddogames.fun/"
+      ],
+      "visible": true,
+      "category": "passatempo"
+    },
+    {
+      "id": "blockly",
+      "label": "Blockly Games",
+      "emoji": "🧠",
+      "cmd": [
+        "special:external-browser:https://blockly.games/?lang=pt-br"
+      ],
+      "visible": true,
+      "category": "educativo"
+    },
+    {
+      "id": "musiclab",
+      "label": "Music Lab",
+      "emoji": "🎹",
+      "cmd": [
+        "special:external-browser:https://musiclab.chromeexperiments.com/?lang=pt-BR"
+      ],
+      "visible": true,
+      "category": "passatempo"
+    },
+    {
+      "id": "browser",
+      "label": "Escola Games",
+      "emoji": "🌐",
+      "cmd": [
+        "special:external-browser:https://www.escolagames.com.br/"
+      ],
+      "visible": true,
+      "category": "educativo"
+    },
+    {
+      "id": "codeorg",
+      "label": "Code.org",
+      "emoji": "🧑‍💻",
+      "cmd": [
+        "special:external-browser:https://studio.code.org/courses?lang=pt-BR"
+      ],
+      "visible": false,
+      "category": "educativo"
+    },
+    {
+      "id": "khan",
+      "label": "Khan Academy",
+      "emoji": "📚",
+      "cmd": [
+        "special:external-browser:https://pt.khanacademy.org/"
+      ],
+      "visible": true,
+      "category": "educativo"
+    },
+    {
+      "id": "phet",
+      "label": "Ciências (PhET)",
+      "emoji": "🔬",
+      "cmd": [
+        "special:external-browser:http://127.0.0.1:38431/sites/phet.html"
+      ],
+      "visible": true,
+      "category": "educativo"
+    },
+    {
+      "id": "music",
+      "label": "Filmes e música",
+      "emoji": "🎵",
+      "cmd": [
+        "special:filme-musik"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "youtube-kids",
+      "label": "YouTube Kids",
+      "emoji": "📺",
+      "cmd": [
+        "special:external-browser:https://www.youtubekids.com"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "netflix-kids",
+      "label": "Netflix Kids",
+      "emoji": "🎬",
+      "cmd": [
+        "special:external-browser:https://www.netflix.com/browse/genre/27346"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "disney-plus",
+      "label": "Disney+",
+      "emoji": "✨",
+      "cmd": [
+        "special:external-browser:https://www.disneyplus.com"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "prime-kids",
+      "label": "Prime Kids",
+      "emoji": "📦",
+      "cmd": [
+        "special:external-browser:https://www.amazon.de/gp/video/storefront/?ie=UTF8&node=17402232031"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "pbs-kids",
+      "label": "PBS Kids",
+      "emoji": "🎓",
+      "cmd": [
+        "special:external-browser:https://www.pbskids.org"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "zdf-tivi",
+      "label": "ZDFtivi",
+      "emoji": "📺",
+      "cmd": [
+        "special:external-browser:https://www.zdf.de/kinder"
+      ],
+      "visible": false,
+      "category": "jogos"
+    },
+    {
+      "id": "kika",
+      "label": "KiKA",
+      "emoji": "🧸",
+      "cmd": [
+        "special:external-browser:https://www.kika.de"
+      ],
+      "visible": false,
+      "category": "jogos"
+    }
+  ]
+}

@@ -32,6 +32,165 @@ pub struct Opcoes {
     pub demo: bool,
 }
 
+// ---------------------------------------------------------------- timer
+
+#[derive(Debug, PartialEq)]
+enum PassoTimer {
+    Esgotado,
+    FecharEsgotado,
+    Aviso,
+    Desligado,
+    Nada,
+}
+
+/// O que fazer com o estado do timer que veio do servidor. A tela "Acabou o
+/// tempo!" fecha sempre que o tempo deixa de estar esgotado: antes ela só fechava
+/// com o timer desligado, e o tempo estendido em outra tela a deixava aberta
+/// (no roteiro 17, até com o selo "10 min" depois de o menu reabrir).
+fn passo_do_timer(ativo: bool, esgotado: bool, aviso: bool, tela_aberta: bool, aviso_mostrado: bool) -> PassoTimer {
+    if ativo && esgotado {
+        return if tela_aberta { PassoTimer::Nada } else { PassoTimer::Esgotado };
+    }
+    if tela_aberta {
+        return PassoTimer::FecharEsgotado;
+    }
+    if ativo && aviso && !aviso_mostrado {
+        return PassoTimer::Aviso;
+    }
+    if !ativo {
+        return PassoTimer::Desligado;
+    }
+    PassoTimer::Nada
+}
+
+/// Minutos que faltam no timer, arredondados para cima: a mesma regra da pílula dos
+/// apps, da área dos pais e do "Falta 1 minuto" (roteiro 28: o selo dizia "2 min" com a
+/// pílula em "3 min"; com 2 min e 30 s, os dois dizem 3).
+fn minutos_do_timer(segundos: f64) -> i64 {
+    dados::minutos(segundos)
+}
+
+#[derive(Debug, PartialEq)]
+enum SairDoTimer {
+    /// sem PIN configurado: sai direto (como o pedir_pin já fazia)
+    Direto,
+    /// PIN vazio: a tela de PIN de sempre
+    PedirPin,
+    /// PIN digitado na tela "Acabou o tempo!": confere esse e sai
+    Conferir,
+}
+
+fn como_sair_do_timer(pin_configurado: bool, pin: &str) -> SairDoTimer {
+    if !pin_configurado {
+        SairDoTimer::Direto
+    } else if pin.is_empty() {
+        SairDoTimer::PedirPin
+    } else {
+        SairDoTimer::Conferir
+    }
+}
+
+/// O erro de sempre de um PIN recusado (sem dizer mais nada).
+fn erro_do_pin(muitas_tentativas: bool) -> &'static str {
+    if muitas_tentativas { "Muitas tentativas. Espere um pouco." } else { "PIN incorreto" }
+}
+
+#[cfg(test)]
+mod testes_sair_do_timer {
+    use super::*;
+
+    #[test]
+    fn pin_digitado_na_tela_vale_para_sair() {
+        assert_eq!(como_sair_do_timer(true, "1234"), SairDoTimer::Conferir);
+        assert_eq!(como_sair_do_timer(true, ""), SairDoTimer::PedirPin);
+        assert_eq!(como_sair_do_timer(false, ""), SairDoTimer::Direto);
+        assert_eq!(como_sair_do_timer(false, "1234"), SairDoTimer::Direto);
+        assert_eq!(erro_do_pin(false), "PIN incorreto");
+        assert_eq!(erro_do_pin(true), "Muitas tentativas. Espere um pouco.");
+    }
+}
+
+/// Roteiro 33: o servidor fechou um app travado e põe {"seq", "tileId"} em
+/// "appTravadoFechado" no /api/usage/status por 2 min. Devolve o seq novo, se ainda não
+/// foi mostrado.
+fn aviso_de_travado(uso: &Value, visto: u64) -> Option<u64> {
+    let seq = uso.get("appTravadoFechado")?.get("seq")?.as_u64()?;
+    (seq > visto).then_some(seq)
+}
+
+#[cfg(test)]
+mod testes_travado {
+    use super::*;
+
+    #[test]
+    fn mostra_cada_app_travado_uma_vez() {
+        let uso = serde_json::json!({"appTravadoFechado": {"seq": 2, "tileId": "tuxpaint"}});
+        assert_eq!(aviso_de_travado(&uso, 0), Some(2));
+        assert_eq!(aviso_de_travado(&uso, 2), None);
+        assert_eq!(aviso_de_travado(&serde_json::json!({}), 0), None);
+    }
+}
+
+/// Título do aviso de minutos (o mesmo número no título e no texto).
+fn texto_do_aviso(minutos: i64) -> String {
+    if minutos <= 1 { "Falta 1 minuto!".into() } else { format!("Faltam {minutos} minutos!") }
+}
+
+/// Quando o tempo acaba antes da próxima consulta (10 s), quanto esperar para
+/// consultar no fim exato.
+fn consulta_no_fim(ativo: bool, esgotado: bool, restante: f64) -> Option<Duration> {
+    if !ativo || esgotado || !(0. ..=10.).contains(&restante) {
+        return None;
+    }
+    Some(Duration::from_millis((restante * 1000.) as u64 + 300))
+}
+
+#[cfg(test)]
+mod testes_timer {
+    use super::*;
+
+    #[test]
+    fn aviso_com_o_mesmo_numero_no_titulo() {
+        // roteiro 19: "Faltam 5 minutos!" com "Falta 1 minuto."
+        assert_eq!(texto_do_aviso(1), "Falta 1 minuto!");
+        assert_eq!(texto_do_aviso(0), "Falta 1 minuto!");
+        assert_eq!(texto_do_aviso(5), "Faltam 5 minutos!");
+        // o mesmo arredondamento da pílula (overlay.format_remaining) e da área dos pais
+        assert_eq!(minutos_do_timer(150.), 3);
+        assert_eq!(minutos_do_timer(120.), 2);
+        assert_eq!(minutos_do_timer(59.), 1);
+        assert_eq!(minutos_do_timer(300.), 5);
+    }
+
+    #[test]
+    fn consulta_extra_no_fim_do_tempo() {
+        assert_eq!(consulta_no_fim(true, false, 4.), Some(Duration::from_millis(4300)));
+        assert_eq!(consulta_no_fim(true, false, 0.), Some(Duration::from_millis(300)));
+        assert_eq!(consulta_no_fim(true, false, 30.), None);
+        assert_eq!(consulta_no_fim(true, true, 0.), None);
+        assert_eq!(consulta_no_fim(false, false, 3.), None);
+    }
+
+    #[test]
+    fn tela_de_tempo_esgotado_fecha_quando_o_tempo_e_estendido() {
+        assert_eq!(passo_do_timer(true, false, false, true, false), PassoTimer::FecharEsgotado);
+        assert_eq!(passo_do_timer(false, false, false, true, false), PassoTimer::FecharEsgotado);
+    }
+
+    #[test]
+    fn tempo_esgotado_abre_a_tela_uma_vez() {
+        assert_eq!(passo_do_timer(true, true, false, false, false), PassoTimer::Esgotado);
+        assert_eq!(passo_do_timer(true, true, false, true, false), PassoTimer::Nada);
+    }
+
+    #[test]
+    fn aviso_e_timer_desligado() {
+        assert_eq!(passo_do_timer(true, false, true, false, false), PassoTimer::Aviso);
+        assert_eq!(passo_do_timer(true, false, true, false, true), PassoTimer::Nada);
+        assert_eq!(passo_do_timer(false, false, false, false, true), PassoTimer::Desligado);
+    }
+}
+
 // ---------------------------------------------------------------- estado
 
 #[derive(Clone, PartialEq)]
@@ -39,7 +198,18 @@ enum AcaoPin {
     Sair,
     Desligar,
     Perfil(String),
+    /// Área dos pais: o navegador já abre atrás do menu com esta "espera" (None até o
+    /// servidor responder); o PIN certo o libera e o traz para a frente.
+    Pais(Option<String>),
 }
+
+/// A área dos pais dentro do navegador.
+const PAGINA_PAIS: &str = "/index.html?pais=1";
+/// Aviso do menu entre o PIN aceito e o navegador vir para a frente.
+const ABRINDO_PAIS: &str = "Abrindo a área dos pais...";
+/// Mostrado no lugar do erro enquanto o servidor confere o PIN (num notebook
+/// antigo leva uns décimos de segundo; sem isto o PIN parecia parado).
+const CONFERINDO: &str = "Conferindo...";
 
 /// Quanto tempo a mensagem fica na tela se ninguém tocar em OK.
 const MENSAGEM_SEGUNDOS: u32 = 30;
@@ -51,8 +221,6 @@ enum Janela {
     Mensagem { icone: &'static str, titulo: String, corpo: String, geracao: u64, restante: u32 },
     /// Fora do horário (perfil) ou app bloqueado no horário.
     Bloqueio { perfil: bool, foco: usize },
-    /// "Faltam 5 minutos!" (6 s).
-    AvisoTimer { texto: String, geracao: u64 },
     /// Timer acabou: PIN + mais tempo.
     TimerEsgotado { pin: String, erro: String, foco: usize },
     /// PIN dos pais para sair / desligar / trocar de perfil.
@@ -91,8 +259,18 @@ pub struct Menu {
     inicio: Option<Inicio>,
     /// quando um aviso foi fechado pelo teclado: o mesmo Enter não abre o app de novo
     janela_fechada_em: Option<Instant>,
+    /// um pedido de abertura em andamento: toques em outros apps esperam a resposta
+    /// (roteiro 31: toques represados viraram ~32 aberturas seguidas)
+    abrindo_desde: Option<Instant>,
     geracao: u64,
     aviso_timer_mostrado: bool,
+    /// roteiro 33: o último "O jogo travou e foi fechado." já mostrado (seq do servidor)
+    travado_visto: u64,
+    /// Aviso "Faltam N minutos!": um balão no alto que some em 6 s e NÃO bloqueia
+    /// (antes era uma janela modal que escurecia a tela e engolia o 1º clique).
+    aviso_timer: Option<(i64, u64)>,
+    /// Consulta extra marcada para o fim exato do tempo (geração).
+    fim_do_timer: u64,
     ultimo_expiry: f64,
     ultimos: HashMap<String, String>,
     // navegador (pais, sites embutidos, mídia)
@@ -134,8 +312,12 @@ impl Menu {
             janela: None,
             inicio: None,
             janela_fechada_em: None,
+            abrindo_desde: None,
             geracao: 0,
             aviso_timer_mostrado: false,
+            travado_visto: 0,
+            aviso_timer: None,
+            fim_do_timer: 0,
             ultimo_expiry: 0.,
             ultimos,
             web: None,
@@ -255,6 +437,14 @@ impl Menu {
     fn atualizar_uso(&mut self, cx: &mut Context<Self>) {
         self.tarefa(cx, |api| api.get_json("/api/usage/status"), |m, r, cx| {
             let Some(v) = r else { return };
+            if let Some(seq) = aviso_de_travado(&v, m.travado_visto) {
+                m.travado_visto = seq;
+                if m.janela.is_none() {
+                    m.mostrar_aviso("😕", "O jogo travou".into(), "O jogo travou e foi fechado.".into());
+                    m.agendar_fechar_mensagem(cx);
+                    m.redesenhar(cx);
+                }
+            }
             if v == m.uso {
                 return;
             }
@@ -283,19 +473,45 @@ impl Menu {
             let ativo = dados::verdade(&v, "active");
             let esgotado = dados::verdade(&v, "expired");
             let aviso = dados::verdade(&v, "warning");
-            if ativo && esgotado {
-                if !matches!(m.janela, Some(Janela::TimerEsgotado { .. })) {
+            let tela = matches!(m.janela, Some(Janela::TimerEsgotado { .. }));
+            match passo_do_timer(ativo, esgotado, aviso, tela, m.aviso_timer_mostrado) {
+                PassoTimer::Esgotado => {
+                    m.aviso_timer = None;
                     m.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
                 }
-            } else if ativo && aviso && !m.aviso_timer_mostrado {
-                m.aviso_timer_mostrado = true;
-                let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
-                m.mostrar_aviso_timer(dados::minutos_usados(restante), cx);
-            } else if !ativo {
-                m.aviso_timer_mostrado = false;
-                if matches!(m.janela, Some(Janela::TimerEsgotado { .. } | Janela::AvisoTimer { .. })) {
+                PassoTimer::FecharEsgotado => {
+                    // tempo estendido em outro lugar (tela do watchdog, área dos pais, API)
+                    // ou estado velho depois de o menu reabrir
                     m.janela = None;
+                    m.aviso_timer_mostrado = aviso;
                 }
+                PassoTimer::Aviso => {
+                    m.aviso_timer_mostrado = true;
+                    let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
+                    m.mostrar_aviso_timer(minutos_do_timer(restante), cx);
+                }
+                PassoTimer::Desligado => {
+                    m.aviso_timer_mostrado = false;
+                    m.aviso_timer = None;
+                }
+                PassoTimer::Nada => {}
+            }
+            // O menu consulta o timer a cada 10 s: perto do fim, marca uma consulta
+            // para o instante em que o tempo acaba (roteiro 19: reagia ~6 s depois,
+            // e nesse meio tempo as teclas iam para o PIN dos pais).
+            let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
+            if let Some(espera) = consulta_no_fim(ativo, esgotado, restante) {
+                m.fim_do_timer += 1;
+                let g = m.fim_do_timer;
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(espera).await;
+                    let _ = this.update(cx, |m, cx| {
+                        if m.fim_do_timer == g {
+                            m.atualizar_timer(cx);
+                        }
+                    });
+                })
+                .detach();
             }
             if v != m.timer {
                 m.timer = v;
@@ -509,23 +725,48 @@ impl Menu {
     }
 
     fn mostrar_aviso_timer(&mut self, minutos: i64, cx: &mut Context<Self>) {
-        if matches!(self.janela, Some(_)) {
-            return;
-        }
         self.geracao += 1;
         let g = self.geracao;
-        let texto = if minutos <= 1 { "Falta 1 minuto.".to_string() } else { format!("Faltam {minutos} minutos.") };
-        self.janela = Some(Janela::AvisoTimer { texto, geracao: g });
+        self.aviso_timer = Some((minutos, g));
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(6)).await;
             let _ = this.update(cx, |m, cx| {
-                if matches!(&m.janela, Some(Janela::AvisoTimer { geracao, .. }) if *geracao == g) {
-                    m.janela = None;
+                if m.aviso_timer.is_some_and(|(_, ger)| ger == g) {
+                    m.aviso_timer = None;
                     cx.notify();
                 }
             });
         })
         .detach();
+    }
+
+    /// O balão do aviso de minutos: no alto, sem fundo escuro e sem pegar cliques.
+    fn aviso_timer_el(&self, p: &Pincel, minutos: i64) -> AnyElement {
+        div()
+            .absolute()
+            .top(p.z(24.))
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(p.z(12.))
+                    .px(p.z(28.))
+                    .py(p.z(16.))
+                    .rounded(p.z(24.))
+                    .bg(hsla(0xfff3e0))
+                    .border(p.z(4.))
+                    .border_color(hsla(0xff9800))
+                    .text_color(hsla(0x5f2148))
+                    .child(p.icone("timer", 0xe65100, 36.))
+                    .child(
+                        div().text_size(p.f(26.)).font_weight(FontWeight(800.)).child(texto_do_aviso(minutos)),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn mostrar_bloqueio(&mut self, motivo: &str, tile_id: &str, cx: &mut Context<Self>) {
@@ -670,6 +911,10 @@ impl Menu {
             self.mostrar_bloqueio(&motivo, &tile.id, cx);
             return;
         }
+        if !pode_abrir(self.abrindo_desde, Instant::now()) {
+            log::info!("abrir {}: outro app ainda está abrindo; toque ignorado", tile.id);
+            return;
+        }
         self.som(Som::Abrir);
         if tile.biblioteca {
             self.lembrar(&tile.id);
@@ -687,11 +932,18 @@ impl Menu {
         });
         self.esconder_inicio_depois(g, Duration::from_millis(1500), cx);
         let id = tile.id.clone();
+        self.abrindo_desde = Some(Instant::now());
         self.tarefa(
             cx,
             move |api| api.post(&format!("/launch/{}", codificar(&id)), None),
             move |m, r, cx| {
+                m.abrindo_desde = None;
                 match r {
+                    Ok(r) if r.status == 429 => {
+                        // o servidor recusou: outro app acabou de abrir (sem aviso)
+                        log::info!("abrir {}: o servidor está abrindo outro app; ignorado", tile.id);
+                        m.inicio = None;
+                    }
                     Ok(r) if r.status == 403 => {
                         m.inicio = None;
                         let motivo = r.json().map(|v| dados::texto(&v, "reason")).unwrap_or_default();
@@ -771,6 +1023,11 @@ impl Menu {
     /// Abre uma página do servidor no navegador (área dos pais, site embutido,
     /// biblioteca de mídia). Quando a página volta para o menu, o navegador fecha.
     pub fn abrir_web(&mut self, caminho: &str, cx: &mut Context<Self>) {
+        self.abrir_navegador(caminho, None, cx);
+    }
+
+    /// `espera`: abre atrás do menu, esperando o PIN digitado nele (área dos pais).
+    fn abrir_navegador(&mut self, caminho: &str, espera: Option<&str>, cx: &mut Context<Self>) {
         if self.o.demo {
             self.inicio = None;
             self.mostrar_mensagem(
@@ -785,12 +1042,21 @@ impl Menu {
                 return; // já tem um aberto
             }
         }
-        let url = format!("{}/cliente.html?ir={}", self.api.base(), codificar(caminho));
+        let url = url_cliente(&self.api.base(), caminho, espera);
         let mut cmd = std::process::Command::new(&self.o.web_cmd);
         if self.o.web_familia == "chromium" {
             // o navegador é fechado à força: sem o "Restaurar páginas?" na abertura seguinte
             cmd.arg(format!("--user-data-dir={}", self.o.web_perfil.display()))
-                .args(["--no-first-run", "--password-store=basic", "--disable-session-crashed-bubble", "--kiosk", &url]);
+                .args(["--no-first-run", "--password-store=basic", "--disable-session-crashed-bubble"])
+                // atrás do menu (área dos pais com PIN) ele tem de continuar desenhando:
+                // sem isso o Chromium para de pintar a janela coberta e ela aparece branca
+                .args([
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=CalculateNativeWinOcclusion,DnsOverHttps",
+                    "--kiosk",
+                    &url,
+                ]);
         } else {
             cmd.arg("--no-remote")
                 .arg("--profile")
@@ -807,9 +1073,11 @@ impl Menu {
             .get_json("/api/cliente/estado")
             .and_then(|v| dados::numero(&v, "voltar"))
             .unwrap_or(0.) as u64;
-        match Navegador::abrir(&mut cmd) {
+        let aberto = if espera.is_some() { Navegador::abrir_atras(&mut cmd) } else { Navegador::abrir(&mut cmd) };
+        match aberto {
             Ok(nav) => {
-                log::info!("navegador aberto para {caminho} (pid {})", nav.id());
+                let jeito = if nav.esperando_pin() { " (atrás do menu, esperando o PIN)" } else { "" };
+                log::info!("navegador aberto para {caminho}{jeito} (pid {})", nav.id());
                 self.web = Some((nav, base));
                 self.inicio = None;
                 ciclo_ate(cx, Duration::from_millis(800), |m, cx| m.vigiar_web(cx));
@@ -820,7 +1088,16 @@ impl Menu {
 
     /// Chamado a cada 0,8 s enquanto o navegador está aberto. Devolve false quando acabou.
     fn vigiar_web(&mut self, cx: &mut Context<Self>) -> bool {
+        let pin_dos_pais = matches!(self.janela, Some(Janela::Pin { acao: AcaoPin::Pais(_), .. }));
         let Some((nav, base)) = self.web.as_mut() else { return false };
+        if nav.esperando_pin() && !pin_dos_pais {
+            // o PIN dos pais saiu da tela sem ser aceito (cancelado, tempo esgotado...)
+            log::info!("PIN dos pais fora da tela: fechando o navegador que esperava atrás do menu");
+            nav.fechar();
+        }
+        if !nav.chegando() && self.inicio.as_ref().is_some_and(|i| i.texto == ABRINDO_PAIS) {
+            self.inicio = None; // o navegador já veio para a frente
+        }
         match nav.aberto() {
             true => {
                 let base = *base;
@@ -843,6 +1120,9 @@ impl Menu {
             false => {
                 log::info!("navegador fechado; de volta ao menu");
                 self.web = None;
+                if self.inicio.as_ref().is_some_and(|i| i.texto == ABRINDO_PAIS) {
+                    self.inicio = None;
+                }
                 self.api.esquecer_sessao();
                 self.carregar_config(cx);
                 self.atualizar_uso(cx);
@@ -858,6 +1138,43 @@ impl Menu {
         }
     }
 
+    /// "Sair" da tela "Acabou o tempo!" (roteiro 34, aprovado pelo mantenedor): o PIN já
+    /// digitado ali vale para sair, conferido no mesmo /api/verify-pin do Sair (mesmo
+    /// bloqueio de tentativas). Vazio: a tela de PIN de sempre. Errado: a tela de PIN com
+    /// o erro de sempre ("PIN incorreto" ou "Muitas tentativas").
+    fn sair_do_timer(&mut self, cx: &mut Context<Self>) {
+        let pin = match &self.janela {
+            Some(Janela::TimerEsgotado { erro, .. }) if erro == CONFERINDO => return, // toque repetido
+            Some(Janela::TimerEsgotado { pin, .. }) => pin.clone(),
+            _ => String::new(),
+        };
+        match como_sair_do_timer(self.pin_configurado(), &pin) {
+            SairDoTimer::Direto => self.executar(AcaoPin::Sair, cx),
+            SairDoTimer::PedirPin => self.pedir_pin(AcaoPin::Sair, cx),
+            SairDoTimer::Conferir => {
+                if let Some(Janela::TimerEsgotado { erro, .. }) = self.janela.as_mut() {
+                    *erro = CONFERINDO.into();
+                }
+                self.tarefa(
+                    cx,
+                    move |api| api.post("/api/verify-pin", Some(&json!({"pin": pin}))),
+                    |m, r, cx| {
+                        let valido =
+                            r.as_ref().ok().and_then(|r| r.json()).is_some_and(|v| dados::verdade(&v, "valid"));
+                        if valido {
+                            m.janela = None;
+                            m.executar(AcaoPin::Sair, cx);
+                        } else {
+                            let erro = erro_do_pin(r.as_ref().is_ok_and(|r| r.status == 429));
+                            m.janela = Some(Janela::Pin { pin: String::new(), erro: erro.into(), acao: AcaoPin::Sair });
+                        }
+                        cx.notify();
+                    },
+                );
+            }
+        }
+    }
+
     fn pedir_pin(&mut self, acao: AcaoPin, cx: &mut Context<Self>) {
         if self.pin_configurado() {
             self.janela = Some(Janela::Pin { pin: String::new(), erro: String::new(), acao });
@@ -867,10 +1184,21 @@ impl Menu {
     }
 
     fn conferir_pin(&mut self, cx: &mut Context<Self>) {
-        let Some(Janela::Pin { pin, acao, .. }) = self.janela.clone() else { return };
+        let Some(Janela::Pin { pin, acao, erro }) = self.janela.clone() else { return };
+        if erro == CONFERINDO {
+            return; // já conferindo (Enter repetido)
+        }
+        if let Some(Janela::Pin { erro, .. }) = self.janela.as_mut() {
+            *erro = CONFERINDO.into();
+        }
+        let pedido = match &acao {
+            // mesma validação e mesmo bloqueio de tentativas do verify-pin
+            AcaoPin::Pais(espera) => ("/api/pais/liberar", json!({"pin": pin, "espera": espera})),
+            _ => ("/api/verify-pin", json!({"pin": pin})),
+        };
         self.tarefa(
             cx,
-            move |api| api.post("/api/verify-pin", Some(&json!({"pin": pin}))),
+            move |api| api.post(pedido.0, Some(&pedido.1)),
             move |m, r, cx| {
                 let valido = r.as_ref().ok().and_then(|r| r.json()).is_some_and(|v| dados::verdade(&v, "valid"));
                 if valido {
@@ -878,11 +1206,7 @@ impl Menu {
                     m.executar(acao, cx);
                 } else if let Some(Janela::Pin { pin, erro, .. }) = m.janela.as_mut() {
                     pin.clear();
-                    *erro = if r.as_ref().is_ok_and(|r| r.status == 429) {
-                        "Muitas tentativas. Espere um pouco.".into()
-                    } else {
-                        "PIN incorreto".into()
-                    };
+                    *erro = erro_do_pin(r.as_ref().is_ok_and(|r| r.status == 429)).into();
                 }
                 cx.notify();
             },
@@ -891,6 +1215,24 @@ impl Menu {
 
     fn executar(&mut self, acao: AcaoPin, cx: &mut Context<Self>) {
         match acao {
+            AcaoPin::Pais(espera) => {
+                if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.esperando_pin()) {
+                    // a vigia traz a janela para a frente, agora ou quando ela nascer
+                    log::info!("PIN dos pais aceito: o navegador vem para a frente");
+                    nav.liberar();
+                    self.geracao += 1;
+                    let g = self.geracao;
+                    self.inicio =
+                        Some(Inicio { emoji: "🔑".into(), texto: ABRINDO_PAIS.into(), sucesso: false, geracao: g });
+                    self.esconder_inicio_depois(g, Duration::from_secs(30), cx);
+                } else {
+                    // o navegador da espera não abriu ou fechou: abre agora, na frente
+                    // (com a espera liberada, a página entra direto)
+                    self.web = None;
+                    self.abrir_navegador(PAGINA_PAIS, None, cx);
+                    let _ = espera;
+                }
+            }
             AcaoPin::Sair => self.tarefa(cx, |api| api.post("/exit-kids", None), |m, _, _| m.api.esquecer_sessao()),
             AcaoPin::Desligar => self.tarefa(cx, |api| api.post("/shutdown", None), |m, _, _| m.api.esquecer_sessao()),
             AcaoPin::Perfil(id) => self.tarefa(
@@ -936,8 +1278,58 @@ impl Menu {
         );
     }
 
+    /// "Pais": com PIN, a tela de PIN do menu aparece na hora e o navegador abre
+    /// atrás dele, já carregando a área dos pais; o PIN certo o traz para a frente
+    /// (ver /api/pais/* no servidor). Sem PIN, abre direto como antes.
     fn abrir_pais(&mut self, cx: &mut Context<Self>) {
-        self.abrir_web("/index.html?pais=1", cx);
+        if self.o.demo || !self.pin_configurado() {
+            self.abrir_web(PAGINA_PAIS, cx);
+            return;
+        }
+        if let Some((nav, _)) = self.web.as_mut().and_then(|w| w.0.aberto().then_some(w)) {
+            // já aberto (ex.: ficou atrás do menu): traz para a frente em vez de nada
+            if !nav.esperando_pin() {
+                log::info!("pais: navegador já aberto; trazendo para a frente");
+                nav.trazer_para_frente();
+            }
+            return;
+        }
+        log::info!("pais: PIN na tela do menu; abrindo o navegador atrás dele");
+        self.janela = Some(Janela::Pin { pin: String::new(), erro: String::new(), acao: AcaoPin::Pais(None) });
+        self.tarefa(
+            cx,
+            |api| api.post("/api/pais/preparar", Some(&json!({}))),
+            |m, r, cx| {
+                let espera = r
+                    .ok()
+                    .filter(|r| r.ok())
+                    .and_then(|r| r.json())
+                    .map(|v| dados::texto(&v, "espera"))
+                    .filter(|e| !e.is_empty());
+                let no_pin = matches!(m.janela, Some(Janela::Pin { acao: AcaoPin::Pais(None), .. }));
+                match (espera, no_pin) {
+                    (Some(e), true) => {
+                        if let Some(Janela::Pin { acao, .. }) = m.janela.as_mut() {
+                            *acao = AcaoPin::Pais(Some(e.clone()));
+                        }
+                        m.abrir_navegador(PAGINA_PAIS, Some(&e), cx);
+                    }
+                    (Some(e), false) => m.cancelar_espera(e, cx), // desistiram antes
+                    (None, true) => {
+                        // servidor sem a novidade ou sem PIN: o caminho de sempre
+                        log::warn!("pais: sem espera do servidor; abrindo a página com o PIN dela");
+                        m.janela = None;
+                        m.abrir_web(PAGINA_PAIS, cx);
+                    }
+                    (None, false) => {}
+                }
+                cx.notify();
+            },
+        );
+    }
+
+    fn cancelar_espera(&mut self, espera: String, cx: &mut Context<Self>) {
+        self.tarefa(cx, move |api| api.post("/api/pais/cancelar", Some(&json!({"espera": espera}))), |_, _, _| {});
     }
 
     // ------------------------------------------------------------ teclado
@@ -952,6 +1344,7 @@ impl Menu {
             .or_else(|| (k.len() == 1 && k.as_bytes()[0].is_ascii_digit()).then_some(k))
             .map(str::to_string);
         if self.inicio.is_some() {
+            log::info!("tecla {k} ignorada: tela de abertura na frente");
             return;
         }
         let confirmar = matches!(k, "enter" | "space" | "kp_enter");
@@ -959,6 +1352,9 @@ impl Menu {
             return; // Enter segurado não fecha o aviso e abre o app na sequência
         }
         if let Some(j) = self.janela.clone() {
+            if matches!(k, "left" | "right" | "up" | "down") {
+                log::info!("seta {k} foi para a janela aberta por cima do menu");
+            }
             self.tecla_janela(j, k, digito, cx);
             cx.notify();
             return;
@@ -993,7 +1389,7 @@ impl Menu {
 
     fn tecla_janela(&mut self, j: Janela, k: &str, digito: Option<String>, cx: &mut Context<Self>) {
         match j {
-            Janela::Mensagem { .. } | Janela::AvisoTimer { .. } => {
+            Janela::Mensagem { .. } => {
                 if matches!(k, "enter" | "escape" | "space") {
                     self.janela = None;
                     self.foco_visivel = true;
@@ -1020,6 +1416,8 @@ impl Menu {
                 }
             }
             Janela::TimerEsgotado { mut pin, erro, foco } => {
+                // roteiro 34: um SendKeys rápido deixou o campo vazio. Só o tipo, NUNCA o valor.
+                log::info!("tela Acabou o tempo: tecla {}", if digito.is_some() { "dígito" } else { "outra" });
                 if let Some(d) = digito {
                     if pin.len() < 8 {
                         pin.push_str(&d);
@@ -1036,7 +1434,7 @@ impl Menu {
                     "right" => self.janela = Some(Janela::TimerEsgotado { pin, erro, foco: (foco + 1).min(3) }),
                     "enter" | "kp_enter" => {
                         if foco == 3 {
-                            self.pedir_pin(AcaoPin::Sair, cx);
+                            self.sair_do_timer(cx);
                         } else {
                             self.estender_timer([15, 30, 60][foco], cx);
                         }
@@ -1057,7 +1455,7 @@ impl Menu {
                         pin.pop();
                         self.janela = Some(Janela::Pin { pin, erro, acao });
                     }
-                    "escape" => self.fechar_pin(),
+                    "escape" => self.fechar_pin(cx),
                     "enter" | "kp_enter" => self.conferir_pin(cx),
                     _ => {}
                 }
@@ -1075,7 +1473,17 @@ impl Menu {
         }
     }
 
-    fn fechar_pin(&mut self) {
+    fn fechar_pin(&mut self, cx: &mut Context<Self>) {
+        if let Some(Janela::Pin { acao: AcaoPin::Pais(espera), .. }) = self.janela.take() {
+            // desistiram: fecha o navegador que esperava (o job inteiro no Windows)
+            if let Some((nav, _)) = self.web.as_mut().filter(|(n, _)| n.esperando_pin()) {
+                log::info!("PIN dos pais cancelado: fechando o navegador que esperava atrás do menu");
+                nav.fechar();
+            }
+            if let Some(e) = espera {
+                self.cancelar_espera(e, cx);
+            }
+        }
         // se o PIN veio do bloqueio de horário, volta para ele
         self.janela = None;
         if !dados::verdade(&self.disp, "profileAllowed") {
@@ -1226,6 +1634,9 @@ impl Render for Menu {
         raiz = raiz.child(self.selos(&p));
         if let Some(j) = self.janela.clone() {
             raiz = raiz.child(self.janela_el(&p, j, cx));
+        }
+        if let Some((minutos, _)) = self.aviso_timer {
+            raiz = raiz.child(self.aviso_timer_el(&p, minutos));
         }
         if let Some(i) = &self.inicio {
             raiz = raiz.child(self.inicio_el(&p, i));
@@ -1883,7 +2294,7 @@ impl Menu {
         if dados::verdade(&self.timer, "active") {
             let esgotado = dados::verdade(&self.timer, "expired");
             let aviso = dados::verdade(&self.timer, "warning");
-            let resto = dados::minutos_usados(dados::numero(&self.timer, "remainingSeconds").unwrap_or(0.));
+            let resto = minutos_do_timer(dados::numero(&self.timer, "remainingSeconds").unwrap_or(0.));
             let (fundo, cor) = if esgotado {
                 (0xffebeeff, 0xcc0000)
             } else if aviso {
@@ -1956,11 +2367,6 @@ impl Menu {
                     cx.notify();
                 })))
                 .child(div().text_size(p.f(14.)).opacity(0.7).text_center().child(format!("Fecha sozinho em {restante} s"))),
-            Janela::AvisoTimer { texto, .. } => self
-                .caixa_janela(p)
-                .child(p.icone("timer", 0xe65100, 48.))
-                .child(titulo("Faltam 5 minutos!".into()))
-                .child(corpo(texto)),
             Janela::Bloqueio { perfil, foco } => {
                 let mut c = self
                     .caixa_janela(p)
@@ -2020,7 +2426,7 @@ impl Menu {
                     .child(botoes)
                     .child(self.botao_janela(p, "t-sair", "Sair".into(), foco == 3).on_click(cx.listener(
                         |m, _: &ClickEvent, _, cx| {
-                            m.pedir_pin(AcaoPin::Sair, cx);
+                            m.sair_do_timer(cx);
                             cx.notify();
                         },
                     )))
@@ -2030,7 +2436,12 @@ impl Menu {
                 .child(p.icone("lock", 0x333333, 44.))
                 .child(titulo("Digite o PIN".into()))
                 .child(self.campo_pin(p, &pin))
-                .child(div().text_color(hsla(0xd32f2f)).text_size(p.f(16.)).child(erro))
+                .child(
+                    div()
+                        .text_color(hsla(if erro == CONFERINDO { 0x555555 } else { 0xd32f2f }))
+                        .text_size(p.f(16.))
+                        .child(erro),
+                )
                 .child(
                     div()
                         .flex()
@@ -2043,7 +2454,7 @@ impl Menu {
                         )))
                         .child(self.botao_janela(p, "pin-cancelar", "Cancelar".into(), false).on_click(cx.listener(
                             |m, _: &ClickEvent, _, cx| {
-                                m.fechar_pin();
+                                m.fechar_pin(cx);
                                 cx.notify();
                             },
                         ))),
@@ -2170,6 +2581,8 @@ impl Menu {
             return;
         }
         self.ativa = ativa;
+        // roteiro 33: depois da área dos pais, uma seta não mudou o destaque
+        log::info!("janela do menu {}", if ativa { "ativa" } else { "inativa" });
         self.sujo = false;
         if ativa {
             self.atualizar_uso(cx);
@@ -2183,6 +2596,12 @@ impl Menu {
 // ---------------------------------------------------------------- comemoração
 
 /// Explosão de 8 estrelas (celebration-runtime.js): saem do centro, crescem e somem.
+/// Um pedido de abertura por vez. Passados 15 s sem resposta (servidor travado), o
+/// toque seguinte vale de novo.
+fn pode_abrir(abrindo_desde: Option<Instant>, agora: Instant) -> bool {
+    abrindo_desde.is_none_or(|t| agora.saturating_duration_since(t) >= Duration::from_secs(15))
+}
+
 fn celebracao_el(geracao: u64, largura: f32, altura: f32) -> AnyElement {
     // (x em % da largura, y em % da altura, atraso em ms, escala final)
     const PONTOS: [(f32, f32, f32, f32); 8] = [
@@ -2350,17 +2769,47 @@ fn ler_bateria() -> Option<(u32, bool)> {
     None
 }
 
-/// Traz a janela do menu para a frente (depois que o navegador fecha).
+/// Endereço que o navegador abre: cliente.html leva à página. A "espera" da área
+/// dos pais vai depois do "#", que não chega ao servidor (nem ao log dele).
+fn url_cliente(base: &str, caminho: &str, espera: Option<&str>) -> String {
+    let mut url = format!("{base}/cliente.html?ir={}", codificar(caminho));
+    if let Some(e) = espera {
+        url.push_str("#espera=");
+        url.push_str(e);
+    }
+    url
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn url_da_area_dos_pais_leva_a_espera_depois_do_hash() {
+        let base = "http://127.0.0.1:38431";
+        assert_eq!(
+            url_cliente(base, PAGINA_PAIS, None),
+            "http://127.0.0.1:38431/cliente.html?ir=%2Findex.html%3Fpais%3D1"
+        );
+        let url = url_cliente(base, PAGINA_PAIS, Some("abc_DEF-123"));
+        assert!(url.ends_with("?ir=%2Findex.html%3Fpais%3D1#espera=abc_DEF-123"), "{url}");
+    }
+
+    #[test]
+    fn um_pedido_de_abertura_por_vez() {
+        let agora = Instant::now();
+        assert!(pode_abrir(None, agora));
+        assert!(!pode_abrir(Some(agora), agora + Duration::from_millis(2500)));
+        assert!(pode_abrir(Some(agora), agora + Duration::from_secs(15)));
+    }
+
+}
+
+/// A janela do menu (a primeira janela visível deste processo).
 #[cfg(windows)]
-pub(crate) fn trazer_para_frente() {
-    // O Windows não deixa um processo de fundo roubar o foco: anexar a entrada à
-    // janela que está na frente libera o SetForegroundWindow.
+pub(crate) fn janela_do_menu() -> windows_sys::Win32::Foundation::HWND {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
-    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
-        SetForegroundWindow, ShowWindow, SW_SHOW,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible};
     unsafe extern "system" fn achar(h: HWND, alvo: LPARAM) -> i32 {
         unsafe {
             let mut pid = 0u32;
@@ -2372,21 +2821,45 @@ pub(crate) fn trazer_para_frente() {
         }
         1
     }
+    let mut h: HWND = std::ptr::null_mut();
+    unsafe { EnumWindows(Some(achar), &mut h as *mut HWND as LPARAM) };
+    h
+}
+
+/// Traz a janela do menu para a frente (depois que o navegador fecha).
+#[cfg(windows)]
+pub(crate) fn trazer_para_frente() {
+    trazer_janela_para_frente(janela_do_menu());
+}
+
+/// Põe uma janela na frente com o foco, SEM AttachThreadInput (roteiro 31: com as filas
+/// de entrada ligadas, uma pílula travada deixou o menu sem pintar e sem toques por 8 min).
+/// O Windows não deixa um processo de fundo roubar o foco: se o SetForegroundWindow
+/// direto não pegar, tenta com a tecla Alt apertada (entrada sintética, que só entra na
+/// fila de quem está na frente; ninguém espera ninguém). Janela travada não é tocada.
+#[cfg(windows)]
+pub(crate) fn trazer_janela_para_frente(h: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_MENU, keybd_event};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, HWND_TOP, IsHungAppWindow, SW_SHOW, SWP_ASYNCWINDOWPOS, SWP_NOMOVE, SWP_NOSIZE,
+        SetForegroundWindow, SetWindowPos, ShowWindowAsync,
+    };
     unsafe {
-        let mut h: HWND = std::ptr::null_mut();
-        EnumWindows(Some(achar), &mut h as *mut HWND as LPARAM);
-        if h.is_null() || GetForegroundWindow() == h {
+        if h.is_null() || GetForegroundWindow() == h || IsHungAppWindow(h) != 0 {
             return;
         }
-        let frente = GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut());
-        let eu = GetCurrentThreadId();
-        let ligou = frente != 0 && frente != eu && AttachThreadInput(eu, frente, 1) != 0;
-        ShowWindow(h, SW_SHOW);
-        BringWindowToTop(h);
-        SetForegroundWindow(h);
-        if ligou {
-            AttachThreadInput(eu, frente, 0);
+        // assíncronos: chamada síncrona espera a thread dona da janela (o menu
+        // inativo, ou o Edge ocupado), e quem chama pode ser a vigia, que não pode parar
+        ShowWindowAsync(h, SW_SHOW);
+        SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
+        if SetForegroundWindow(h) != 0 {
+            log::info!("janela para a frente: direto");
+            return;
         }
+        keybd_event(VK_MENU as u8, 0, KEYEVENTF_EXTENDEDKEY, 0);
+        let ok = SetForegroundWindow(h) != 0;
+        keybd_event(VK_MENU as u8, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
+        log::info!("janela para a frente: {}", if ok { "com Alt" } else { "o Windows recusou" });
     }
 }
 

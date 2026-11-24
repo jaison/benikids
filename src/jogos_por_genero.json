@@ -1,0 +1,42 @@
+{
+  "menina": [
+    {
+      "id": "bea-dollmaker",
+      "label": "Criar Boneca",
+      "emoji": "🧸",
+      "category": "jogos",
+      "w": 960,
+      "h": 540,
+      "url": "https://html-classic.itch.zone/html/15399185/index.html"
+    },
+    {
+      "id": "bea-kitty",
+      "label": "Vestir Gatinho",
+      "emoji": "🐱",
+      "category": "jogos",
+      "w": 1024,
+      "h": 768,
+      "url": "https://html-classic.itch.zone/html/13172596/kittysclawsethtml/index.html"
+    },
+    {
+      "id": "bea-darling",
+      "label": "Maquiagem",
+      "emoji": "💄",
+      "category": "jogos",
+      "w": 1366,
+      "h": 768,
+      "pad": 20,
+      "url": "https://html-classic.itch.zone/html/16542764/index.html"
+    },
+    {
+      "id": "bea-missy",
+      "label": "Vestir Missy",
+      "emoji": "👗",
+      "category": "jogos",
+      "w": 840,
+      "h": 820,
+      "pad": 20,
+      "url": "https://html-classic.itch.zone/html/1562923/index.html"
+    }
+  ]
+}

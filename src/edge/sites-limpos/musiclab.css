@@ -1,0 +1,10 @@
+/* About do Music Lab: Twitter, Wikipedia, GitHub, Google, Song Maker em g.co.
+   O experimento em si é link do próprio site, sem target _blank. */
+a[target="_blank"],
+a[href*="google.com"],
+a[href*="g.co"],
+a[href*="github.com"],
+a[href*="wikipedia.org"],
+a[href*="w3.org"] {
+  display: none !important;
+}

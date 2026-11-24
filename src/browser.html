@@ -165,8 +165,8 @@ resetInactivity();
 
 // Timer support
 function formatTime(sec){
-  const m=Math.max(0,Math.floor(sec/60));
-  return m+' minutes';
+  const m=sec>0?Math.ceil(sec/60):0;
+  return m===1?'1 minuto':m+' minutos';
 }
 let timerWarningShown=false;
 async function pollTimer(){

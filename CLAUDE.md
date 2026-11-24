@@ -19,8 +19,9 @@ baixar, instalar, a criança usa. Textos para o usuário em **português**, simp
 ## Mapa do código
 
 - `src/server.py` — servidor local (Python, sem dependências), API `/api/*`, o mesmo nos
-  dois sistemas. `src/index.html` + `src/frontend/` — menu web. `src/configurar.html` —
-  configuração inicial em 3 passos.
+  dois sistemas. `src/itch_sync.py` — coleções do itch.io (thread do servidor, Windows e
+  Linux; no Linux o `cozy-itch-sync` é o invólucro). `src/index.html` + `src/frontend/` —
+  menu web. `src/configurar.html` — configuração inicial em 3 passos.
 - `cliente/` — menu nativo `beni-menu` (Rust + gpui-fast; `cliente/vendor/` tem o patch GL
   para Intel HD 2000 até sair o PR longbridge/gpui-fast#141).
 - Windows: `src/beni_windows.py` (iniciador), `src/catalogo/windows.json` +

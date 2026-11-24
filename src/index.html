@@ -132,7 +132,7 @@
       <button class="smallbtn" onclick="extendFromBlock(60)">+60</button>
     </div>
     <div style="margin-top:12px;">
-      <button id="timerBlockExitBtn" class="smallbtn" onclick="exitKids()">Sair</button>
+      <button id="timerBlockExitBtn" class="smallbtn" onclick="exitFromBlock()">Sair</button>
     </div>
   </div>
 </div>
@@ -506,6 +506,11 @@
               <input id="cfgTelemetry" type="checkbox">
               <span>Ajudar o Benikids enviando, uma vez por dia, informações anônimas sobre este computador (sistema, processador, memória, placa de vídeo, tela). Nada sobre as crianças.</span>
             </label>
+            <label class="chk" id="dnsFamiliaRow" for="cfgDnsFamilia" style="margin-top:12px;" hidden>
+              <input id="cfgDnsFamilia" type="checkbox">
+              <span>Filtro de internet: bloqueia sites adultos neste computador, em qualquer Wi-Fi, quando o programa usa o DNS do Windows. O navegador do Benikids faz isso, e o Chrome instalado também. Outro navegador com DNS seguro pode furar. Ligar ou desligar pede a senha do Windows. Sair do Benikids não desliga o filtro.</span>
+            </label>
+            <p class="muted" id="dnsFamiliaMsg" style="margin:4px 0 0;" hidden></p>
             <label class="chk" for="cfgUsageTelemetry" style="margin-top:8px;">
               <input id="cfgUsageTelemetry" type="checkbox">
               <span>Compartilhar, de forma anônima, quais apps cada criança usa e por quanto tempo (número aleatório por criança, faixa de idade, menino ou menina; nunca o nome). Ajuda a escolher os apps do catálogo.</span>

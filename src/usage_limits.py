@@ -654,6 +654,9 @@ class UsageTracker:
         self.last_expiry = None
         self._thread = None
         self._stop = threading.Event()
+        # roteiro 31: app "Não respondendo" não conta (o vigia da pílula pausa e retoma)
+        self.pausado = False
+        self.descontado = 0.0
 
     # -- ciclo de vida
     def start(self):
@@ -685,12 +688,36 @@ class UsageTracker:
                 "startedAt": self.clock(),
             }
             self.last_tick = self.clock()
+            self.pausado = False  # app novo: conta desde já
+            self.descontado = 0.0
 
     def adopt(self, profile_id, tile_id, category, tile_alive):
         """Retoma um tile que ainda está aberto (ex.: após reiniciar o servidor)."""
         with self.lock:
             if self.active is None and tile_alive():
                 self.set_active(profile_id, tile_id, category)
+
+    def pausar(self):
+        """O app parou de responder: daqui em diante o tempo não conta."""
+        with self.lock:
+            self._accrue()
+            if not self.pausado:
+                self.pausado = True
+                self.descontado = 0.0
+
+    def retomar(self):
+        """O app voltou (ou fechou): volta a contar. Devolve os segundos não contados."""
+        with self.lock:
+            self._accrue()
+            segundos = self.descontado if self.pausado else 0.0
+            self.pausado = False
+            self.descontado = 0.0
+            return segundos
+
+    def parado_agora(self):
+        with self.lock:
+            self._accrue()
+            return self.descontado if self.pausado else 0.0
 
     def clear_active(self):
         with self.lock:
@@ -723,6 +750,9 @@ class UsageTracker:
         self._roll_day()
         if self.active and self.last_tick is not None:
             delta = now - self.last_tick
+            if self.pausado and 0 < delta <= 10:
+                self.descontado += delta
+                delta = 0
             # Ignora saltos (suspensão do notebook, relógio ajustado).
             if 0 < delta <= 10:
                 entry = self._entry(self.active["profileId"])

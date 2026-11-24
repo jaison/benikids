@@ -66,6 +66,14 @@ class LaunchActionTests(unittest.TestCase):
             application_launcher.resolve_tile_action(
                 {"cmd": ["special:browser:https://parent:secret@example.com"]}
             )
+        with self.assertRaisesRegex(ValueError, "Invalid browser URL"):
+            application_launcher.resolve_tile_action(
+                {"cmd": ["special:external-browser:file:///etc/passwd"]}
+            )
+        with self.assertRaisesRegex(ValueError, "Invalid browser URL"):
+            application_launcher.resolve_tile_action(
+                {"cmd": ["special:external-browser:benikids-jogo:#w=1&h=1&u=javascript%3Aalert(1)"]}
+            )
 
     def test_external_browser_profiles_remain_isolated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -297,6 +305,20 @@ class ApplicationLauncherTests(unittest.TestCase):
                 "paint-app",
             ],
         )
+
+    def test_catalog_env_goes_only_to_the_app_process(self):
+        """Roteiro 33: SDL_RENDER_DRIVER=opengl no Tux Paint, só no processo dele."""
+        supervisor_process = FakeProcess()
+        overlay_process = FakeProcess()
+        with mock.patch.object(application_launcher, "terminate_owned_process"), \
+                mock.patch.object(application_launcher, "owned_process_alive", side_effect=[True, True]), \
+                mock.patch.object(application_launcher.subprocess, "Popen",
+                                  side_effect=[supervisor_process, overlay_process]) as popen:
+            self.launcher.launch_owned_tile(["paint-app"], "local", tile_id="paint",
+                                            env_extra={"SDL_RENDER_DRIVER": "opengl"})
+        self.assertEqual(popen.call_args_list[0].kwargs["env"]["SDL_RENDER_DRIVER"], "opengl")
+        self.assertNotIn("SDL_RENDER_DRIVER", popen.call_args_list[1].kwargs["env"])  # a pílula não
+        self.assertNotIn("SDL_RENDER_DRIVER", os.environ)
 
     def test_missing_supervisor_never_starts_an_unowned_process(self):
         self.supervisor.unlink()

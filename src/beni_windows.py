@@ -6,10 +6,16 @@ Sobe o servidor (server.py), o vigia do timer (timer_watchdog.py) e o menu nativ
 - o servidor caiu: sobe de novo (até 3 vezes em 60 s);
 - o menu caiu: reabre; sem GPU (código 75), cedo demais ou na 3ª queda, troca
   pelo menu web num navegador em modo quiosque.
+Enquanto roda, a tecla Windows e a barra de tarefas ficam presas (trava_windows.py),
+com o menu, com um app aberto e na área dos pais; tudo volta quando ele sai.
+Ele e todos os filhos ficam num Job Object: se ele cair, o Windows encerra o resto
+(nada de menu órfão em tela cheia por cima de tudo). O que sobrou de uma queda de
+antes disso é encerrado na abertura seguinte (queda_windows.py).
 
 Roda com o pythonw.exe que vem no pacote (sem janela de console).
 """
 
+import atexit
 import os
 import socket
 import subprocess
@@ -20,7 +26,9 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_ROOT)
 
 import plataforma_windows as win  # noqa: E402
+import queda_windows  # noqa: E402
 import telemetria  # noqa: E402
+import trava_windows  # noqa: E402
 from app_detection import browser_family, find_browser  # noqa: E402
 from process_state import (  # noqa: E402
     owned_process,
@@ -39,6 +47,8 @@ TILE_PIDFILE = os.path.join(CACHE, "tile-process.pid")
 OVERLAY_PIDFILE = os.path.join(CACHE, "overlay.pid")
 LOG = os.path.join(CACHE, "beni-windows.log")
 MENU_LOG = os.path.join(CACHE, "menu-nativo.log")
+BARRA_ESCONDIDA = os.path.join(CACHE, "barra-escondida.json")
+SESSAO = os.path.join(CACHE, "sessao.json")
 SEM_GPU = 75
 SEM_CONSOLE = 0x08000000
 
@@ -133,31 +143,51 @@ def relatar_menu(codigo):
                                 assinatura=f"menu_nativo:{'sem_gpu' if codigo == SEM_GPU else codigo}")
 
 
+def preparar_perfil_do_menu(nav):
+    """DoH desligado no navegador do menu (área dos pais), sem pedir administrador."""
+    from application_launcher import (  # noqa: PLC0415
+        ensure_chromium_preferences,
+        garantir_perfil_firefox,
+    )
+
+    familia = browser_family(nav) if nav else "chromium"
+    perfil = os.path.join(CACHE, f"menu-{familia}-profile")
+    if familia == "chromium":
+        ensure_chromium_preferences(perfil)
+    elif nav:
+        garantir_perfil_firefox(perfil)
+    return familia, perfil
+
+
 def abrir_menu(usar_web):
     nav = navegador()
+    familia, perfil = preparar_perfil_do_menu(nav)
     exe = os.path.join(APP_ROOT, "beni-menu.exe")
     if not usar_web and os.path.isfile(exe):
-        familia = browser_family(nav) if nav else "chromium"
         argv = [
             exe,
             "--porta", str(PORTA),
             "--app-root", APP_ROOT,
             "--web-cmd", nav or "msedge",
             "--web-familia", familia,
-            "--web-perfil", os.path.join(CACHE, f"menu-{familia}-profile"),
+            "--web-perfil", perfil,
         ]
         return iniciar(argv, log_em=MENU_LOG), "nativo"
     if not nav:
         log("sem navegador para o menu web")
         return None, "nenhum"
     url = f"http://127.0.0.1:{PORTA}/index.html"
-    if browser_family(nav) == "chromium":
-        argv = [nav, f"--user-data-dir={os.path.join(CACHE, 'menu-chromium-profile')}",
-                "--no-first-run", "--disable-session-crashed-bubble", "--kiosk", url]
+    if familia == "chromium":
+        from application_launcher import flags_do_chromium  # noqa: PLC0415
+
+        # a mesma função dos sites: um --disable-features só, sem extensão aqui
+        argv = [nav, f"--user-data-dir={perfil}",
+                "--no-first-run", "--disable-session-crashed-bubble",
+                *flags_do_chromium(), "--kiosk", url]
+        log("menu web: DoH desligado")
     else:
-        perfil = os.path.join(CACHE, "menu-firefox-profile")
-        os.makedirs(perfil, exist_ok=True)
         argv = [nav, "--no-remote", "--profile", perfil, "--kiosk", url]
+        log("menu web: DoH desligado (network.trr.mode=5)")
     return iniciar(argv), "web"
 
 
@@ -233,12 +263,31 @@ def procurar_atualizacao_depois(espera=120):
     threading.Thread(target=trabalhar, daemon=True).start()
 
 
+def limpar_queda():
+    """Encerra o menu, o servidor, o vigia, o overlay e o Edge que sobraram de um Benikids
+    que caiu. Esta é a única instância (o mutex já é nosso), então nada disso pertence a
+    um Benikids vivo. Roda sempre, não só com o sessao.json: as versões até a 1.0.6 não
+    deixavam marcador e podem ter deixado um menu órfão antes de atualizar."""
+    caiu = queda_windows.caiu_antes(SESSAO, (BARRA_ESCONDIDA,))
+    pids = queda_windows.encerrar_restos(win, APP_ROOT, CACHE, os.getpid())
+    if pids or caiu:
+        for pidfile in (BROWSER_PIDFILE, TILE_PIDFILE, OVERLAY_PIDFILE):
+            try:
+                os.unlink(pidfile)
+            except OSError:
+                pass
+        log(f"a sessão anterior caiu; encerrados {len(pids)} processos que sobraram dela")
+    if pids:
+        time.sleep(1)  # o Windows solta os arquivos (beni-menu.exe) antes de uma atualização
+
+
 def main():
     os.makedirs(CACHE, exist_ok=True)
+    telemetria.instalar_excepthook("iniciador")
     if "--autostart" in sys.argv[1:]:
         # ao entrar no Windows: deixa a área de trabalho e a rede subirem antes
         time.sleep(6)
-    if not win.instancia_unica("Local\\BeniLauncher"):
+    if not win.instancia_unica(queda_windows.MUTEX):
         # já está aberto: só traz o menu para a frente
         from process_state import owned_process
 
@@ -251,9 +300,28 @@ def main():
     except OSError:
         pass
     log(f"início (python {sys.version.split()[0]}, {APP_ROOT})")
+    try:
+        limpar_queda()
+    except Exception as erro:  # noqa: BLE001 — a limpeza nunca impede o Benikids de abrir
+        log(f"limpeza da queda: {erro}")
+    # Daqui em diante, tudo o que abrir fica no job desta sessão e morre com ela.
+    try:
+        win.prender_a_sessao()
+    except OSError as erro:
+        log(f"sem o job da sessão ({erro}); numa queda, sobram processos")
+    queda_windows.marcar_sessao(SESSAO, os.getpid())
+    atexit.register(queda_windows.fim_da_sessao, SESSAO)
     if atualizacao_pendente():
+        queda_windows.fim_da_sessao(SESSAO)
         return 0  # o instalador da versão nova abre o Benikids de novo quando terminar
     procurar_atualizacao_depois()
+
+    # A criança não sai pela tecla Windows nem pela barra de tarefas. Desliga no
+    # finally (Sair, exit-kids, menu fechado, atualização) e no atexit; numa queda o
+    # Windows desfaz o gancho sozinho (a barra: docs/benikids-tecnico.md).
+    trava = trava_windows.Trava(BARRA_ESCONDIDA, log)
+    atexit.register(trava.desligar)
+    trava.ligar()
 
     servidor = None if porta_aberta() else subir_servidor()
     vigia = iniciar([pythonw(), os.path.join(APP_ROOT, "timer_watchdog.py"), "--port", str(PORTA)])
@@ -329,6 +397,8 @@ def main():
             return 0
     finally:
         encerrar_tudo(servidor, vigia, menu)
+        trava.desligar()
+        queda_windows.fim_da_sessao(SESSAO)
         log("fim")
 
 

@@ -69,6 +69,9 @@ async function loadFeatures(){
       if(shutdownBtn) shutdownBtn.style.display=features.shutdownAvailable?'':'none';
       const catalogRow=document.getElementById('catalogInstallRow');
       if(catalogRow) catalogRow.hidden=!features.catalogInstallAvailable;
+      const dnsRow=document.getElementById('dnsFamiliaRow');
+      if(dnsRow) dnsRow.hidden=!features.dnsFamiliaAvailable;
+      if(features.dnsFamiliaAvailable) carregarFiltroInternet();
       announceFocusedTile();
     }
   }catch(e){}
@@ -450,6 +453,57 @@ function renderThemeChooser(){
     container.appendChild(el);
   }
 }
+
+// Benikids (Windows): filtro de DNS. O estado mora no registro, não na configuração.
+let dnsFamiliaPronto=false;
+let dnsFamiliaOcupado=false;
+async function carregarFiltroInternet(){
+  if(dnsFamiliaPronto||dnsFamiliaOcupado||!features.dnsFamiliaAvailable) return;
+  const row=document.getElementById('dnsFamiliaRow');
+  const box=document.getElementById('cfgDnsFamilia');
+  if(!row||!box) return;
+  try{
+    const r=await fetch('/api/dns-familia',{cache:'no-store',credentials:'same-origin'});
+    if(!r.ok) return;
+    const data=await r.json();
+    box.checked=!!data.ligado;
+    dnsFamiliaPronto=true;
+    const msg=document.getElementById('dnsFamiliaMsg');
+    if(msg && !data.configurado){
+      msg.hidden=false;
+      msg.textContent='Ainda desligado neste computador. Marque para ligar: o Windows pede a senha de um administrador.';
+    }
+  }catch(e){}
+}
+document.addEventListener('change',async event=>{
+  if(!event.target||event.target.id!=='cfgDnsFamilia') return;
+  const box=event.target;
+  const msg=document.getElementById('dnsFamiliaMsg');
+  const quer=box.checked;
+  box.disabled=true;
+  dnsFamiliaOcupado=true;
+  if(msg){ msg.hidden=false; msg.textContent='O Windows está pedindo a senha de um administrador...'; }
+  try{
+    const r=await fetch('/api/dns-familia',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({ligado:quer})});
+    let data={};
+    try{ data=await r.json(); }catch(e){}
+    if(!r.ok||data.status!=='ok'){
+      box.checked=!quer;
+      if(msg) msg.textContent=data.message||'Não deu para mudar o filtro (senha cancelada ou erro).';
+    }else{
+      box.checked=!!data.ligado;
+      dnsFamiliaPronto=true;
+      if(msg) msg.textContent=data.ligado
+        ?'Filtro ligado. Vale para as redes deste computador, mesmo depois de Sair.'
+        :'Filtro desligado. As redes voltaram a usar o DNS automático.';
+    }
+  }catch(e){
+    box.checked=!quer;
+    if(msg) msg.textContent='Não deu para mudar o filtro.';
+  }
+  box.disabled=false;
+  dnsFamiliaOcupado=false;
+});
 
 // Benikids (Windows): instalar os apps do catálogo que faltam
 document.addEventListener('click',async event=>{

@@ -139,11 +139,181 @@ def comando(cmd, catalogo=None, bases=None):
         return None
     argv = [exe, *(preencher(arg, item) for arg in item.get("args", []))]
     gravar_config_inicial(item, exe)
-    if item.get("preparar") == "xmoto":
+    preparar = item.get("preparar")
+    if preparar == "xmoto":
         preparar_xmoto()
-    elif item.get("preparar") == "scratch":
+    elif preparar == "scratch":
         preparar_scratch()
+    elif preparar == "luanti":
+        preparar_luanti(exe)
+    elif preparar == "supertuxkart":
+        preparar_supertuxkart(tamanho_da_tela())
     return argv
+
+
+# ---------------------------------------------------------------- Luanti
+# Mesmo ajuste do beni/bin/luanti no Linux: sem o aviso "Uma nova versão está
+# disponível" (com o botão "Visitar site", que abriria o navegador fora do Benikids),
+# em português e em tela cheia. Só grava a chave que falta: o que os pais mudarem no
+# próprio jogo fica. Valor vazio, como o printf do Linux: sem endereço, sem consulta.
+LUANTI_CONFIG = (("update_information_url", ""), ("language", "pt_BR"), ("fullscreen", "true"))
+
+
+def garantir_chaves(texto, pares):
+    """Texto de um .conf (chave = valor) com as chaves que faltavam no fim."""
+    import re
+
+    faltam = [(chave, valor) for chave, valor in pares
+              if not re.search(r"^[ \t]*" + re.escape(chave) + r"[ \t]*=", texto, re.MULTILINE)]
+    if not faltam:
+        return texto
+    if texto and not texto.endswith("\n"):
+        texto += "\n"
+    return texto + "".join(f"{chave} = {valor}\n" for chave, valor in faltam)
+
+
+def confs_luanti(exe, appdata=None, pacotes=None):
+    """Onde o Luanti do winget lê o minetest.conf.
+
+    O LuantiTeam.Luanti do winget é o .zip portátil (RUN_IN_PLACE): os dados e o
+    minetest.conf ficam na pasta acima de bin\\luanti.exe, ao lado da pasta builtin.
+    O atalho de WinGet\\Links aponta para lá. Numa instalação comum (instalador, sem
+    builtin ao lado), o Luanti usa %APPDATA%\\Luanti."""
+    caminhos, vistos = [], set()
+    if pacotes is None:
+        # o atalho de Links nem sempre é um link de verdade: procura a pasta do pacote
+        local = os.environ.get("LOCALAPPDATA")
+        pacotes = sorted(glob.glob(os.path.join(local, "Microsoft", "WinGet", "Packages", "LuantiTeam.Luanti*",
+                                                "**", "bin", "luanti.exe"), recursive=True)) if local else []
+    for candidato in (exe, os.path.realpath(exe) if exe else None, *pacotes):
+        if not candidato:
+            continue
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(candidato)))
+        if os.path.isdir(os.path.join(raiz, "builtin")):
+            conf = os.path.join(raiz, "minetest.conf")
+            chave = os.path.normcase(os.path.realpath(conf))
+            if chave not in vistos:
+                vistos.add(chave)
+                caminhos.append(conf)
+    if not caminhos:
+        appdata = appdata if appdata is not None else os.environ.get("APPDATA")
+        if appdata:
+            caminhos.append(os.path.join(appdata, "Luanti", "minetest.conf"))
+    return caminhos
+
+
+def preparar_luanti(exe, appdata=None, pacotes=None):
+    gravados = []
+    for conf in confs_luanti(exe, appdata, pacotes):
+        try:
+            texto = ""
+            if os.path.isfile(conf):
+                with open(conf, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    texto = f.read()
+            novo = garantir_chaves(texto, LUANTI_CONFIG)
+            if novo != texto:
+                os.makedirs(os.path.dirname(conf), exist_ok=True)
+                with open(conf, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    f.write(novo)
+            gravados.append(conf)
+        except OSError:
+            continue
+    return gravados
+
+
+# ---------------------------------------------------------------- SuperTuxKart
+# Como o beni/bin/supertuxkart no Linux: sempre na resolução atual da tela (se o jogo
+# troca a resolução, a tela pode ficar apagada ao fechar), e aqui também em tela cheia.
+# O catálogo passa --fullscreen --screensize={tela}, que valem já na primeira vez.
+# Antes de CADA abertura (o jogo só grava o config.xml quando sai direito; fechar
+# pela pílula não grava):
+# - sem a pergunta de internet: <enable_internet value="2" /> (0 = não perguntou,
+#   1 = permitido, 2 = não permitido). Sem config.xml, um mínimo com essa chave e a
+#   versão 8 (UserConfig::m_current_config_version do jogo; o resto fica no padrão
+#   e o jogo completa o arquivo quando sair);
+# - sem a tela "Criar usuário", que vem com o nome do usuário do Windows (dado
+#   pessoal) no campo: sem players.xml, um com o jogador "Benikids" como atual. O
+#   jogo cria o que falta nele (modo história, conquistas, ícone) — conferido no
+#   PlayerManager/PlayerProfile do código do SuperTuxKart. Um players.xml que já
+#   existe fica como está.
+STK_CONFIG_VERSAO = 8
+STK_CONFIG_MINIMO = ('<?xml version="1.0"?>\n<stkconfig version="%d" >\n'
+                     '    <enable_internet value="2" />\n</stkconfig>\n') % STK_CONFIG_VERSAO
+STK_PLAYERS_MINIMO = (
+    '<?xml version="1.0"?>\n<players version="1" >\n    <current player="Benikids"/>\n'
+    '    <player name="Benikids" guest="false" use-frequency="1" icon-filename="" unique-id="1"'
+    ' saved-session="false" saved-user="0" saved-token="" last-online-name=""'
+    ' last-was-online="false" remember-password="false" default-kart-color="0">\n'
+    '    </player>\n</players>\n'
+)
+
+
+def pasta_supertuxkart(appdata=None):
+    appdata = appdata if appdata is not None else os.environ.get("APPDATA")
+    if not appdata:
+        return None
+    return os.path.join(appdata, "supertuxkart", "config-0.10")
+
+
+def config_supertuxkart(appdata=None):
+    pasta = pasta_supertuxkart(appdata)
+    return os.path.join(pasta, "config.xml") if pasta else None
+
+
+def ajustar_config_stk(texto, largura=None, altura=None):
+    """config.xml do SuperTuxKart em tela cheia, na resolução dada e sem internet (só
+    mexe no que já existe, mais o enable_internet: o resto do arquivo fica igual)."""
+    import re
+
+    if largura and altura:
+        texto = re.sub(r'(\b(?:real_|prev_real_)?width=")\d+(")', rf"\g<1>{largura}\g<2>", texto)
+        texto = re.sub(r'(\b(?:real_|prev_real_)?height=")\d+(")', rf"\g<1>{altura}\g<2>", texto)
+    texto = re.sub(r'(\bfullscreen=")(?:true|false)(")', r"\g<1>true\g<2>", texto)
+    if re.search(r"<enable_internet\b", texto):
+        return re.sub(r'(<enable_internet\s+value=")[^"]*(")', r"\g<1>2\g<2>", texto)
+    if "</stkconfig>" in texto:
+        return texto.replace("</stkconfig>", '    <enable_internet value="2" />\n</stkconfig>', 1)
+    return texto
+
+
+def _gravar_se_mudou(arquivo, texto, novo):
+    if novo == texto:
+        return False
+    os.makedirs(os.path.dirname(arquivo), exist_ok=True)
+    with open(arquivo, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+        f.write(novo)
+    return True
+
+
+def preparar_supertuxkart(tela, pasta=None):
+    """Devolve o que gravou: subconjunto de {"config.xml", "players.xml"}."""
+    pasta = pasta or pasta_supertuxkart()
+    if not pasta:
+        return set()
+    gravados = set()
+    largura = altura = None
+    try:
+        largura, altura = (int(v) for v in (tela or "").split("x"))
+    except ValueError:
+        pass
+    config = os.path.join(pasta, "config.xml")
+    try:
+        if os.path.isfile(config):
+            with open(config, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                texto = f.read()
+            if _gravar_se_mudou(config, texto, ajustar_config_stk(texto, largura, altura)):
+                gravados.add("config.xml")
+        elif _gravar_se_mudou(config, "", STK_CONFIG_MINIMO):
+            gravados.add("config.xml")
+    except OSError:
+        pass
+    players = os.path.join(pasta, "players.xml")
+    try:
+        if not os.path.exists(players) and _gravar_se_mudou(players, "", STK_PLAYERS_MINIMO):
+            gravados.add("players.xml")
+    except OSError:
+        pass
+    return gravados
 
 
 # Mesmo ajuste do beni/bin/xmoto no Linux: português, sem o aviso de "versão em
@@ -234,6 +404,18 @@ def pasta_no_path(cmd, resolvido):
     if not item or not item.get("path_do_exe") or not resolvido:
         return ""
     return os.path.dirname(resolvido[0])
+
+
+def ambiente(cmd):
+    """Variáveis de ambiente só deste app ("env" no catálogo), ou {}. Roteiro 33: o Tux
+    Paint com SDL_RENDER_DRIVER=opengl, porque o Direct3D 9 do driver NVIDIA (GPU híbrida)
+    travava no splash ou caía (0xC0000005 em nvd3dumx.dll). Só textos simples."""
+    item = por_id(cmd[0][len(PREFIXO):]) if cmd and cmd[0].startswith(PREFIXO) else None
+    env = item.get("env") if item else None
+    if not isinstance(env, dict):
+        return {}
+    return {str(k): str(v) for k, v in env.items()
+            if isinstance(k, str) and k and "=" not in k and isinstance(v, (str, int))}
 
 
 def gravar_config_inicial(item, exe=None):

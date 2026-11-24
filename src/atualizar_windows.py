@@ -203,7 +203,10 @@ def aplicar_e_sair(raiz_pacote, log=print):
     pythonw = os.path.join(raiz_pacote, "python", "pythonw.exe")
     argv = [pythonw, os.path.join(raiz_pacote, "instalar_windows.py"), "--atualizacao", str(os.getpid())]
     try:
-        subprocess.Popen(argv, cwd=raiz_pacote, close_fds=True, creationflags=SEM_CONSOLE)
+        # fora do job da sessão: o iniciador sai logo e o instalador precisa continuar
+        from queda_windows import popen_fora_do_job
+
+        popen_fora_do_job(argv, cwd=raiz_pacote, close_fds=True, creationflags=SEM_CONSOLE)
     except OSError as erro:
         log(f"atualização: não deu para abrir o instalador ({erro})")
         return False

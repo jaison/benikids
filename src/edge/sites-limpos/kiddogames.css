@@ -1,0 +1,4 @@
+/* "Spread the fun": Post on X, Facebook e Pinterest (abrem outra janela). */
+.share-cta, #shareBtn, #sX, #sFB, #sPin {
+  display: none !important;
+}

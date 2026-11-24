@@ -6,12 +6,16 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import tkinter as tk
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+import janelas_seguras
 import marca_tk as marca
+import quiosque_edge
+import telemetria
 from process_state import (
     owned_process,
     owned_process_alive,
@@ -123,8 +127,14 @@ class X11WindowRaiser:
             self.display = None
 
 
-def configure_overlay_window(window):
+def configure_overlay_window(window, nome="pílula"):
     """Apply compositor hints that keep the control above fullscreen apps."""
+    if WINDOWS:
+        try:
+            # o Tk guarda o -toolwindow e o põe de novo quando recria a janela
+            window.attributes("-toolwindow", True)
+        except tk.TclError:
+            pass
     try:
         # Tk runs through XWayland in the supported Wayland sessions. KWin can
         # place a plain topmost XWayland window behind an app after that app
@@ -137,7 +147,52 @@ def configure_overlay_window(window):
         window.attributes("-topmost", True)
     except tk.TclError:
         pass
-    window.lift()
+    if WINDOWS:
+        sem_ativar(window, nome)  # pílula, ‹ Voltar e contagem nunca pegam o foco
+    else:
+        window.lift()
+
+
+_SEM_ATIVAR = {}  # nome da janela → hwnd já conferido (o log sai uma vez por hwnd)
+
+
+def hwnd_de_verdade(window):
+    """A janela de nível superior do Tk (a de título "App Overlay"): a raiz (GA_ROOT) da
+    janela interna do widget."""
+    return win.raiz_da_janela(window.winfo_id())
+
+
+def retangulo_na_tela(widget):
+    """(esquerda, topo, direita, baixo) do widget na tela, ou None."""
+    try:
+        x, y = widget.winfo_rootx(), widget.winfo_rooty()
+        return (x, y, x + widget.winfo_width(), y + widget.winfo_height())
+    except (tk.TclError, AttributeError):
+        return None
+
+
+def sem_ativar(window, nome="pílula"):
+    """Janela do overlay que não recebe foco nem entra no Alt+Tab (só Windows).
+
+    Roteiro 29: o estilo não ficava. O Tk recria a janela de fora (outro HWND) sempre que
+    o exstyle que ele controla muda: o -alpha liga e desliga o WS_EX_LAYERED (0,6 parado,
+    1,0 com o mouse em cima), e o estilo posto na janela antiga sumia com ela. Por isso:
+    o hover não chega a 1,0 no Windows, o -toolwindow vai pelo próprio Tk, e o
+    WS_EX_NOACTIVATE é conferido de novo a cada volta do stay_on_top e depois de cada
+    mudança de transparência, sempre na janela de agora."""
+    if not WINDOWS:
+        return
+    try:
+        window.update_idletasks()
+        h = hwnd_de_verdade(window)
+        ex = win.nao_ativavel(h)
+    except (tk.TclError, ValueError, OSError, AttributeError, TypeError):
+        return
+    if _SEM_ATIVAR.get(nome) != h:
+        _SEM_ATIVAR[nome] = h
+        ok = bool(ex & 0x08000000) and bool(ex & 0x80)
+        log_windows(f"overlay: {nome} sem ativar (hwnd {h:#x}, exstyle {ex:#x})"
+                    + ("" if ok else " — o estilo NÃO ficou"))
 
 
 def x11_toplevel_id(window):
@@ -168,10 +223,9 @@ def focus_launcher():
     if WINDOWS:
         record = owned_process(BROWSER_PIDFILE, "browser")
         if record:
-            try:
-                win.ativar_processo(record["pid"], com_filhos=True)
-            except OSError:
-                pass
+            log_windows("overlay: vou trazer o menu para a frente")
+            # ao fechar a pílula: no máximo 1 s, numa thread (o menu nunca prende a pílula)
+            janelas_seguras.rodar_com_limite(win.ativar_processo, 1.0, record["pid"], True)
         return
     try:
         result = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=3)
@@ -231,6 +285,106 @@ def format_remaining(seconds):
     return f"{seconds} s"
 
 
+# A barra de tarefas fica escondida (trava_windows), mas o Windows continua reservando
+# a faixa dela: um app maximizado para 40 px acima do fim da tela. Esticar a janela
+# maximizada não segurava (roteiro 28: o app a devolvia à área em menos de 100 ms).
+# Agora a janela maximizada vira "tela cheia sem moldura": sai o estado de maximizada e
+# a moldura (título, bordas, botões), e ela ocupa o monitor inteiro. Não mexe em
+# preferência do Windows (o "ocultar automaticamente" foi abandonado no roteiro 27).
+BORDA_MAX = 16  # o Windows 10 põe a janela maximizada 8 px além da área (a moldura)
+TELA_CHEIA_LIMITE = 5  # vezes que o app pode desfazer antes de o overlay desistir
+
+
+def log_windows(texto):
+    """Uma linha no beni-windows.log (o do iniciador), para o teste no PC ver o overlay.
+    Com milissegundos (roteiro 32: a última linha antes de um travamento diz o que foi
+    feito, e quando)."""
+    agora = time.time()
+    try:
+        with open(os.path.join(CACHE_DIR, "beni-windows.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(agora))
+                    + f".{int(agora * 1000) % 1000:03d} " + texto + "\n")
+    except OSError:
+        pass
+
+
+def hx(h):
+    """hwnd para o log."""
+    return f"{h:#x}" if isinstance(h, int) else str(h)
+
+
+def maximizada_na_area(janela, trabalho, monitor):
+    """Retângulos (esquerda, topo, direita, baixo). True se a janela é uma maximizada
+    comum: ocupa a área de trabalho, com até 16 px de moldura além dela em cada lado, e
+    a área é menor que o monitor (há uma faixa reservada para a barra)."""
+    if tuple(trabalho) == tuple(monitor):
+        return False
+    if janela[0] <= monitor[0] and janela[1] <= monitor[1] and janela[2] >= monitor[2] and janela[3] >= monitor[3]:
+        return False  # já cobre o monitor (tela cheia de verdade, o menu)
+    sobra = (trabalho[0] - janela[0], trabalho[1] - janela[1], janela[2] - trabalho[2], janela[3] - trabalho[3])
+    return all(0 <= lado <= BORDA_MAX for lado in sobra)
+
+
+class TelaCheia:
+    """Decide, a cada volta, o que fazer com cada janela do app: "tela_cheia" (tirar a
+    moldura e cobrir o monitor), "desistir" (o app desfaz toda hora: devolve a moldura
+    e a maximiza de novo, para ele continuar usável) ou None.
+
+    Só janela MAXIMIZADA. Roteiro 32: a regra do roteiro 31 para janela comum do tamanho
+    do monitor (o Tux Paint com --windowsize, título para fora da tela) saiu: o SDL
+    desfazia 4 vezes, e mexer no estilo durante o carregamento é a 1ª suspeita do Tux
+    Paint que trava no splash. Ele fica como no pacote 27."""
+
+    def __init__(self, limite=TELA_CHEIA_LIMITE):
+        self.limite = limite
+        self.feitas = {}  # janela → quantas vezes o app desfez
+        self.desistidas = set()
+
+    def passo(self, janela, maximizada, retangulo, trabalho, monitor, sem_moldura):
+        if janela in self.desistidas:
+            return None
+        if janela not in self.feitas:
+            if maximizada and maximizada_na_area(retangulo, trabalho, monitor):
+                self.feitas[janela] = 0
+                return "tela_cheia"
+            return None
+        if sem_moldura and tuple(retangulo) == tuple(monitor):
+            return None  # continua como deixamos
+        self.feitas[janela] += 1
+        if self.feitas[janela] >= self.limite:
+            self.desistidas.add(janela)
+            return "desistir"
+        return "tela_cheia"
+
+    def nao_deu(self, janela):
+        """O app não respondeu e nada foi feito: esta volta não conta."""
+        if self.feitas.get(janela) == 0:
+            del self.feitas[janela]
+        elif janela in self.feitas:
+            self.feitas[janela] -= 1
+
+
+TIMER_COR_AVISO = "#fde047"
+TIMER_COR_FIM = "#fca5a5"
+
+
+def rotulo_da_pilula(uso, timer, cor_padrao):
+    """O que a pílula mostra: o tempo que acaba PRIMEIRO, entre o limite da categoria e o
+    timer da sessão (roteiro 26: mostrava "28 min" de Aprender com o timer em 3 min).
+    uso: None ou {"restante", "limite", "emoji"}; timer: None ou {"restante", "expirado",
+    "aviso"}. Devolve (texto, cor) ou ("", None)."""
+    if timer and timer.get("expirado"):
+        return "⏰ Acabou!", TIMER_COR_FIM
+    t = timer.get("restante") if timer else None
+    u = uso.get("restante") if uso else None
+    if t is not None and (u is None or t < u):
+        return f"⏱️ {format_remaining(t)}", (TIMER_COR_AVISO if timer.get("aviso") else cor_padrao)
+    if u is not None:
+        band = USAGE_COLORS[usage_band(u, uso.get("limite"))]
+        return f"{uso.get('emoji') or '⏳'} {format_remaining(u)}", band["pill_fg"]
+    return "", None
+
+
 def tile_is_blocked(status, tile_id):
     if not tile_id or not isinstance(status, dict):
         return False
@@ -244,7 +398,9 @@ def tile_is_blocked(status, tile_id):
 PILL_BG = marca.MARINHO
 PILL_TEXT = marca.BG
 PILL_ALPHA_IDLE = 0.6
-PILL_ALPHA_HOVER = 1.0
+# No Windows, 1,0 tira o WS_EX_LAYERED e faz o Tk recriar a janela (e perder o
+# WS_EX_NOACTIVATE); 0,99 é igual à vista.
+PILL_ALPHA_HOVER = 0.99 if WINDOWS else 1.0
 PILL_FONT = marca.FONTE_CORPO   # símbolos dos botões (✕ ✥ ‹); os textos usam marca.titulo()
 BUTTON_SIZE = 46
 CORNER_MARGIN = 14
@@ -279,6 +435,53 @@ def maximizar_no_inicio(tile_id):
         return bool(item and item.get("maximizar") is True)
     except Exception:  # noqa: BLE001
         return False
+
+
+def sem_moldura_no_inicio(tile_id):
+    """A tela cheia sem moldura vale para todo app, menos os com "sem_moldura": false no
+    catálogo do Windows. Roteiro 33: o Pingus (SDL) a desfazia 4 vezes e o overlay
+    desistia; o desfaz-refaz de 5 s é feio. Esses ficam só maximizados."""
+    try:
+        import catalogo_windows
+
+        item = catalogo_windows.por_id(tile_id or "")
+        return not (item and item.get("sem_moldura") is False)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+class PrimeiraJanela:
+    """Traz o app para a frente quando a janela dele aparece (Windows).
+
+    Um app que demora a abrir (o SuperTuxKart leva uns 3 s, e mais na 1ª vez, quando
+    compila os shaders) às vezes nasce atrás do menu: o Windows não deixa um processo
+    tomar a frente se o usuário mexeu em outra janela nesse meio-tempo. Roteiro 24:
+    só a pílula aparecia. Cada passo recebe se a janela já existe e se o app (ou esta
+    pílula) está na frente; devolve "esperar", "trazer" ou "fim". Para de insistir
+    quando o app ficou na frente por 3 passos, depois de 5 tentativas ou no limite."""
+
+    def __init__(self, limite=180, tentativas=5, confirmacoes=3):
+        self.limite = limite
+        self.tentativas = tentativas
+        self.confirmacoes = confirmacoes
+        self.voltas = 0
+        self.trazidas = 0
+        self.na_frente = 0
+
+    def passo(self, tem_janela, app_na_frente):
+        self.voltas += 1
+        if self.voltas > self.limite:
+            return "fim"
+        if not tem_janela:
+            return "esperar"
+        if app_na_frente:
+            self.na_frente += 1
+            return "fim" if self.na_frente >= self.confirmacoes else "esperar"
+        self.na_frente = 0
+        if self.trazidas >= self.tentativas:
+            return "fim"
+        self.trazidas += 1
+        return "trazer"
 
 
 def load_corner(tile_id):
@@ -421,7 +624,7 @@ def shape_window_rounded(window, width, height, radius):
 class RoundButton(tk.Canvas):
     """Botão redondo desenhado num Canvas (o tk.Button não arredonda)."""
 
-    def __init__(self, parent, glyph, fill, fg, hover, command=None, size=BUTTON_SIZE, font_size=20):
+    def __init__(self, parent, glyph, fill, fg, hover, command=None, size=BUTTON_SIZE, font_size=20, nome=""):
         super().__init__(parent, width=size, height=size, bg=PILL_BG,
                          highlightthickness=0, bd=0, cursor="hand2")
         self.fill, self.hover = fill, hover
@@ -429,18 +632,35 @@ class RoundButton(tk.Canvas):
         self.create_text(size / 2, size / 2 - 1, text=glyph, fill=fg,
                          font=(PILL_FONT, font_size, "bold"))
         self.command = command
+        self.nome = nome or glyph
+        if WINDOWS:
+            # roteiro 32: o ✕ não fechava o app travado e o log não dizia nada
+            self.bind("<ButtonPress-1>", self._log_aperto, add="+")
         self.bind("<Enter>", lambda _e: self.itemconfig(self.oval, fill=self.hover), add="+")
         self.bind("<Leave>", lambda _e: self.itemconfig(self.oval, fill=self.fill), add="+")
         if command is not None:
             self.bind("<ButtonRelease-1>", self._release, add="+")
 
+    def _log_aperto(self, event):
+        log_windows(f"overlay: botão {self.nome} apertado ({event.x},{event.y})")
+
     def _release(self, event):
         # Só conta o clique se o dedo/mouse ainda estiver em cima do botão.
-        if 0 <= event.x <= self.winfo_width() and 0 <= event.y <= self.winfo_height():
+        dentro = 0 <= event.x <= self.winfo_width() and 0 <= event.y <= self.winfo_height()
+        if WINDOWS:
+            log_windows(f"overlay: botão {self.nome} solto ({event.x},{event.y}) "
+                        + ("dentro" if dentro else "fora; não conta"))
+        if dentro:
             self.command()
 
 
 class AppOverlay:
+    fechando = False  # o app já está sendo fechado (pelo ✕, pelo tempo ou pelo vigia do ✕)
+    retangulo_do_x = None  # (esquerda, topo, direita, baixo) do ✕ na tela, para o vigia do ✕
+    maximizada = False
+    ultimo_tique = 0.0  # monotonic da última volta do stay_on_top (o Tk está rodando?)
+    _trava_fechar = threading.Lock()
+
     def __init__(self, mode, url, label, tile_id=""):
         self.mode = mode
         self.url = url
@@ -460,7 +680,9 @@ class AppOverlay:
         self.root.geometry("120x60+14+14")
         self.root.resizable(False, False)
         configure_overlay_window(self.root)
-        self.root.focus_force()
+        if not WINDOWS:
+            # no Windows a pílula nunca pega o foco (sem_ativar): o teclado fica com o app
+            self.root.focus_force()
         self.x11_raiser = X11WindowRaiser()
         self.set_alpha(PILL_ALPHA_IDLE)
 
@@ -475,7 +697,7 @@ class AppOverlay:
         if mode == "external":
             self.back_window = self.build_back_window()
         self.close_btn = RoundButton(self.frame, "✕", marca.LARANJA, "#ffffff", marca.LARANJA_ESCURO,
-                                     command=self.on_close)
+                                     command=lambda: self.on_close("✕"))
         self.close_btn.pack(side=tk.LEFT, padx=3)
 
         self.timer_lbl = tk.Label(self.frame, text="", font=marca.titulo(15),
@@ -496,23 +718,63 @@ class AppOverlay:
         # Limites diários por categoria
         self.usage_active = None
         self.usage_label = None
+        self.uso_pilula = None  # {"restante", "limite", "emoji"} do limite da categoria
+        self.timer_pilula = None  # {"fim" (monotonic), "expirado", "aviso"} do timer
         self.countdown_window = None
         self.countdown_deadline = None
         self.countdown_number = None
         self.countdown_geometry = ""
         self.countdown_position = None
         self.closing = False
+        self.erros_logados = set()
+        # roteiro 31: o que mexe em janela de outro app roda aqui, nunca na thread do Tk
+        self.trabalho = janelas_seguras.Trabalhador("overlay-janelas", ao_erro=self.erro_no_trabalho)
+        # roteiro 32: só mexe numa janela de outro app depois que ela está de pé
+        self.de_pe = janelas_seguras.DePe()
+        if WINDOWS:
+            self.root.report_callback_exception = self.erro_do_tk
+            threading.Thread(target=self.vigiar_o_x, name="vigia-do-x", daemon=True).start()
 
         self.place()
         self.root.after(0, self.poll_process)
         self.root.after(0, self.poll_timer)
         if WINDOWS and maximizar_no_inicio(tile_id):
             self.root.after(500, lambda: self.maximize_app(120))
+        # special:external-browser no Windows: a 2ª janela do Edge (pop-up, diálogo
+        # de arquivo, Ctrl+N) não vira o app. O vigia fecha na thread de trabalho.
+        self.quiosque = None
+        self.quiosque_logados = set()
+        if WINDOWS:
+            self.root.after(300, lambda: self.trazer_app_quando_abrir(PrimeiraJanela()))
+            if sem_moldura_no_inicio(tile_id):
+                self.root.after(1000, lambda: self.esticar_app(TelaCheia()))
+            if mode == "external":
+                self.quiosque = quiosque_edge.Estado()
+                self.root.after(250, self.vigiar_quiosque)
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
     def stay_on_top(self):
         """Periodically force this window to the front so it stays visible over kiosk apps."""
+        if WINDOWS:
+            # no Windows o lift/-topmost do Tk podem ativar a pílula: por cima com
+            # SWP_NOACTIVATE, conferindo o estilo na janela de agora
+            sem_ativar(self.root, "pílula")
+            self.retangulo_do_x = retangulo_na_tela(self.close_btn)
+            self.ultimo_tique = time.monotonic()
+            if self.back_window is not None:
+                sem_ativar(self.back_window, "‹ Voltar")
+            if self.countdown_window is not None:
+                try:
+                    self.countdown_window.geometry(self.countdown_geometry)
+                    if self.countdown_position and (self.countdown_window.winfo_rootx(),
+                                                    self.countdown_window.winfo_rooty()) != self.countdown_position:
+                        win.mover_por_cima(hwnd_de_verdade(self.countdown_window), *self.countdown_position)
+                except (tk.TclError, OSError):
+                    pass
+                sem_ativar(self.countdown_window, "contagem")
+            self.root.after(500, self.stay_on_top)
+            return
         try:
             self.root.lift()
             self.root.attributes("-topmost", True)
@@ -547,6 +809,7 @@ class AppOverlay:
             self.root.attributes("-alpha", value)
         except tk.TclError:
             pass
+        sem_ativar(self.root, "pílula")
 
     def on_enter(self, _event=None):
         if self.idle_job:
@@ -563,11 +826,12 @@ class AppOverlay:
         window = tk.Toplevel(self.root)
         window.overrideredirect(True)
         window.configure(bg=PILL_BG)
-        configure_overlay_window(window)
+        configure_overlay_window(window, "‹ Voltar")
         try:
             window.attributes("-alpha", PILL_ALPHA_IDLE)
         except tk.TclError:
             pass
+        sem_ativar(window, "‹ Voltar")  # o -alpha recria a janela no Windows
         box = tk.Frame(window, bg=PILL_BG, padx=6, pady=6, cursor="hand2")
         box.pack(fill=tk.BOTH, expand=True)
         arrow = RoundButton(box, "‹", marca.CEU, marca.MARINHO, marca.CEU_SUAVE, font_size=26)
@@ -611,6 +875,7 @@ class AppOverlay:
                 window.attributes("-alpha", value)
             except tk.TclError:
                 pass
+            sem_ativar(window, "‹ Voltar")
 
         for widget in (box, arrow, text):
             widget.bind("<ButtonPress-1>", press, add="+")
@@ -708,10 +973,7 @@ class AppOverlay:
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         if not record:
             return
-        try:
-            win.ativar_processo(record["pid"], com_filhos=True)
-        except OSError:
-            pass
+        self.pedir_janela("devolver o foco", self.trazer_app, record["pid"])
 
     def on_back(self):
         """Volta uma página no navegador do tile (Alt+←)."""
@@ -719,10 +981,7 @@ class AppOverlay:
         if not record:
             return
         if WINDOWS:
-            try:
-                win.alt_esquerda(record["pid"])
-            except OSError:
-                pass
+            self.pedir_janela("voltar", self.voltar_no_app, record["pid"])
             return
         windows = []
         try:
@@ -740,6 +999,44 @@ class AppOverlay:
                            capture_output=True, timeout=3, check=False)
         except (OSError, subprocess.SubprocessError):
             pass
+
+    def voltar_no_app(self, pid):
+        log_windows(f"overlay: vou mandar Alt+← ao app (pid {pid})")
+        hwnd = None
+        if getattr(self, "quiosque", None) is not None:
+            hwnds = self._hwnds_do_app(pid)
+            if not hwnds:
+                log_windows("overlay: sem a janela do quiosque para o Alt+←")
+                return
+            hwnd = hwnds[0]
+        win.alt_esquerda(pid, hwnd)
+
+    def vigiar_quiosque(self):
+        """Enquanto o site/jogo está aberto: fecha janela nova do Edge na thread de trabalho."""
+        if self.closing or self.quiosque is None:
+            return
+        self.pedir_janela("quiosque", self.passo_do_quiosque)
+        self.root.after(250, self.vigiar_quiosque)
+
+    def passo_do_quiosque(self):
+        """Na thread de trabalho. PostMessage não espera o Edge."""
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        if not record or self.quiosque is None:
+            return
+        try:
+            descritas = win.descrever_janelas(win.arvore(record["pid"]))
+            for janela in self.quiosque.observar(descritas):
+                hwnd = janela["hwnd"]
+                win.fechar_extra(hwnd, janela.get("classe"))
+                if hwnd in self.quiosque_logados:
+                    continue
+                self.quiosque_logados.add(hwnd)
+                log_windows(
+                    "quiosque: fechei janela extra do Edge ("
+                    f"{janela.get('classe')}, {quiosque_edge.titulo_curto(janela.get('titulo'))})"
+                )
+        except Exception as erro:  # noqa: BLE001 — a volta seguinte tenta de novo
+            self.log_uma_vez(f"overlay: erro no quiosque: {type(erro).__name__}: {erro}")
 
     # ----- limites por categoria -----
     def poll_usage(self):
@@ -766,26 +1063,32 @@ class AppOverlay:
                 self.hide_countdown()
         else:
             self.usage_active = None
-            if self.usage_label:
-                self.usage_label = None
-                self.set_timer_text("")
+            self.uso_pilula = None
+            self.atualizar_pilula()
             if self.countdown_window is not None:
                 self.hide_countdown()
         self.root.after(1000, self.poll_usage)
 
     def update_usage_label(self, active, remaining):
-        band = USAGE_COLORS[usage_band(remaining, active.get("limitSeconds"))]
-        emoji = active.get("categoryEmoji") or "⏳"
-        text = f"{emoji} {format_remaining(remaining)}"
-        if text != self.usage_label:
-            self.usage_label = text
-            self.set_timer_text(text, band["pill_fg"])
+        self.uso_pilula = {"restante": remaining, "limite": active.get("limitSeconds"),
+                           "emoji": active.get("categoryEmoji")}
+        self.atualizar_pilula()
+
+    def atualizar_pilula(self):
+        timer = None
+        if self.timer_pilula:
+            timer = dict(self.timer_pilula)
+            timer["restante"] = max(0, int(round(timer.pop("fim") - time.monotonic())))
+        texto, cor = rotulo_da_pilula(self.uso_pilula, timer, PILL_TEXT)
+        if texto != self.usage_label:
+            self.usage_label = texto
+            self.set_timer_text(texto, cor or PILL_TEXT)
 
     def show_countdown(self, active):
         window = tk.Toplevel(self.root)
         self.countdown_window = window
         window.overrideredirect(True)
-        configure_overlay_window(window)
+        configure_overlay_window(window, "contagem")
         sw = window.winfo_screenwidth()
         sh = window.winfo_screenheight()
         ww, wh = min(820, sw - 40), min(440, sh - 40)
@@ -837,7 +1140,7 @@ class AppOverlay:
         if left <= 0:
             self.closing = True
             # Mesmo caminho do ❌: fecha o app e volta para o launcher.
-            self.root.after(400, self.on_close)
+            self.root.after(400, lambda: self.on_close("acabou o tempo"))
             return
         self.root.after(200, self.tick_countdown)
 
@@ -851,32 +1154,210 @@ class AppOverlay:
         self.countdown_deadline = None
         self.countdown_number = None
 
-    def on_close(self):
-        try:
-            terminate_owned_process(
-                TILE_PROCESS_PIDFILE,
-                "tile-process",
-                TILE_PROCESS_MARKER,
-            )
-        except Exception:
-            pass
+    def on_close(self, motivo="✕"):
+        if WINDOWS:
+            log_windows("overlay: ✕ tocado" if motivo == "✕" else f"overlay: fechando ({motivo})")
+        self.fechar_app(motivo)
         focus_launcher()
         self.root.destroy()
         sys.exit(0)
 
+    def fechar_app(self, motivo):
+        """Encerra o supervisor do app (TerminateProcess no Windows). O Job Object dele tem
+        KILL_ON_JOB_CLOSE: o Windows leva a árvore inteira, mesmo com o app travado.
+        Uma vez só, venha do ✕ (Tk), do vigia do ✕ ou do fim do tempo."""
+        with self._trava_fechar:
+            if self.fechando:
+                return False
+            self.fechando = True
+        try:
+            ok = terminate_owned_process(TILE_PROCESS_PIDFILE, "tile-process", TILE_PROCESS_MARKER)
+        except Exception as erro:  # noqa: BLE001 — fechar a pílula continua
+            ok = False
+            if WINDOWS:
+                log_windows(f"overlay: erro ao encerrar o app ({motivo}): {type(erro).__name__}: {erro}")
+        if WINDOWS:
+            log_windows("overlay: supervisor do app encerrado; o Job Object leva a árvore" if ok
+                        else "overlay: nenhum app aberto para encerrar")
+        return ok
+
+    def vigiar_o_x(self):
+        """Thread (Windows). Roteiro 32: com o Tux Paint travado, 6 cliques no ✕ não
+        chegaram ao Tk (nem uma linha no log), com a pílula viva e respondendo. Este
+        vigia olha o botão do mouse direto do sistema a cada 30 ms; se um clique no ✕
+        não virou on_close em 0,8 s, fecha o app daqui e sai, sem depender do Tk."""
+        clique = janelas_seguras.CliqueNoBotao()
+        eu = os.getpid()
+        while not self.fechando:
+            time.sleep(0.03)
+            try:
+                apertado, pos, pid = win.estado_do_mouse()
+            except (OSError, ValueError, TypeError):
+                continue
+            if not clique.passo(apertado, pos, self.retangulo_do_x, pid == eu):
+                continue
+            log_windows("overlay: vigia do ✕: clique no ✕")
+            fim = time.monotonic() + 0.8
+            while time.monotonic() < fim and not self.fechando:
+                time.sleep(0.05)
+            if self.fechando:
+                return
+            # o Tk parado há segundos = a thread dele presa; há < 1 s = o clique é que não chegou
+            parado = time.monotonic() - self.ultimo_tique if self.ultimo_tique else -1
+            log_windows(f"overlay: o clique no ✕ não chegou ao Tk (o Tk rodou há {parado:.1f} s); "
+                        "o vigia do ✕ fecha o app")
+            telemetria.relatar_problema("overlay.x_sem_tk", f"tile={self.tile_id}",
+                                        f"overlay.x_sem_tk:{self.tile_id}", por_dia=True)
+            self.fechar_app("vigia do ✕")
+            focus_launcher()
+            remove_process_record(OVERLAY_PIDFILE, expected_pid=eu)
+            os._exit(0)
+
     def maximize_app(self, tentativas):
         """Apps que abrem numa janela pequena (KDE, Pencil2D, Scratch): maximiza uma vez,
-        assim que a janela principal aparece (tenta por 1 min: o Quatro em Linha só mostra
-        a janela depois que alguém fecha o aviso dele)."""
+        quando a janela principal está de pé (tenta por 1 min: o Quatro em Linha só
+        mostra a janela depois que alguém fecha o aviso dele). Na thread de trabalho."""
+        if self.closing or self.maximizada:
+            return
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
-        try:
-            if record and win.maximizar_processo(record["pid"]):
-                self.root.after(100, self.stay_on_top)
-                return
-        except OSError:
-            pass
+        if record:
+            self.pedir_janela("maximizar", self.passo_maximizar, record["pid"])
         if tentativas > 1:
             self.root.after(500, lambda: self.maximize_app(tentativas - 1))
+
+    def _hwnds_do_app(self, pid):
+        """Janelas em que o overlay pode mexer. No Edge em quiosque, só a primeira:
+        a segunda (pop-up, diálogo) não é adotada."""
+        if getattr(self, "quiosque", None) is not None:
+            return self.quiosque.para_cuidar(win.descrever_janelas(win.arvore(pid)))
+        return win.janelas_de(win.arvore(pid))
+
+    def passo_maximizar(self, pid):
+        if getattr(self, "quiosque", None) is not None:
+            hwnds = self._hwnds_do_app(pid)
+            h = hwnds[0] if hwnds else None
+        else:
+            h = win.janela_maximizavel(pid)
+        if not h or not self.de_pe.pronta(win.JANELAS, h):
+            return
+        log_windows(f"overlay: vou maximizar o app (hwnd {hx(h)})")
+        self.maximizada = win.maximizar(h)
+
+    # ----- janelas de outro app (roteiro 31) -----
+    def pedir_janela(self, chave, funcao, *args):
+        """Manda para a thread de trabalho. Se ela está presa numa janela de outro app, o
+        pedido é recusado (a pílula segue) e o log diz uma vez."""
+        if self.trabalho.pedir(chave, funcao, *args):
+            return True
+        preso = self.trabalho.preso()
+        if preso and preso[1] >= 5:
+            self.log_uma_vez(f"overlay: {preso[0]} preso há mais de 5 s numa janela de outro app; a pílula segue")
+        return False
+
+    def log_uma_vez(self, texto):
+        if texto not in self.erros_logados:
+            self.erros_logados.add(texto)
+            log_windows(texto)
+
+    def erro_no_trabalho(self, chave, erro):
+        self.log_uma_vez(f"overlay: erro em {chave}: {type(erro).__name__}: {erro}")
+
+    def erro_do_tk(self, tipo, valor, tb):
+        """Erro numa função agendada do Tk: log e telemetria (o Tk só imprimiria no stderr,
+        que no pythonw não vai a lugar nenhum)."""
+        self.log_uma_vez(f"overlay: erro no Tk: {tipo.__name__}: {valor}")
+        telemetria.relatar_excecao("overlay", tipo, valor, tb, log=self.log_uma_vez)
+
+    def trazer_app(self, pid):
+        """Na thread de trabalho: traz o app para a frente, se a janela já está de pé, e
+        loga antes (com ms) e depois. No quiosque, a janela é a do --app, não a que
+        acabou de abrir na frente."""
+        janelas = self._hwnds_do_app(pid)
+        if not janelas:
+            return
+        h = janelas[0]
+        if not self.de_pe.pronta(win.JANELAS, h):
+            self.log_uma_vez(f"overlay: o app (hwnd {hx(h)}) ainda não está de pé; espero para trazê-lo")
+            return
+        log_windows(f"overlay: vou trazer o app (hwnd {hx(h)})")
+        win.trazer_para_frente(h)
+        log_windows(f"overlay: trazer o app (hwnd {hx(h)}): {win.ULTIMO_JEITO[0]}")
+
+    def esticar_app(self, decisao, originais=None):
+        """A cada 1 s, enquanto o app está aberto: a janela maximizada do app (que pararia
+        acima da faixa da barra escondida) vira tela cheia sem moldura. Janelas pequenas
+        (Klavaro, Quinze) não estão maximizadas e ficam como estão; jogos em tela cheia
+        de verdade já cobrem o monitor. A volta roda na thread de trabalho (o
+        SetWindowLongPtr espera o app); se ela está ocupada, esta volta é pulada."""
+        if self.closing:
+            return
+        originais = {} if originais is None else originais
+        self.pedir_janela("tela cheia", self.passo_da_tela_cheia, decisao, originais)
+        self.root.after(1000, lambda: self.esticar_app(decisao, originais))
+
+    def passo_da_tela_cheia(self, decisao, originais):
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        try:
+            hwnds = self._hwnds_do_app(record["pid"]) if record else []
+            for h in hwnds:
+                if win.travada(h):
+                    continue  # app "Não respondendo": não mexe nem conta
+                if not self.de_pe.pronta(win.JANELAS, h):
+                    continue  # acabou de aparecer (roteiro 32): nem olha ainda
+                ret = win.retangulo(h)
+                trabalho, monitor = win.areas_do_monitor(h)
+                if not ret or not monitor:
+                    continue
+                acao = decisao.passo(h, win.esta_maximizada(h), ret, trabalho, monitor, win.sem_moldura(h))
+                if acao == "tela_cheia":
+                    log_windows(f"overlay: vou tirar a moldura (hwnd {hx(h)})")
+                    estilo = win.tela_cheia_sem_moldura(h, monitor)
+                    if estilo is None:
+                        log_windows(f"overlay: não tirei a moldura (hwnd {hx(h)}): o app não respondeu")
+                        decisao.nao_deu(h)
+                        continue
+                    originais.setdefault(h, (estilo, ret))
+                    if decisao.feitas[h] == 0:
+                        log_windows(f"overlay: app em tela cheia sem moldura {ret} → {monitor}")
+                    else:
+                        log_windows(f"overlay: o app desfez a tela cheia ({decisao.feitas[h]}ª vez); refeita")
+                elif acao == "desistir":
+                    estilo, antes = originais.get(h, (None, None))
+                    log_windows(f"overlay: vou devolver a moldura (hwnd {hx(h)})")
+                    win.devolver_moldura(h, estilo, antes)
+                    log_windows("overlay: o app desfaz a tela cheia sem moldura; devolvida a janela como era")
+        except Exception as erro:  # noqa: BLE001 — um erro não pode parar a volta seguinte
+            self.log_uma_vez(f"overlay: erro na tela cheia: {type(erro).__name__}: {erro}")
+
+    def trazer_app_quando_abrir(self, estado):
+        acao = "esperar"
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        try:
+            pids = win.arvore(record["pid"]) if record else []
+            # no quiosque, a janela que conta é a do --app, não a que abriu na frente
+            if getattr(self, "quiosque", None) is not None and self.quiosque.principal:
+                janelas = [self.quiosque.principal]
+            else:
+                janelas = win.janelas_de(pids) if pids else []
+            if any(win.travada(h) for h in janelas):
+                # roteiro 31: nunca mexer num app "Não respondendo"; a volta não conta
+                self.log_uma_vez("overlay: o app não responde; espero para trazê-lo para a frente")
+            else:
+                frente = win.pid_da_janela_ativa()
+                # roteiro 32: janela que acabou de aparecer ainda não conta; a thread de
+                # trabalho confere se ela está de pé (2 s respondendo)
+                de_pe = bool(janelas) and self.de_pe.firme(janelas[0])
+                if janelas and not de_pe:
+                    self.pedir_janela("ver se está de pé", self.de_pe.pronta, win.JANELAS, janelas[0])
+                # a própria pílula na frente NÃO conta como o app na frente (roteiro 28: o
+                # foco ficava nela e o jogo ficava sem teclado)
+                acao = estado.passo(de_pe, frente in pids)
+                if acao == "trazer":
+                    self.pedir_janela("trazer o app", self.trazer_app, record["pid"])
+        except (OSError, TypeError, KeyError):
+            acao = estado.passo(False, False)  # conta a volta: o limite vale mesmo com erro
+        if acao != "fim":
+            self.root.after(500, lambda: self.trazer_app_quando_abrir(estado))
 
     def poll_process(self):
         if not owned_process_alive(
@@ -884,30 +1365,23 @@ class AppOverlay:
             "tile-process",
             TILE_PROCESS_MARKER,
         ):
-            self.on_close()
+            self.on_close("o app fechou")
             return
         self.root.after(1000, self.poll_process)
 
     def poll_timer(self):
         availability = api("/api/availability/status")
         if tile_is_blocked(availability, self.tile_id):
-            self.on_close()
+            self.on_close("horário bloqueado")
             return
         data = api("/api/timer/status")
-        if self.usage_label:
-            pass  # o limite por categoria tem prioridade no rótulo
-        elif data.get("active"):
-            remaining = data.get("remainingSeconds", 0)
-            mins = max(0, remaining // 60)
-            if data.get("expired"):
-                self.set_timer_text("⏰ Acabou!", "#fca5a5")
-            elif data.get("warning"):
-                self.set_timer_text(f"⏱️ {mins} min", "#fde047")
-            else:
-                self.set_timer_text(f"⏱️ {mins} min")
-        elif self.timer_lbl.cget("text"):
-            self.set_timer_text("")
-        self.root.after(10000, self.poll_timer)
+        if isinstance(data, dict) and data.get("active"):
+            self.timer_pilula = {"fim": time.monotonic() + int(data.get("remainingSeconds") or 0),
+                                 "expirado": bool(data.get("expired")), "aviso": bool(data.get("warning"))}
+        else:
+            self.timer_pilula = None
+        self.atualizar_pilula()  # o poll_usage (a cada 1 s) também atualiza, com a conta local
+        self.root.after(5000, self.poll_timer)
 
     def run(self):
         try:
@@ -924,6 +1398,7 @@ def main():
     parser.add_argument("--tile-id", default="")
     args = parser.parse_args()
 
+    telemetria.instalar_excepthook("overlay")
     overlay = AppOverlay(args.mode, args.url, args.label, tile_id=args.tile_id)
     write_process_record(
         OVERLAY_PIDFILE,
