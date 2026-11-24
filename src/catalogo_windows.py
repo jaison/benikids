@@ -167,6 +167,8 @@ def comando(cmd, catalogo=None, bases=None):
         preparar_supertuxkart(tamanho_da_tela())
     elif preparar == "pista":
         preparar_pista()
+    elif preparar == "neverball":
+        preparar_neverball(tamanho_da_tela())
     elif preparar == "cozy":
         import cozy_jogos
 
@@ -539,6 +541,69 @@ def ambiente(cmd):
         return {}
     return {str(k): str(v) for k, v in env.items()
             if isinstance(k, str) and k and "=" not in k and isinstance(v, (str, int))}
+
+
+def documentos_do_usuario():
+    """Pasta Documentos, a mesma que o Neverball usa (CSIDL_PERSONAL), ou ~/Documents."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            buf = ctypes.create_unicode_buffer(32768)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
+                return buf.value
+        except (AttributeError, OSError):
+            pass
+        return os.path.join(os.environ.get("USERPROFILE", ""), "Documents")
+    return os.path.join(os.path.expanduser("~"), "Documents")
+
+
+def pasta_do_neverball(raiz=None):
+    """O 1.6.0 grava neverballrc em Documentos\\My Games\\Neverball (manual do autor)."""
+    base = raiz if raiz is not None else documentos_do_usuario()
+    return os.path.join(base, "My Games", "Neverball")
+
+
+def preparar_neverball(tela=None, pasta=None):
+    """Tela cheia na resolução da tela e textos em português, toda vez que abre.
+
+    O binário do Windows não tem opção de linha de comando para isso: lê o
+    neverballrc e, ao sair, grava de novo o que estava na tela. Reescrever as
+    chaves aqui (e só elas) impede a criança de voltar para a janela pequena em
+    inglês, sem apagar o nome do jogador nem o resto das opções."""
+    pasta = pasta or pasta_do_neverball()
+    caminho = os.path.join(pasta, "neverballrc")
+    chaves = {"fullscreen": "1", "language": "pt_BR"}
+    if isinstance(tela, str) and "x" in tela:
+        largura, _, altura = tela.partition("x")
+        if largura.isdigit() and altura.isdigit() and int(largura) > 0 and int(altura) > 0:
+            chaves["width"] = largura
+            chaves["height"] = altura
+    linhas = []
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            linhas = f.read().splitlines()
+    except OSError:
+        linhas = []
+    vistas = set()
+    saida = []
+    for linha in linhas:
+        partes = linha.split()
+        if partes and partes[0] in chaves:
+            saida.append(partes[0] + " " + chaves[partes[0]])
+            vistas.add(partes[0])
+        else:
+            saida.append(linha)
+    for chave in ("fullscreen", "width", "height", "language"):
+        if chave in chaves and chave not in vistas:
+            saida.append(chave + " " + chaves[chave])
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write("\n".join(saida).rstrip("\n") + "\n")
+    except OSError:
+        pass
+    return caminho
 
 
 def gravar_config_inicial(item, exe=None):

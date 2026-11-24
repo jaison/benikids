@@ -19,7 +19,12 @@ class CatalogoWindowsTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         for item in itens:
             self.assertRegex(item["id"], r"^[a-z0-9-]+$")
-            self.assertTrue(item.get("winget") or item.get("baixar", {}).get("url", "").startswith("https://") or item.get("pagina", "").startswith("https://"), item["id"])
+            direto = item.get("baixar") if isinstance(item.get("baixar"), dict) else {}
+            instalador_com_hash = (isinstance(item.get("url"), str) and item["url"].startswith("https://")
+                                    and len(item.get("sha256") or "") == 64)
+            self.assertTrue(item.get("winget") or direto.get("url", "").startswith("https://") or item.get("pagina", "").startswith("https://") or instalador_com_hash, item["id"])
+            if direto.get("zip"):
+                self.assertEqual(len(direto.get("sha256") or ""), 64, item["id"])
             self.assertIn(item.get("escopo", ""), ("", "user", "machine"), item["id"])
             self.assertTrue(item.get("exe"), item["id"])
             if item.get("escopo") == "machine":
@@ -51,6 +56,27 @@ class CatalogoWindowsTests(unittest.TestCase):
             self.assertIsNone(catalogo_windows.comando(["catalogo:gcompris"], bases=[raiz]))
             self.assertIsNone(catalogo_windows.comando(["catalogo:nao-existe"], bases=[raiz]))
             self.assertEqual(catalogo_windows.comando(["tuxpaint"], bases=[raiz]), ["tuxpaint"])
+
+    def test_neverball_forces_fullscreen_and_portuguese_without_wiping_options(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "Benikids Apps", "neverball", "neverball-1.6.0", "neverball.exe")
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"MZ")
+            pasta = Path(raiz, "My Games", "Neverball")
+            pasta.mkdir(parents=True)
+            (pasta / "neverballrc").write_text("player Jogador\nfullscreen 0\nmouse_sense 200\n", encoding="utf-8")
+            with mock.patch.object(catalogo_windows, "tamanho_da_tela", return_value="1366x768"), \
+                 mock.patch.object(catalogo_windows, "pasta_do_neverball", return_value=str(pasta)):
+                cmd = catalogo_windows.comando(["catalogo:neverball"], bases=[raiz])
+            self.assertEqual(cmd[0], str(exe))
+            texto = (pasta / "neverballrc").read_text(encoding="utf-8")
+            self.assertIn("player Jogador\n", texto)
+            self.assertIn("fullscreen 1\n", texto)
+            self.assertIn("mouse_sense 200\n", texto)
+            self.assertIn("language pt_BR\n", texto)
+            self.assertIn("width 1366\n", texto)
+            self.assertIn("height 768\n", texto)
+            self.assertNotIn("fullscreen 0", texto)
 
 
 class CatalogoWindowsExtrasTests(unittest.TestCase):
