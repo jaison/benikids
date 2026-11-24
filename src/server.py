@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import catalogo_windows
 import controles
 import inicio_automatico
+import itch_sync
 import telemetria
 import site_logins
 from app_detection import (
@@ -1232,6 +1233,15 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
             favorites=[],
             gender=crianca.get("icon"),
             telemetryId=os.urandom(16).hex(),
+        )
+        # Menina recebe os jogos de vestir/maquiagem. Menino não fica com os
+        # que vieram copiados do perfil-modelo. Sem gender a configuração nem chega aqui.
+        import jogos_genero
+        jogos_genero.retirar_de_outros_generos(perfil)
+        jogos_genero.aplicar_perfil(
+            perfil,
+            "windows" if os.name == "nt" else "linux",
+            porta=PORT,
         )
         if nascimento:
             perfil["birthMonth"] = nascimento
@@ -2699,6 +2709,12 @@ def main():
             try:
                 telemetria_service().iniciar()
             except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor
+                pass
+            try:
+                # coleções do itch.io: 2 min depois de subir e a cada 30 min
+                # (no Linux o cozy-itch-sync também chama a mesma lógica)
+                itch_sync.iniciar()
+            except Exception:  # noqa: BLE001
                 pass
             if os.name == "nt":
                 try:  # roteiro 31: pílula travada é reaberta; app travado não conta tempo

@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 import janelas_seguras
 import marca_tk as marca
+import quiosque_edge
 import telemetria
 from process_state import (
     owned_process,
@@ -739,10 +740,17 @@ class AppOverlay:
         self.root.after(0, self.poll_timer)
         if WINDOWS and maximizar_no_inicio(tile_id):
             self.root.after(500, lambda: self.maximize_app(120))
+        # special:external-browser no Windows: a 2ª janela do Edge (pop-up, diálogo
+        # de arquivo, Ctrl+N) não vira o app. O vigia fecha na thread de trabalho.
+        self.quiosque = None
+        self.quiosque_logados = set()
         if WINDOWS:
             self.root.after(300, lambda: self.trazer_app_quando_abrir(PrimeiraJanela()))
             if sem_moldura_no_inicio(tile_id):
                 self.root.after(1000, lambda: self.esticar_app(TelaCheia()))
+            if mode == "external":
+                self.quiosque = quiosque_edge.Estado()
+                self.root.after(250, self.vigiar_quiosque)
         self.root.after(200, self.poll_usage)
         self.root.after(0, self.stay_on_top)
 
@@ -994,7 +1002,41 @@ class AppOverlay:
 
     def voltar_no_app(self, pid):
         log_windows(f"overlay: vou mandar Alt+← ao app (pid {pid})")
-        win.alt_esquerda(pid)
+        hwnd = None
+        if getattr(self, "quiosque", None) is not None:
+            hwnds = self._hwnds_do_app(pid)
+            if not hwnds:
+                log_windows("overlay: sem a janela do quiosque para o Alt+←")
+                return
+            hwnd = hwnds[0]
+        win.alt_esquerda(pid, hwnd)
+
+    def vigiar_quiosque(self):
+        """Enquanto o site/jogo está aberto: fecha janela nova do Edge na thread de trabalho."""
+        if self.closing or self.quiosque is None:
+            return
+        self.pedir_janela("quiosque", self.passo_do_quiosque)
+        self.root.after(250, self.vigiar_quiosque)
+
+    def passo_do_quiosque(self):
+        """Na thread de trabalho. PostMessage não espera o Edge."""
+        record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
+        if not record or self.quiosque is None:
+            return
+        try:
+            descritas = win.descrever_janelas(win.arvore(record["pid"]))
+            for janela in self.quiosque.observar(descritas):
+                hwnd = janela["hwnd"]
+                win.fechar_extra(hwnd, janela.get("classe"))
+                if hwnd in self.quiosque_logados:
+                    continue
+                self.quiosque_logados.add(hwnd)
+                log_windows(
+                    "quiosque: fechei janela extra do Edge ("
+                    f"{janela.get('classe')}, {quiosque_edge.titulo_curto(janela.get('titulo'))})"
+                )
+        except Exception as erro:  # noqa: BLE001 — a volta seguinte tenta de novo
+            self.log_uma_vez(f"overlay: erro no quiosque: {type(erro).__name__}: {erro}")
 
     # ----- limites por categoria -----
     def poll_usage(self):
@@ -1183,8 +1225,19 @@ class AppOverlay:
         if tentativas > 1:
             self.root.after(500, lambda: self.maximize_app(tentativas - 1))
 
+    def _hwnds_do_app(self, pid):
+        """Janelas em que o overlay pode mexer. No Edge em quiosque, só a primeira:
+        a segunda (pop-up, diálogo) não é adotada."""
+        if getattr(self, "quiosque", None) is not None:
+            return self.quiosque.para_cuidar(win.descrever_janelas(win.arvore(pid)))
+        return win.janelas_de(win.arvore(pid))
+
     def passo_maximizar(self, pid):
-        h = win.janela_maximizavel(pid)
+        if getattr(self, "quiosque", None) is not None:
+            hwnds = self._hwnds_do_app(pid)
+            h = hwnds[0] if hwnds else None
+        else:
+            h = win.janela_maximizavel(pid)
         if not h or not self.de_pe.pronta(win.JANELAS, h):
             return
         log_windows(f"overlay: vou maximizar o app (hwnd {hx(h)})")
@@ -1217,8 +1270,9 @@ class AppOverlay:
 
     def trazer_app(self, pid):
         """Na thread de trabalho: traz o app para a frente, se a janela já está de pé, e
-        loga antes (com ms) e depois."""
-        janelas = win.janelas_de(win.arvore(pid))
+        loga antes (com ms) e depois. No quiosque, a janela é a do --app, não a que
+        acabou de abrir na frente."""
+        janelas = self._hwnds_do_app(pid)
         if not janelas:
             return
         h = janelas[0]
@@ -1244,7 +1298,8 @@ class AppOverlay:
     def passo_da_tela_cheia(self, decisao, originais):
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         try:
-            for h in win.janelas_de(win.arvore(record["pid"])) if record else []:
+            hwnds = self._hwnds_do_app(record["pid"]) if record else []
+            for h in hwnds:
                 if win.travada(h):
                     continue  # app "Não respondendo": não mexe nem conta
                 if not self.de_pe.pronta(win.JANELAS, h):
@@ -1279,7 +1334,11 @@ class AppOverlay:
         record = owned_process(TILE_PROCESS_PIDFILE, "tile-process")
         try:
             pids = win.arvore(record["pid"]) if record else []
-            janelas = win.janelas_de(pids) if pids else []
+            # no quiosque, a janela que conta é a do --app, não a que abriu na frente
+            if getattr(self, "quiosque", None) is not None and self.quiosque.principal:
+                janelas = [self.quiosque.principal]
+            else:
+                janelas = win.janelas_de(pids) if pids else []
             if any(win.travada(h) for h in janelas):
                 # roteiro 31: nunca mexer num app "Não respondendo"; a volta não conta
                 self.log_uma_vez("overlay: o app não responde; espero para trazê-lo para a frente")

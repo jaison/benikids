@@ -269,6 +269,16 @@
           }
         }
       ]
+    },
+    {
+      "id": "2026-11-23-jogos-menina",
+      "descricao": "Criar Boneca, Vestir Gatinho, Maquiagem e Vestir Missy nos perfis menina que ainda não têm esses jogos. Perfil sem gênero não muda; tile já oculto continua oculto.",
+      "operacoes": [
+        {
+          "op": "adicionar_por_genero",
+          "perfis": "todos"
+        }
+      ]
     }
   ]
 }

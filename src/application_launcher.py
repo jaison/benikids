@@ -30,6 +30,15 @@ def resolve_tile_action(tile):
         ):
             if clean[0].startswith(prefix):
                 url = clean[0][len(prefix):]
+                if mode == "external":
+                    # Moldura do itch.io: o token (ou o http://127.0.0.1/jogo.html
+                    # antigo) vira file:// da instalação. Outro file:// continua
+                    # barrado pelo is_safe_web_url, logo abaixo.
+                    import itch_sync
+
+                    arquivo = itch_sync.url_da_moldura(url)
+                    if arquivo:
+                        return {"type": "web", "mode": mode, "url": arquivo}
                 if not is_safe_web_url(url):
                     raise ValueError("Invalid browser URL")
                 return {"type": "web", "mode": mode, "url": url}
@@ -149,17 +158,35 @@ def external_chromium_profile(cache_root, profile_id=""):
 # - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
 #   preenche sozinho um login salvo à mão (quem entra é o login automático, com
 #   o login de cada criança). Logins já salvos não são apagados.
+# - download_restrictions=3: neste perfil, nenhum download (o valor do
+#   DownloadRestrictions; aqui é preferência do perfil, não política de
+#   máquina, que atingiria o Edge dos pais). Não há chave em Local State que
+#   desligue o seletor de arquivos ou janela nova.
+# - popups=2 e automatic_downloads=2: o perfil bloqueia window.open e download
+#   automático (2 = bloquear). Ctrl+N e o menu "abrir em nova janela" não passam
+#   por essa chave: o vigia do quiosque fecha a janela.
 # Um só --disable-features vale. Translate já estava. DnsOverHttps: o navegador
-# não troca o DNS do Windows (CleanBrowsing) por um DoH próprio. A última chave
-# reabre o --load-extension, que o Chromium novo ignora (a extensão dos sites).
-CHROMIUM_RECURSOS_DESLIGADOS = "Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch"
+# não troca o DNS do Windows (CleanBrowsing) por um DoH próprio.
+# DisableLoadExtensionCommandLineSwitch reabre o --load-extension (a extensão
+# dos sites). FileSystemAccessAPI é o seletor novo (showOpenFilePicker); o
+# diálogo clássico não tem flag — o vigia do quiosque fecha essa janela.
+CHROMIUM_RECURSOS_DESLIGADOS = (
+    "Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch,FileSystemAccessAPI"
+)
 EXTENSAO_SITES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edge", "sites-limpos")
 CSS_FIREFOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "firefox", "userContent.css")
 
 CHROMIUM_PREFERENCES = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
-    "profile": {"password_manager_enabled": False},
+    "download_restrictions": 3,
+    "profile": {
+        "password_manager_enabled": False,
+        "default_content_setting_values": {
+            "popups": 2,
+            "automatic_downloads": 2,
+        },
+    },
     # o mesmo DoH desligado, dentro do perfil, se a linha de comando não pegar
     "dns_over_https": {"mode": "off", "templates": ""},
 }
@@ -286,9 +313,10 @@ def external_browser_command(
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
+            "--lang=pt-BR",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço de translate.enabled=false e do DoH desligado (só um
-            # --disable-features vale: tudo na mesma lista)
+            # reforço das preferências (só um --disable-features vale: tudo
+            # na mesma lista, em CHROMIUM_RECURSOS_DESLIGADOS)
             f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}",
         ]
         command += _args_extensao_sites(cache_root, url)
@@ -301,6 +329,9 @@ def external_browser_command(
                 f"--remote-debugging-port={int(devtools_port)}",
                 "--remote-debugging-address=127.0.0.1",
             ]
+        if os.name == "nt" and url.startswith("file:"):
+            # sem o fragmento: o log fica com o caminho codificado, não com o jogo
+            _log_windows("jogo: Edge em quiosque na moldura local " + url.split("#", 1)[0])
         return command + ["--kiosk", f"--app={url}"]
     profile = external_firefox_profile(cache_root, profile_id)
     garantir_perfil_firefox(profile)
