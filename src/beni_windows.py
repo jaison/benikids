@@ -245,20 +245,32 @@ def atualizar_se_parado():
 
 
 def procurar_atualizacao_depois(espera=120):
-    """Em segundo plano, alguns minutos depois de abrir: procura e baixa uma versão nova
-    (no máximo uma vez por dia). Ela é instalada na próxima vez que o Benikids abrir."""
+    """Em segundo plano: procura e baixa uma versão nova de novo a cada 6 h, enquanto
+    o Benikids ficar aberto. Sem internet, tenta de novo em meia hora."""
     import threading
 
     def trabalhar():
         time.sleep(espera)
-        try:
-            import atualizar_windows
+        while True:
+            pausa = 6 * 3600
+            try:
+                import atualizar_windows
 
-            versao = atualizar_windows.verificar(APP_ROOT)
-            if versao:
-                log(f"atualização: versão {versao} baixada; instala na próxima abertura")
-        except Exception as erro:  # noqa: BLE001
-            log(f"atualização: não deu para procurar ({erro})")
+                pausa = atualizar_windows.INTERVALO
+                versao = atualizar_windows.verificar(APP_ROOT)
+                if versao:
+                    log("atualização: versão "
+                        f"{versao} baixada; instala quando o computador ficar parado no menu")
+            except Exception as erro:  # noqa: BLE001
+                try:
+                    import atualizar_windows
+
+                    if isinstance(erro, atualizar_windows.FalhaDeRede):
+                        pausa = atualizar_windows.REPETIR_SEM_REDE
+                except Exception:  # noqa: BLE001
+                    pass
+                log(f"atualização: não deu para procurar ({erro})")
+            time.sleep(pausa)
 
     threading.Thread(target=trabalhar, daemon=True).start()
 

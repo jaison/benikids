@@ -4,9 +4,10 @@ Como no Linux (beni/sistema/beni-atualizar), só Releases do GitHub contam (tag 
 não rascunho nem pré-release). O pacote do Windows vai anexado à Release pelo CI
 (Benikids-Windows.zip + .sha256).
 
-- verificar(): no máximo uma vez por dia, em segundo plano (thread do iniciador):
+- verificar(): em segundo plano (thread do iniciador), no máximo a cada 6 h:
   procura uma Release mais nova, baixa o zip, confere o SHA-256 e extrai em
-  %LOCALAPPDATA%\\Benikids\\atualizacao\\pronta.
+  %LOCALAPPDATA%\\Benikids\\atualizacao\\pronta. O botão "Ver atualizações"
+  chama com forcar=True e ignora as 6 h (mas não o mínimo de 1 minuto).
 - pendente(): na próxima vez que o Benikids abre, ANTES de subir o servidor e o menu,
   o iniciador vê a versão pronta e chama aplicar_e_sair(): o instalador da versão nova
   roda com o Python do próprio pacote novo (o Python instalado está em uso pelo
@@ -20,7 +21,9 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -28,8 +31,20 @@ REPO = "jaison/benikids"
 ASSET = "Benikids-Windows.zip"
 SEMVER = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)$")
 UA = {"User-Agent": "benikids-atualizador-windows", "Accept": "application/vnd.github+json"}
-INTERVALO = 20 * 3600  # procura de novo depois de 20 h
+# 6 h: cerca de 4 consultas por dia em cada computador. A API do GitHub, sem
+# token, aceita 60 por hora por endereço de internet. O Linux já consulta de
+# hora em hora; 6 h no Windows continua folgado mesmo com vários notebooks
+# saindo pelo mesmo endereço. O botão dos pais tem um teto à parte (1 minuto).
+INTERVALO = 6 * 3600
+MINIMO_ENTRE_VERIFICACOES = 60
+REPETIR_SEM_REDE = 30 * 60  # sem internet: tenta de novo em meia hora, não em 6 h
+AGORA_SEGUNDOS = 2 * 60  # "verificado agora" se a procura tem menos de 2 minutos
 SEM_CONSOLE = 0x08000000
+_trava = threading.Lock()
+
+
+class FalhaDeRede(RuntimeError):
+    """Não deu para falar com o GitHub (sem internet, tempo esgotado, limite)."""
 
 
 def pasta(raiz=None):
@@ -116,50 +131,158 @@ def conferir_pacote(raiz, versao):
         raise RuntimeError(f"versão do pacote ({dentro}) não bate com a tag ({versao})")
 
 
-def verificar(app_root, base=None, abrir=_abrir, agora=None, repo=REPO):
-    """Procura e baixa uma versão nova. Devolve a versão que ficou pronta, ou None."""
+def _segundos_desde(estado, chave, agora):
+    valor = estado.get(chave)
+    if valor is None:
+        return None
+    try:
+        delta = agora - float(valor)
+    except (TypeError, ValueError):
+        return None
+    return delta
+
+
+def _ler_url(abrir, url, timeout, limite):
+    try:
+        with abrir(url, timeout=timeout) as resposta:
+            return resposta.read(limite)
+    except (urllib.error.URLError, TimeoutError) as erro:
+        raise FalhaDeRede("sem resposta") from erro
+
+
+def verificar(app_root, base=None, abrir=_abrir, agora=None, repo=REPO, forcar=False):
+    """Procura e baixa uma versão nova. Devolve a versão que ficou pronta, ou None.
+
+    Sem forcar, espera INTERVALO desde a última procura que chegou ao GitHub
+    (ou REPETIR_SEM_REDE, se a última nem chegou). Com forcar, ignora essas
+    esperas: é o botão "Ver atualizações". Nos dois casos, no máximo uma
+    procura por minuto.
+    """
+    with _trava:
+        return _verificar(app_root, base, abrir, agora, repo, forcar)
+
+
+def _verificar(app_root, base, abrir, agora, repo, forcar):
     base = base or pasta()
     agora = agora if agora is not None else time.time()
     estado = _estado(base)
-    ultima = estado.get("verificado_em")
-    if ultima is not None and 0 <= agora - float(ultima) < INTERVALO:
+    tentativa = _segundos_desde(estado, "tentado_em", agora)
+    if tentativa is not None and 0 <= tentativa < MINIMO_ENTRE_VERIFICACOES:
         return None
-    _gravar_estado(base, verificado_em=agora)
+    if not forcar:
+        if estado.get("sem_rede"):
+            if tentativa is not None and 0 <= tentativa < REPETIR_SEM_REDE:
+                return None
+        else:
+            verificada = _segundos_desde(estado, "verificado_em", agora)
+            if verificada is not None and 0 <= verificada < INTERVALO:
+                return None
+    _gravar_estado(base, tentado_em=agora, sem_rede=False)
+    try:
+        return _procurar(app_root, base, abrir, agora, repo)
+    except FalhaDeRede:
+        _gravar_estado(base, sem_rede=True, erro_download=None)
+        raise
+
+
+def _procurar(app_root, base, abrir, agora, repo):
     atual = versao_instalada(app_root)
-    with abrir(f"https://api.github.com/repos/{repo}/releases/latest") as resposta:
-        release = json.loads(resposta.read(2 * 1024 * 1024).decode("utf-8"))
+    bruto = _ler_url(abrir, f"https://api.github.com/repos/{repo}/releases/latest", 30, 2 * 1024 * 1024)
+    try:
+        release = json.loads(bruto.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as erro:
+        raise FalhaDeRede("resposta inválida") from erro
+    if not isinstance(release, dict) or (release.get("message") and not release.get("tag_name")):
+        raise FalhaDeRede("resposta sem release")
     achada = release_nova(release, atual)
     if not achada:
+        _gravar_estado(base, verificado_em=agora, sem_rede=False, erro_download=None)
         return None
     versao, url, url_sha = achada
     pronta = _pronta(base)
     if pronta and semver(pronta[0]) == semver(versao):
+        _gravar_estado(base, verificado_em=agora, sem_rede=False, erro_download=None)
         return None  # já baixada
-    with abrir(url_sha) as resposta:
-        esperado = resposta.read(200).decode("ascii", "replace").split()[0].lower()
+    esperado = _ler_url(abrir, url_sha, 30, 200).decode("ascii", "replace").split()[0].lower()
     trabalho = os.path.join(base, "baixando")
     shutil.rmtree(trabalho, ignore_errors=True)
     os.makedirs(trabalho)
     zip_local = os.path.join(trabalho, ASSET)
     soma = hashlib.sha256()
-    with abrir(url, timeout=600) as resposta, open(zip_local, "wb") as saida:
-        while True:
-            bloco = resposta.read(1024 * 1024)
-            if not bloco:
-                break
-            soma.update(bloco)
-            saida.write(bloco)
+    try:
+        with abrir(url, timeout=600) as resposta, open(zip_local, "wb") as saida:
+            while True:
+                bloco = resposta.read(1024 * 1024)
+                if not bloco:
+                    break
+                soma.update(bloco)
+                saida.write(bloco)
+    except (urllib.error.URLError, TimeoutError) as erro:
+        shutil.rmtree(trabalho, ignore_errors=True)
+        raise FalhaDeRede("sem resposta") from erro
     if soma.hexdigest() != esperado:
         shutil.rmtree(trabalho, ignore_errors=True)
+        _gravar_estado(base, verificado_em=agora, sem_rede=False, erro_download=True)
         raise RuntimeError("SHA-256 do pacote não confere")
-    raiz = extrair_com_cuidado(zip_local, os.path.join(trabalho, "pacote"))
-    conferir_pacote(raiz, versao)
+    try:
+        raiz = extrair_com_cuidado(zip_local, os.path.join(trabalho, "pacote"))
+        conferir_pacote(raiz, versao)
+    except (RuntimeError, OSError):
+        shutil.rmtree(trabalho, ignore_errors=True)
+        _gravar_estado(base, verificado_em=agora, sem_rede=False, erro_download=True)
+        raise
     os.unlink(zip_local)
     destino = os.path.join(base, "pronta")
     shutil.rmtree(destino, ignore_errors=True)
     os.replace(trabalho, destino)
-    _gravar_estado(base, pronta=versao, pacote=os.path.relpath(raiz, trabalho))
+    _gravar_estado(base, pronta=versao, pacote=os.path.relpath(raiz, trabalho),
+                   verificado_em=agora, sem_rede=False, erro_download=None)
     return versao
+
+
+def _frase_quando(epoch, agora):
+    """'agora', 'às HH:MM' (no mesmo dia) ou 'em DD/MM/AAAA às HH:MM'."""
+    delta = agora - float(epoch)
+    if 0 <= delta < AGORA_SEGUNDOS:
+        return "agora"
+    hora = time.strftime("%H:%M", time.localtime(epoch))
+    if time.localtime(epoch)[:3] == time.localtime(agora)[:3]:
+        return f"às {hora}"
+    return time.strftime("em %d/%m/%Y às %H:%M", time.localtime(epoch))
+
+
+def mensagem_para_os_pais(app_root, base=None, agora=None):
+    """(texto, tipo) honesto para a área dos pais. tipo: success, error ou empty.
+
+    Não diz que está em dia se a última procura deu erro ou já passou do intervalo.
+    """
+    base = base or pasta()
+    agora = agora if agora is not None else time.time()
+    estado = _estado(base)
+    pronta = _pronta(base)
+    atual = versao_instalada(app_root) or "?"
+    nova = semver(pronta[0]) if pronta else None
+    instalada = semver(atual)
+    baixada = pronta[0] if pronta and nova and (not instalada or nova > instalada) else None
+    falhou = estado.get("falhou")
+    aviso = f" A versão {falhou} não conseguiu instalar." if isinstance(falhou, str) and falhou else ""
+    if baixada:
+        texto = (f"Versão {baixada} baixada; vai ser instalada quando o computador "
+                 "ficar parado no menu.")
+        return texto + aviso, "error" if aviso else "success"
+    if estado.get("sem_rede"):
+        return "Não deu para verificar (sem internet?).", "error"
+    if estado.get("erro_download"):
+        return "Não deu para baixar a atualização.", "error"
+    ultima = _segundos_desde(estado, "verificado_em", agora)
+    if ultima is None:
+        return "Ainda não procurei se há uma versão nova. Toque em Ver atualizações." + aviso, "empty"
+    quando = _frase_quando(agora - ultima, agora)
+    if ultima < 0 or ultima >= INTERVALO:
+        texto = f"A última verificação foi {quando}. Toque em Ver atualizações para procurar de novo."
+        return texto + aviso, "empty"
+    texto = f"Você tem a versão mais nova ({atual}). Verificado {quando}."
+    return texto + aviso, "error" if aviso else "success"
 
 
 def _pronta(base):
@@ -214,10 +337,11 @@ def aplicar_e_sair(raiz_pacote, log=print):
     return True
 
 
-def estado_para_os_pais(app_root, base=None):
+def estado_para_os_pais(app_root, base=None, agora=None):
     """O que mostrar na área dos pais: versão já baixada esperando instalar, a última
-    procura e se alguma versão falhou ao instalar."""
+    procura, se alguma versão falhou ao instalar, e o texto honesto da tela."""
     base = base or pasta()
+    agora = agora if agora is not None else time.time()
     estado = _estado(base)
     pronta = _pronta(base)
     nova, atual = (semver(pronta[0]) if pronta else None), semver(versao_instalada(app_root))
@@ -228,10 +352,14 @@ def estado_para_os_pais(app_root, base=None):
     except (TypeError, ValueError, OverflowError, OSError):
         ultima = None
     falhou = estado.get("falhou")
+    texto, tipo = mensagem_para_os_pais(app_root, base, agora)
     return {
         "baixada": baixada,
         "ultimaVerificacao": ultima,
         "erro": f"A versão {falhou} não conseguiu instalar." if isinstance(falhou, str) and falhou else None,
+        "semRede": bool(estado.get("sem_rede")),
+        "texto": texto,
+        "tipo": tipo,
     }
 
 
