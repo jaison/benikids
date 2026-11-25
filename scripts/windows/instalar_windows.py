@@ -99,6 +99,17 @@ def copiar_arvore(origem, destino):
             shutil.copy2(os.path.join(raiz, nome), os.path.join(alvo, nome))
 
 
+def log_instalador(texto):
+    """Uma linha no log do Benikids. O instalador abre sem console (pythonw)."""
+    print(texto)
+    try:
+        os.makedirs(CACHE, exist_ok=True)
+        with open(os.path.join(CACHE, "beni-windows.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
 def atalho(caminho, alvo, argumentos, pasta, icone):
     ps = (
         "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:BENI_LNK);"
@@ -118,10 +129,34 @@ def pasta_especial(csidl):
     return buf.value
 
 
-def copiar_pacote():
-    os.makedirs(APP_ROOT, exist_ok=True)
-    copiar_arvore(os.path.join(PACOTE, "app"), APP_ROOT)
-    copiar_arvore(os.path.join(PACOTE, "python"), os.path.join(APP_ROOT, "python"))
+def copiar_pacote(pacote=None, destino=None, log=None):
+    """Copia o app e o Python por cima da instalação.
+
+    Depois apaga, só na pasta do app, os arquivos que estavam na lista da versão
+    anterior e não estão na nova, e os __pycache__ velhos. Sem lista anterior
+    (instalação antiga), apaga só os __pycache__. Não mexe em capas, config, logs,
+    perfis do Edge nem no Python embutido. A lista é lida antes da cópia.
+    """
+    pacote = pacote or PACOTE
+    destino = destino or APP_ROOT
+    log = log or log_instalador
+    os.makedirs(destino, exist_ok=True)
+    origem_app = os.path.join(pacote, "app")
+    pasta_app = origem_app if os.path.isdir(origem_app) else os.path.join(PACOTE, "app")
+    # o módulo novo está na pasta app do pacote, não ao lado do instalador
+    inseriu = pasta_app not in sys.path
+    if inseriu:
+        sys.path.insert(0, pasta_app)
+    try:
+        import atualizar_windows
+    finally:
+        if inseriu and pasta_app in sys.path:
+            sys.path.remove(pasta_app)
+
+    anterior = atualizar_windows.ler_manifesto(destino)
+    copiar_arvore(origem_app, destino)
+    copiar_arvore(os.path.join(pacote, "python"), os.path.join(destino, "python"))
+    atualizar_windows.limpar_arquivos_velhos(destino, origem_app, anterior=anterior, log=log)
 
 
 def esperar_sair(pid, limite=60):
