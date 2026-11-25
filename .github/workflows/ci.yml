@@ -1,8 +1,12 @@
 name: CI
 
+# Todo push de ramo roda a suíte inteira. Antes o gatilho era só main, develop
+# e pull request: um ramo quebrava o Linux (módulo novo fora do install.sh) e
+# este workflow não rodava. A Release conferia os testes, mas tarde demais.
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - "**"
   pull_request:
 
 permissions:
@@ -29,6 +33,29 @@ jobs:
 
       - name: Run unit and API tests
         run: python -m unittest discover -s tests -v
+
+      # Prova no Linux de verdade o que o teste estático olha: install.sh num
+      # home falso e import dos pontos de entrada. Uma vez por workflow basta
+      # (o Python 3.12); o 3.13 repete a suíte, não esta instalação.
+      - name: Instalação de mentira importa os pontos de entrada
+        if: matrix.python-version == '3.12'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends python3-tk
+          home="$(mktemp -d)"
+          bash scripts/install.sh \
+            --user "$(id -un)" \
+            --home "$home" \
+            --lang en \
+            --launch-mode window \
+            --skip-browser-check \
+            --force
+          app="$home/.local/share/cozy-kids-launcher"
+          cd "$app"
+          for modulo in server application_launcher process_supervisor media_session overlay timer_watchdog; do
+            echo "import $modulo"
+            /usr/bin/python3 -c "import ${modulo}"
+          done
 
       - name: Compile Python templates
         run: python -m py_compile src/server.py src/itch_sync.py src/app_detection.py src/application_launcher.py src/activity_store.py src/backup_store.py src/browser_policy.py src/config_store.py src/config_validation.py src/profile_config.py src/schedule_rules.py src/lifecycle_state.py src/media_library.py src/media_state.py src/media_resume.py src/media_session.py src/parent_auth.py src/speech_feedback.py src/runtime_diagnostics.py src/process_state.py src/process_supervisor.py src/overlay.py src/marca_tk.py src/timer_state.py src/timer_watchdog.py src/update_manager.py scripts/generate-locales.py scripts/take-screenshots.py scripts/linux/desktop_smoke.py scripts/wsl/browser_driver.py scripts/wsl/browser-e2e.py scripts/wsl/capture-page.py scripts/wsl/probe-web-targets.py
