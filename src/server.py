@@ -1013,6 +1013,49 @@ def processo_descende_de(pid, ancestral, pais=None):
 
 # Menu registrado há pouco (abrindo): ainda sem janela na frente, conta como menu.
 MENU_PARTIDA_SEGUNDOS = 15
+# O menu avisa "estou com a tela Acabou o tempo!" a cada 2 s. Passou disso sem
+# aviso novo, a confirmação venceu: a vigia pode mostrar a tela de reserva.
+MENU_TELA_FRESCURA = 5
+_menu_tela_em = 0.0
+_menu_tela_lock = threading.Lock()
+
+
+def menu_confirma_tela(agora=None):
+    """O menu (nativo ou web) avisou que a tela "Acabou o tempo!" dele está na frente."""
+    global _menu_tela_em
+    agora = time.monotonic() if agora is None else agora
+    with _menu_tela_lock:
+        fresco = _menu_tela_em > 0 and agora - _menu_tela_em <= MENU_TELA_FRESCURA
+        _menu_tela_em = agora
+    if not fresco:
+        log_runtime_event("timer.tela_do_menu")
+
+
+def menu_solta_tela():
+    """A tela do menu saiu. A confirmação antiga não pode esconder a da vigia."""
+    global _menu_tela_em
+    with _menu_tela_lock:
+        _menu_tela_em = 0.0
+
+
+def menu_confirmou_a_tela(agora=None):
+    agora = time.monotonic() if agora is None else agora
+    with _menu_tela_lock:
+        return _menu_tela_em > 0 and agora - _menu_tela_em <= MENU_TELA_FRESCURA
+
+
+def estado_da_tela_do_timer():
+    """O que a vigia lê para decidir qual tela de bloqueio fica.
+
+    menuMostrando: o menu confirmou há poucos segundos e o processo dele está vivo.
+    menuVivo: o menu está registrado; a vigia espera um pouco antes da tela de reserva.
+    menuNaFrente: a janela do menu está na frente (só o aviso "Faltam N minutos")."""
+    vivo = owned_process(BROWSER_PIDFILE, "browser") is not None
+    return {
+        "menuNaFrente": menu_cobre_a_tela(),
+        "menuVivo": vivo,
+        "menuMostrando": vivo and menu_confirmou_a_tela(),
+    }
 
 
 def menu_cobre_a_tela(agora=None):
@@ -1591,7 +1634,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.json_response({"voltar": cliente_voltar_contador()})
         if self.path == "/api/timer/tela":
             # timer_watchdog: quem mostra o "Acabou o tempo!" (o menu ou ele)
-            return self.json_response({"menuNaFrente": menu_cobre_a_tela()})
+            return self.json_response(estado_da_tela_do_timer())
         if self.path == "/api/timer/status":
             return self.json_response(timer_status(load_cfg()))
         if self.path == "/api/availability/status":
@@ -1710,6 +1753,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         action = self.path.strip("/")
         if action == "api/cliente/voltar":
             self.json_response({"voltar": cliente_voltar_registrar()})
+            return
+        if action == "api/timer/tela":
+            # O menu avisa que a tela "Acabou o tempo!" dele está na frente.
+            # Sem isso a vigia não sabe se pode ficar escondida.
+            if not self.pedido_do_proprio_computador():
+                self.json_response({"status": "error", "message": "Local requests only"}, 403)
+                return
+            body = self.read_json_body(required=False)
+            if body is None:
+                return
+            if body.get("mostrando") is True:
+                menu_confirma_tela()
+            elif body.get("mostrando") is False:
+                menu_solta_tela()
+            else:
+                self.json_response({"status": "error", "message": "mostrando"}, 400)
+                return
+            self.json_response({"status": "ok"})
             return
         if action == "api/cliente/evento":
             # A página aberta pelo menu nativo achou a tela vazia e se recuperou

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Fullscreen timer watchdog: blocks the screen when time is up.
-Runs outside the browser so it also covers native apps and games."""
+"""Tela de reserva quando o tempo da sessão acaba.
+
+Se o menu (nativo ou web) confirma que a tela "Acabou o tempo!" dele está na
+frente, esta janela não abre — ou fecha, se já tinha aberto por cima de um
+jogo. Só aparece se o menu não responder em poucos segundos, ou se não
+houver menu. Não pode sumir antes disso: a criança ficaria sem bloqueio.
+"""
 import argparse
 import json
 import os
@@ -122,10 +127,11 @@ def xid_da_janela(janela):
 
 
 def _log_windows(texto):
-    if os.name != "nt":
-        return
+    """Uma linha no beni-windows.log. No Linux é o mesmo arquivo: a vigia
+    não tem outro log (a saída dela vai para /dev/null)."""
     try:
         caminho = os.path.join(CACHE_DIR, "beni-windows.log")
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
         with open(caminho, "a", encoding="utf-8") as handle:
             handle.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
     except OSError:
@@ -166,20 +172,50 @@ def janela_na_frente(janela, campo, plataforma=None):
 # Logo depois de a vigia abrir (o Benikids acabou de abrir), o menu ainda não
 # está registrado nem na frente: a tela de tempo esgotado espera por ele.
 PARTIDA_SEGUNDOS = 12
+# O menu vivo tem esses segundos para confirmar a tela dele. Sem resposta,
+# a vigia mostra a dela (reserva). Com um jogo aberto, não espera: cobre já.
+ESPERA_DO_MENU = 4
 
 
-def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente, partida=False, app_aberto=False):
-    """O que a vigia faz a cada volta. `menu_na_frente` é chamado só quando
-    importa (pergunta ao servidor); `partida` = a vigia abriu há pouco. Devolve
-    uma lista de ações: "bloquear", "fechar_bloqueio", "aviso", "fechar_aviso",
-    "fechar_app" (timer da sessão acabou e ainda há app aberto)."""
+def tela_do_tempo(expirado, menu_mostrando, menu_vivo, espera_esgotada, app_aberto,
+                  bloqueio_aberto, partida=False):
+    """Qual tela de bloqueio fica com o tempo acabado.
+
+    "menu" — o menu confirmou que a dele está na frente e não há jogo aberto.
+    "vigia" — a reserva (jogo aberto, menu morto, prazo esgotado, ou ela já
+    está na tela e o menu ainda não confirmou: tirá-la abriria um buraco).
+    "esperar" — o menu está vivo e ainda no prazo; a vigia não abre a dela.
+    "nenhuma" — o tempo não acabou.
+    """
+    if not expirado:
+        return "nenhuma"
+    if menu_mostrando and not app_aberto:
+        return "menu"
+    if app_aberto or bloqueio_aberto:
+        return "vigia"
+    if partida or (menu_vivo and not espera_esgotada):
+        return "esperar"
+    return "vigia"
+
+
+def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente, partida=False, app_aberto=False,
+            menu_mostrando=False, menu_vivo=True, espera_esgotada=True):
+    """O que a vigia faz a cada volta. `menu_na_frente` é chamado só no aviso
+    ("Faltam N minutos"); a tela "Acabou o tempo!" usa a confirmação do menu
+    (`menu_mostrando`), não o palpite da janela da frente. `partida` = a vigia
+    abriu há pouco. Devolve uma lista de ações: "bloquear", "fechar_bloqueio",
+    "aviso", "fechar_aviso", "fechar_app"."""
     acoes = []
     if status.get("expired"):
-        # com o menu na frente e sem app aberto, a tela é a do próprio menu
         if app_aberto:
             # a pílula também fecha; se ela travou, a vigia fecha do mesmo jeito
             acoes.append("fechar_app")
-        if bloqueio_aberto or not (partida or menu_na_frente()):
+        qual = tela_do_tempo(
+            True, menu_mostrando, menu_vivo, espera_esgotada, app_aberto, bloqueio_aberto, partida,
+        )
+        if qual == "menu" and bloqueio_aberto:
+            acoes.append("fechar_bloqueio")
+        elif qual == "vigia":
             acoes.append("bloquear")
         if aviso_aberto:
             acoes.append("fechar_aviso")
@@ -211,6 +247,9 @@ class WatchdogApp:
         self.poll_interval = 5000  # ms
         self.status = {}
         self.aberto_em = time.monotonic()
+        self.expirou_em = None
+        self.ceder_o_foco = False
+        self._anotado = None
         self._fechar_app = threading.Lock()
         self._cobrir = threading.Lock()
 
@@ -462,9 +501,12 @@ class WatchdogApp:
             try:
                 b.lift()
                 b.attributes("-topmost", True)
-                janela_na_frente(b, pin_entry)
-                # fora da thread do Tk: wmctrl/xdotool não podem travar o PIN
-                self._pedir_cobrir(xid_da_janela(b))
+                # Com o jogo já fechado, não rouba o foco: o menu precisa
+                # conseguir a janela da frente para confirmar e esta sair.
+                if not self.ceder_o_foco:
+                    janela_na_frente(b, pin_entry)
+                    # fora da thread do Tk: wmctrl/xdotool não podem travar o PIN
+                    self._pedir_cobrir(xid_da_janela(b))
             except tk.TclError:
                 return
             except Exception:  # noqa: BLE001 — a tela continua; o WM que falhou
@@ -519,6 +561,20 @@ class WatchdogApp:
         finally:
             self._fechar_app.release()
 
+    def _espera_esgotada(self, expirado):
+        if not expirado:
+            self.expirou_em = None
+            return True
+        if self.expirou_em is None:
+            self.expirou_em = time.monotonic()
+        return time.monotonic() - self.expirou_em >= ESPERA_DO_MENU
+
+    def _anotar_tela(self, chave, texto):
+        if self._anotado == chave:
+            return
+        self._anotado = chave
+        _log_windows(texto)
+
     def tick(self):
         if not self.polling:
             return
@@ -530,14 +586,38 @@ class WatchdogApp:
                 aberto = timer_fim.app_aberto()
             except Exception:  # noqa: BLE001
                 aberto = False
+            tela = api("/api/timer/tela")
+            if tela:
+                menu_vivo = bool(tela.get("menuVivo"))
+                menu_mostrando = bool(tela.get("menuMostrando"))
+                menu_frente = bool(tela.get("menuNaFrente"))
+            else:
+                # sem resposta: não trata o menu como morto (abriria a reserva à toa)
+                menu_vivo, menu_mostrando, menu_frente = True, False, False
+            expirado = bool(data.get("expired"))
+            self.ceder_o_foco = expirado and not aberto and menu_vivo
             acoes = decidir(
                 data,
                 self.block_window is not None,
                 self.warn_window is not None,
-                lambda: bool(api("/api/timer/tela").get("menuNaFrente")),
+                lambda: menu_frente,
                 partida=time.monotonic() - self.aberto_em < PARTIDA_SEGUNDOS,
                 app_aberto=aberto,
+                menu_mostrando=menu_mostrando,
+                menu_vivo=menu_vivo,
+                espera_esgotada=self._espera_esgotada(expirado),
             )
+            if expirado and "fechar_bloqueio" in acoes:
+                self._anotar_tela("fechou", "vigia: o menu confirmou a tela; fechando a da vigia")
+            elif expirado and "bloquear" in acoes and self.block_window is None:
+                self._anotar_tela("reserva", "vigia: o menu não respondeu; abrindo a tela de reserva")
+            elif expirado and "bloquear" not in acoes and "fechar_bloqueio" not in acoes:
+                if menu_mostrando:
+                    self._anotar_tela("menu", "vigia: o menu confirmou a tela; a da vigia não abre")
+                else:
+                    self._anotar_tela("espera", "vigia: esperando o menu confirmar a tela Acabou o tempo")
+            elif not expirado:
+                self._anotado = None
             if "fechar_bloqueio" in acoes:
                 self._destroy_block()
             if "fechar_aviso" in acoes:
@@ -552,6 +632,10 @@ class WatchdogApp:
                 ).start()
             if "aviso" in acoes:
                 self.show_warning(max(1, (remaining + 59) // 60))  # para cima, como a pílula e o menu
+            perto = expirado or bool(data.get("warning")) or self.block_window is not None or (
+                0 < (remaining or 0) <= 20
+            )
+            self.poll_interval = 1000 if perto else 5000
 
         self.root.after(self.poll_interval, self.tick)
 

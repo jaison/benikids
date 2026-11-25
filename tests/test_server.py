@@ -1958,7 +1958,8 @@ class ServerApiTests(unittest.TestCase):
                          {"valid": True, "entregue": False})
 
     def test_timer_tela_diz_se_o_menu_cobre_a_tela(self):
-        # só uma tela "Acabou o tempo!": a do menu quando ele está na frente sem app aberto
+        # o aviso "Faltam N minutos" ainda olha se a janela do menu está na frente
+        server_module.menu_solta_tela()
         casos = [
             # (registro do menu, pid na frente, app aberto, uso ativo) -> menu cobre?
             ({"pid": 10}, 10, False, False, True),
@@ -1973,7 +1974,42 @@ class ServerApiTests(unittest.TestCase):
                     mock.patch.object(server_module, "owned_process_alive", return_value=app), \
                     mock.patch.object(server_module, "usage_status", return_value={"active": uso}):
                 status, data, _ = self.request("/api/timer/tela")
-            self.assertEqual((status, data), (200, {"menuNaFrente": esperado}), (registro, frente, app, uso))
+            self.assertEqual(status, 200, (registro, frente, app, uso))
+            self.assertEqual(data["menuNaFrente"], esperado, (registro, frente, app, uso))
+            self.assertEqual(data["menuVivo"], registro is not None)
+            self.assertFalse(data["menuMostrando"])
+
+    def test_o_menu_confirma_a_tela_de_tempo_esgotado(self):
+        server_module.menu_solta_tela()
+        with mock.patch.object(server_module, "owned_process", return_value={"pid": 10}), \
+                mock.patch.object(server_module, "menu_cobre_a_tela", return_value=True):
+            status, data, _ = self.request("/api/timer/tela", method="POST", body={"mostrando": True})
+            self.assertEqual((status, data), (200, {"status": "ok"}))
+            _, data, _ = self.request("/api/timer/tela")
+            self.assertEqual(data["menuMostrando"], True)
+            self.assertEqual(data["menuVivo"], True)
+            status, data, _ = self.request("/api/timer/tela", method="POST", body={"mostrando": False})
+            self.assertEqual((status, data), (200, {"status": "ok"}))
+            _, data, _ = self.request("/api/timer/tela")
+            self.assertFalse(data["menuMostrando"])
+        server_module.menu_solta_tela()
+
+    def test_menu_morto_nao_conta_como_mostrando(self):
+        server_module.menu_confirma_tela()
+        with mock.patch.object(server_module, "owned_process", return_value=None), \
+                mock.patch.object(server_module, "menu_cobre_a_tela", return_value=False):
+            _, data, _ = self.request("/api/timer/tela")
+        self.assertFalse(data["menuMostrando"])
+        self.assertFalse(data["menuVivo"])
+        server_module.menu_solta_tela()
+
+    def test_confirmacao_da_tela_expira_em_poucos_segundos(self):
+        server_module.menu_solta_tela()
+        server_module.menu_confirma_tela(agora=50)
+        self.assertTrue(server_module.menu_confirmou_a_tela(agora=50 + server_module.MENU_TELA_FRESCURA))
+        self.assertFalse(server_module.menu_confirmou_a_tela(agora=50 + server_module.MENU_TELA_FRESCURA + 0.1))
+        server_module.menu_solta_tela()
+        self.assertFalse(server_module.menu_confirmou_a_tela(agora=51))
 
     def test_timer_tela_area_dos_pais_e_menu_abrindo_contam_como_menu(self):
         registro = {"pid": 10}

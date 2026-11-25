@@ -24,9 +24,58 @@ tw = carregar()
 
 
 class DecidirTest(unittest.TestCase):
-    def test_tempo_esgotado_com_o_menu_na_frente_fica_so_a_tela_do_menu(self):
-        # roteiro 17: eram duas telas, a rosa por cima e a do menu (com o teclado) por baixo
-        self.assertEqual(tw.decidir({"active": True, "expired": True}, False, False, lambda: True), [])
+    def test_menu_confirmou_a_vigia_nao_abre_e_fecha_se_ja_abriu(self):
+        # uma tela só: a do menu, assim que ele confirma que está na frente
+        self.assertEqual(tw.tela_do_tempo(True, True, True, True, False, False), "menu")
+        self.assertEqual(
+            tw.decidir({"active": True, "expired": True}, False, False, lambda: False, menu_mostrando=True),
+            [],
+        )
+        self.assertEqual(
+            tw.decidir({"expired": True}, True, True, lambda: True, menu_mostrando=True),
+            ["fechar_bloqueio", "fechar_aviso"],
+        )
+
+    def test_janela_na_frente_sem_confirmacao_nao_segura_a_reserva(self):
+        # o defeito: a vigia abria com o jogo e ficava, mesmo com o menu na frente
+        self.assertEqual(
+            tw.decidir(
+                {"expired": True}, False, False, lambda: True,
+                menu_mostrando=False, espera_esgotada=True,
+            ),
+            ["bloquear"],
+        )
+
+    def test_espera_o_menu_uns_segundos_antes_da_tela_de_reserva(self):
+        self.assertEqual(tw.tela_do_tempo(True, False, True, False, False, False), "esperar")
+        self.assertEqual(
+            tw.decidir(
+                {"expired": True}, False, False, lambda: False,
+                menu_vivo=True, espera_esgotada=False,
+            ),
+            [],
+        )
+        # na partida (o Benikids acabou de abrir) também espera, mesmo com o prazo vencido
+        self.assertEqual(tw.tela_do_tempo(True, False, True, True, False, False, partida=True), "esperar")
+
+    def test_menu_morto_ou_prazo_esgotado_abre_a_reserva_na_hora(self):
+        self.assertEqual(tw.tela_do_tempo(True, False, False, False, False, False), "vigia")
+        self.assertEqual(tw.tela_do_tempo(True, False, True, True, False, False), "vigia")
+        self.assertEqual(
+            tw.decidir({"expired": True}, False, False, lambda: False, menu_vivo=False, espera_esgotada=False),
+            ["bloquear"],
+        )
+
+    def test_com_jogo_aberto_a_vigia_cobre_mesmo_se_o_menu_confirmou(self):
+        # o jogo ainda está na frente: a reserva cobre agora, sem buraco
+        self.assertEqual(tw.tela_do_tempo(True, True, True, False, True, False), "vigia")
+        self.assertEqual(
+            tw.decidir(
+                {"active": True, "expired": True}, False, False, lambda: False,
+                app_aberto=True, menu_mostrando=True, espera_esgotada=False,
+            ),
+            ["fechar_app", "bloquear"],
+        )
 
     def test_tempo_esgotado_com_app_na_frente_bloqueia(self):
         self.assertEqual(tw.decidir({"active": True, "expired": True}, False, False, lambda: False), ["bloquear"])
@@ -43,10 +92,12 @@ class DecidirTest(unittest.TestCase):
             tw.decidir({"active": True, "expired": True}, False, False, lambda: False, app_aberto=False),
         )
 
-    def test_bloqueio_aberto_continua_sem_perguntar(self):
+    def test_bloqueio_aberto_fica_ate_o_menu_confirmar(self):
+        # sem a confirmação, tirar a tela da vigia deixaria a criança sem bloqueio
         perguntou = mock.Mock(return_value=True)
         self.assertEqual(tw.decidir({"expired": True}, True, True, perguntou), ["bloquear", "fechar_aviso"])
         perguntou.assert_not_called()
+        self.assertEqual(tw.tela_do_tempo(False, True, True, True, False, True), "nenhuma")
 
     def test_tempo_estendido_em_outro_lugar_fecha_a_tela(self):
         # roteiro 17: /api/timer/extend com o PIN certo não fechava a tela rosa
@@ -73,6 +124,34 @@ class DecidirRoteiro19Test(unittest.TestCase):
         self.assertEqual(tw.decidir({"expired": True}, False, False, perguntou, partida=True), [])
         perguntou.assert_not_called()
         self.assertEqual(tw.decidir({"expired": True}, False, False, perguntou, partida=False), ["bloquear"])
+
+
+class EsperaDoMenuTest(unittest.TestCase):
+    def test_o_prazo_comeca_quando_a_vigia_ve_o_tempo_acabado(self):
+        app = tw.WatchdogApp.__new__(tw.WatchdogApp)
+        app.expirou_em = None
+        with mock.patch.object(tw.time, "monotonic", return_value=10):
+            self.assertFalse(app._espera_esgotada(True))
+        self.assertEqual(app.expirou_em, 10)
+        with mock.patch.object(tw.time, "monotonic", return_value=10 + tw.ESPERA_DO_MENU):
+            self.assertTrue(app._espera_esgotada(True))
+        with mock.patch.object(tw.time, "monotonic", return_value=99):
+            self.assertTrue(app._espera_esgotada(False))
+        self.assertIsNone(app.expirou_em)
+
+
+class MenuWebConfirmaTest(unittest.TestCase):
+    def test_o_menu_web_avisa_so_com_a_tela_na_frente(self):
+        js = (Path(tw.__file__).resolve().parent.parent / "src" / "frontend" / "runtime-controls.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("/api/timer/tela", js)
+        self.assertIn('body:\'{"mostrando":true}\'', js)
+        self.assertIn("beni-cliente", js)
+        self.assertIn("document.hasFocus()", js)
+        # tempo estendido em outra tela: a do navegador sai na próxima consulta
+        self.assertIn("}else{\n        // tempo estendido em outra tela", js)
+        self.assertIn("hideTimerBlock();", js)
 
 
 class SairComPinTest(unittest.TestCase):
