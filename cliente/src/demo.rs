@@ -69,6 +69,7 @@ impl Demo {
             ("GET", "/api/features") => (200, Some(json!({"shutdownAvailable": false, "speechFeedbackAvailable": false}))),
             ("GET", "/api/update/status") => (200, Some(json!({"updateAvailable": false}))),
             ("GET", "/api/cliente/estado") => (200, Some(json!({"voltar": 0}))),
+            ("POST", "/api/timer/tela") => (200, Some(json!({"status": "ok"}))),
             ("POST", r) if r.starts_with("/launch/") => (204, None),
             ("POST", "/api/verify-pin") => (200, Some(json!({"valid": true}))),
             ("POST", "/api/profiles/select") => {

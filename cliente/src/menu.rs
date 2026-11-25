@@ -47,6 +47,13 @@ enum PassoTimer {
 /// tempo!" fecha sempre que o tempo deixa de estar esgotado: antes ela só fechava
 /// com o timer desligado, e o tempo estendido em outra tela a deixava aberta
 /// (no roteiro 17, até com o selo "10 min" depois de o menu reabrir).
+/// A vigia só fica com a tela se o menu não confirmar. Confirma quando a tela
+/// "Acabou o tempo!" está aberta e a janela do menu está na frente (conseguiu
+/// vir para a frente). Atrás de um jogo, não confirma: a vigia cobre o jogo.
+fn confirma_a_tela_do_timer(tela_aberta: bool, janela_ativa: bool) -> bool {
+    tela_aberta && janela_ativa
+}
+
 fn passo_do_timer(ativo: bool, esgotado: bool, aviso: bool, tela_aberta: bool, aviso_mostrado: bool) -> PassoTimer {
     if ativo && esgotado {
         return if tela_aberta { PassoTimer::Nada } else { PassoTimer::Esgotado };
@@ -184,6 +191,14 @@ mod testes_timer {
     }
 
     #[test]
+    fn confirma_so_com_a_tela_aberta_e_a_janela_na_frente() {
+        assert!(confirma_a_tela_do_timer(true, true));
+        assert!(!confirma_a_tela_do_timer(true, false));
+        assert!(!confirma_a_tela_do_timer(false, true));
+        assert!(!confirma_a_tela_do_timer(false, false));
+    }
+
+    #[test]
     fn aviso_e_timer_desligado() {
         assert_eq!(passo_do_timer(true, false, true, false, false), PassoTimer::Aviso);
         assert_eq!(passo_do_timer(true, false, true, false, true), PassoTimer::Nada);
@@ -271,6 +286,10 @@ pub struct Menu {
     aviso_timer: Option<(i64, u64)>,
     /// Consulta extra marcada para o fim exato do tempo (geração).
     fim_do_timer: u64,
+    /// Laço que avisa o servidor que esta tela "Acabou o tempo!" está na frente.
+    confirma_geracao: u64,
+    /// Já registrou no log que confirmou esta abertura da tela.
+    tela_avisada: bool,
     ultimo_expiry: f64,
     ultimos: HashMap<String, String>,
     // navegador (pais, sites embutidos, mídia)
@@ -318,6 +337,8 @@ impl Menu {
             travado_visto: 0,
             aviso_timer: None,
             fim_do_timer: 0,
+            confirma_geracao: 0,
+            tela_avisada: false,
             ultimo_expiry: 0.,
             ultimos,
             web: None,
@@ -467,6 +488,51 @@ impl Menu {
         });
     }
 
+    /// Enquanto a tela "Acabou o tempo!" estiver aberta, tenta vir para a frente
+    /// e, quando consegue, avisa o servidor (a cada 2 s) para a vigia fechar a dela.
+    fn comecar_aviso_da_tela(&mut self, cx: &mut Context<Self>) {
+        self.confirma_geracao = self.confirma_geracao.wrapping_add(1);
+        let g = self.confirma_geracao;
+        cx.spawn(async move |this, cx| {
+            loop {
+                let segue = this.update(cx, |m, cx| {
+                    if m.confirma_geracao != g {
+                        return false;
+                    }
+                    if !matches!(m.janela, Some(Janela::TimerEsgotado { .. })) {
+                        return false;
+                    }
+                    cx.spawn(async |_, _| trazer_para_frente()).detach();
+                    m.avisar_tela_se_na_frente(cx);
+                    true
+                });
+                if !segue.unwrap_or(false) {
+                    break;
+                }
+                cx.background_executor().timer(Duration::from_secs(2)).await;
+            }
+        })
+        .detach();
+    }
+
+    fn avisar_tela_se_na_frente(&mut self, cx: &mut Context<Self>) {
+        let aberta = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+        if !confirma_a_tela_do_timer(aberta, self.ativa) {
+            return;
+        }
+        if !self.tela_avisada {
+            self.tela_avisada = true;
+            log::info!("tela Acabou o tempo: o menu confirma");
+        }
+        self.tarefa(
+            cx,
+            |api| {
+                let _ = api.post("/api/timer/tela", Some(&json!({"mostrando": true})));
+            },
+            |_, _, _| {},
+        );
+    }
+
     fn atualizar_timer(&mut self, cx: &mut Context<Self>) {
         self.tarefa(cx, |api| api.get_json("/api/timer/status"), |m, r, cx| {
             let Some(v) = r else { return };
@@ -477,12 +543,18 @@ impl Menu {
             match passo_do_timer(ativo, esgotado, aviso, tela, m.aviso_timer_mostrado) {
                 PassoTimer::Esgotado => {
                     m.aviso_timer = None;
+                    m.tela_avisada = false;
                     m.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
+                    m.comecar_aviso_da_tela(cx);
+                    cx.spawn(async |_, _| trazer_para_frente()).detach();
+                    m.avisar_tela_se_na_frente(cx);
                 }
                 PassoTimer::FecharEsgotado => {
                     // tempo estendido em outro lugar (tela do watchdog, área dos pais, API)
                     // ou estado velho depois de o menu reabrir
                     m.janela = None;
+                    m.tela_avisada = false;
+                    m.confirma_geracao = m.confirma_geracao.wrapping_add(1);
                     m.aviso_timer_mostrado = aviso;
                 }
                 PassoTimer::Aviso => {
@@ -2585,6 +2657,8 @@ impl Menu {
         log::info!("janela do menu {}", if ativa { "ativa" } else { "inativa" });
         self.sujo = false;
         if ativa {
+            // a tela de tempo já pode estar armada desde que o jogo estava na frente
+            self.avisar_tela_se_na_frente(cx);
             self.atualizar_uso(cx);
             self.atualizar_disp(cx);
             self.atualizar_timer(cx);
