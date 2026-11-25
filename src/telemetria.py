@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import urllib.request
+from contextlib import contextmanager
 
 BASE = os.environ.get("BENIKIDS_TELEMETRIA_URL", "https://telemetria.benikids.app").rstrip("/")
 ENDERECO = BASE + "/v1/ping"
@@ -264,24 +265,198 @@ def tirar_da_fila(fila=None, maximo=20):
 
 # ------------------------------------------------------------------ estado local
 
+# Id deste processo, por arquivo. Se a leitura falhar no meio do envio, o próximo
+# POST usa este id em vez de sortear outro. Não vale para outro processo: o disco é
+# quem manda quando a leitura funciona.
+_memoria = {}
+_memoria_trava = threading.Lock()
+_ID_LOCAL = re.compile(r"^[0-9a-f]{32}$")
 
-def ler_estado(caminho):
+
+def _id_valido(valor):
+    return isinstance(valor, str) and _ID_LOCAL.fullmatch(valor) is not None
+
+
+def _lembrar(caminho, estado):
+    with _memoria_trava:
+        _memoria[os.path.abspath(caminho)] = dict(estado)
+
+
+def _lembrado(caminho):
+    with _memoria_trava:
+        estado = _memoria.get(os.path.abspath(caminho))
+        return dict(estado) if estado else None
+
+
+def _travar(fd):
+    """Trava exclusiva. No Windows o msvcrt trava 1 byte; nos outros, flock."""
+    if os.name == "nt":
+        import msvcrt
+
+        if os.lseek(fd, 0, os.SEEK_END) == 0:
+            os.write(fd, b"\0")
+        os.lseek(fd, 0, os.SEEK_SET)
+        prazo = time.time() + 5
+        while True:
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if time.time() >= prazo:
+                    raise
+                time.sleep(0.05)
+    import fcntl
+
+    fcntl.flock(fd, fcntl.LOCK_EX)
+
+
+def _destravar(fd):
+    if os.name == "nt":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _trava_estado(caminho):
+    pasta = os.path.dirname(caminho)
+    if pasta:
+        os.makedirs(pasta, exist_ok=True)
+    fd = os.open(caminho + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        _travar(fd)
+        yield
+    finally:
+        try:
+            _destravar(fd)
+        except OSError:
+            pass
+        os.close(fd)
+
+
+def _classificar(caminho):
+    """'ok' com o dict, 'ausente', 'invalido' (JSON ou id ruim) ou 'erro' de leitura."""
     try:
         with open(caminho, encoding="utf-8") as f:
             estado = json.load(f)
-        if isinstance(estado, dict) and re.fullmatch(r"[0-9a-f]{32}", str(estado.get("id", ""))):
-            return estado
-    except (OSError, ValueError):
-        pass
-    return {"id": secrets.token_hex(16), "ultimo_envio": 0}
+    except FileNotFoundError:
+        return "ausente", None
+    except ValueError:
+        return "invalido", None
+    except OSError:
+        return "erro", None
+    if not isinstance(estado, dict):
+        return "invalido", None
+    if not _id_valido(estado.get("id")):
+        return "invalido", estado
+    return "ok", estado
+
+
+def _gravar_atomico(caminho, estado):
+    """Grava noutro arquivo (nome com pid) e troca no lugar. O .tmp fixo antigo
+    podia ser escrito por dois ao mesmo tempo e nascia um JSON pela metade."""
+    pasta = os.path.dirname(caminho)
+    if pasta:
+        os.makedirs(pasta, exist_ok=True)
+    tmp = f"{caminho}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        dados_ = json.dumps(estado).encode("utf-8")
+        os.write(fd, dados_)
+        os.fsync(fd)
+    except Exception:
+        os.close(fd)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    os.close(fd)
+    try:
+        os.replace(tmp, caminho)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    if os.name != "nt" and pasta:
+        try:
+            dirfd = os.open(pasta, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(dirfd)
+        except OSError:
+            pass
+        finally:
+            os.close(dirfd)
+
+
+def ler_estado(caminho):
+    """O estado com um id estável, já gravado no disco.
+
+    None se não der para usar um id sem inventar outro: arquivo ilegível e este
+    processo ainda não leu um id, ou id novo que não coube no disco. Quem chama
+    não envia nesse caso.
+    """
+    try:
+        with _trava_estado(caminho):
+            return _ler_ou_criar_trancado(caminho)
+    except OSError:
+        return _lembrado(caminho)
+
+
+def _ler_ou_criar_trancado(caminho):
+    situacao, estado = "erro", None
+    for tentativa in range(3):
+        situacao, estado = _classificar(caminho)
+        if situacao != "erro":
+            break
+        if tentativa < 2:
+            time.sleep(0.02)
+    if situacao == "ok":
+        _lembrar(caminho, estado)
+        return dict(estado)
+    lembrado = _lembrado(caminho)
+    if situacao == "erro":
+        # Permissão ou falha passageira: não apaga o arquivo e não sorteia outro id.
+        return dict(lembrado) if lembrado else None
+    if lembrado and situacao == "invalido":
+        try:
+            _gravar_atomico(caminho, lembrado)
+        except OSError:
+            pass
+        return dict(lembrado)
+    if lembrado and situacao == "ausente":
+        try:
+            _gravar_atomico(caminho, lembrado)
+        except OSError:
+            return None
+        return dict(lembrado)
+    novo = dict(estado) if isinstance(estado, dict) else {}
+    novo["id"] = secrets.token_hex(16)
+    if not isinstance(novo.get("ultimo_envio"), (int, float)):
+        novo["ultimo_envio"] = 0
+    try:
+        _gravar_atomico(caminho, novo)
+    except OSError:
+        return None
+    _lembrar(caminho, novo)
+    return dict(novo)
 
 
 def gravar_estado(caminho, estado):
-    os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    temp = caminho + ".tmp"
-    with open(temp, "w", encoding="utf-8") as f:
-        json.dump(estado, f)
-    os.replace(temp, caminho)
+    if not isinstance(estado, dict) or not _id_valido(estado.get("id")):
+        raise OSError("estado da telemetria sem id")
+    with _trava_estado(caminho):
+        _gravar_atomico(caminho, estado)
+        _lembrar(caminho, estado)
 
 
 # ------------------------------------------------------------------ o computador
@@ -459,8 +634,8 @@ class Telemetria:
 
     def id(self):
         estado = ler_estado(self.caminho)
-        if not os.path.exists(self.caminho):
-            gravar_estado(self.caminho, estado)
+        if not estado:
+            raise OSError("não deu para ler o id da telemetria")
         return estado["id"]
 
     def previa(self):
@@ -468,8 +643,8 @@ class Telemetria:
 
     def previa_uso(self):
         try:
-            return relatorio_de_uso(self.ler_config(), self.ler_historico(),
-                                    ler_estado(self.caminho).get("uso_ate", ""))
+            estado = ler_estado(self.caminho) or {}
+            return relatorio_de_uso(self.ler_config(), self.ler_historico(), estado.get("uso_ate", ""))
         except Exception:  # noqa: BLE001
             return []
 
@@ -485,6 +660,10 @@ class Telemetria:
         if not ligada(cfg):
             return 0
         estado = ler_estado(self.caminho)
+        if not estado:
+            for item in itens:
+                relatar_problema(item.get("etapa"), item.get("detalhe"), item.get("assinatura"), self.fila)
+            return 0
         base = {"id": estado["id"], "versao": self.versao() or None,
                 "plataforma": "windows" if os.name == "nt" else "linux", "sistema": sistema()}
         enviados = 0
@@ -501,7 +680,11 @@ class Telemetria:
             cfg = self.ler_config()
         except Exception:  # noqa: BLE001
             return False
+        if not uso_ligado(cfg) and not os.path.exists(self.caminho):
+            return False
         estado = ler_estado(self.caminho)
+        if not estado:
+            return False
         if not uso_ligado(cfg):
             if estado.pop("uso_desde", None):  # desligou: se ligar de novo, conta a partir dali
                 gravar_estado(self.caminho, estado)
@@ -528,6 +711,8 @@ class Telemetria:
     def apagar_dados_enviados(self, cfg):
         """Pede ao servidor para apagar o uso das crianças e o registro deste computador."""
         estado = ler_estado(self.caminho)
+        if not estado:
+            return False
         criancas = [p["telemetryId"] for p in cfg.get("profiles", []) if p.get("telemetryId")]
         return self._enviar({"id": estado["id"], "criancas": criancas}, ENDERECO_APAGAR)
 
@@ -547,6 +732,8 @@ class Telemetria:
         except Exception:  # noqa: BLE001
             return False
         estado = ler_estado(self.caminho)
+        if not estado:
+            return False
         if self._agora() - float(estado.get("ultimo_envio") or 0) < INTERVALO:
             return False
         if not self._enviar(dados(estado["id"], self.versao(), self.menu())):
