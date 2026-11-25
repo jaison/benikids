@@ -44,6 +44,7 @@ PAUSA = 2.5  # segundos entre pedidos, para não levar "429 Too Many Requests"
 INICIO_SEGUNDOS = 120  # a thread do servidor espera o menu subir
 INTERVALO_SEGUNDOS = 30 * 60
 TRAVA_VELHA = 30 * 60  # trava esquecada por um processo que caiu
+ESPERA_TRAVA_SEGUNDOS = 1
 
 HOME = os.path.expanduser("~")
 
@@ -805,16 +806,36 @@ def _aplicar_e_gravar(caminhos, por_perfil, plataforma):
         log(caminhos.log, "config.json atualizado")
 
 
-def sincronizar(caminhos=None, baixar=None, plataforma=None, usar_trava=True):
+def _pegar_trava(caminhos, esperar, prazo):
+    """A trava é um arquivo. Se outra sync já baixou os perfis, quem chega
+    agora (o perfil recém-criado) espera e tenta de novo, senão lê o config
+    velho e o menino fica sem a coleção até o ciclo de 30 min.
+    """
+    fd = _adquirir_trava(caminhos.trava)
+    if fd is not None or not esperar:
+        if fd is None:
+            log(caminhos.log, "outra sincronização em andamento")
+        return fd
+    log(caminhos.log, "outra sincronização em andamento; esperando para tentar de novo")
+    limite = time.monotonic() + (TRAVA_VELHA if prazo is None else prazo)
+    while time.monotonic() < limite:
+        dormir(ESPERA_TRAVA_SEGUNDOS)
+        fd = _adquirir_trava(caminhos.trava)
+        if fd is not None:
+            return fd
+    log(caminhos.log, "outra sincronização em andamento")
+    return None
+
+
+def sincronizar(caminhos=None, baixar=None, plataforma=None, usar_trava=True, esperar_trava=False, prazo_trava=None):
     caminhos = caminhos or caminhos_padrao()
     baixar = baixar or baixar_rede
     plataforma = plataforma or _plataforma()
     fd = None
     try:
         if usar_trava:
-            fd = _adquirir_trava(caminhos.trava)
+            fd = _pegar_trava(caminhos, esperar_trava, prazo_trava)
             if fd is None:
-                log(caminhos.log, "outra sincronização em andamento")
                 return 0
         return _sincronizar(caminhos, baixar, plataforma)
     except Exception as erro:

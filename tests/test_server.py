@@ -2141,6 +2141,19 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual(salvo["config"]["gender"], "menino")
         self.assertFalse(any(i.startswith("bea-") for i in ids))
 
+    def test_sync_pedida_na_criacao_espera_a_trava(self):
+        self._sync.stop()
+        try:
+            with mock.patch.object(server_module.threading, "Thread") as thread:
+                server_module.agendar_sync_da_colecao()
+        finally:
+            self._sync.start()
+        self.assertEqual(thread.call_args.kwargs["target"], server_module.itch_sync.sincronizar)
+        self.assertTrue(thread.call_args.kwargs["kwargs"]["esperar_trava"])
+        self.assertEqual(thread.call_args.kwargs["kwargs"]["caminhos"].config, server_module.CFG)
+        self.assertTrue(thread.call_args.kwargs["daemon"])
+        thread.return_value.start.assert_called_once()
+
 
 class FrontendSafetyTests(unittest.TestCase):
     def test_frontend_uses_focused_external_assets(self):

@@ -1206,7 +1206,11 @@ def clear_timer():
 
 
 def agendar_sync_da_colecao():
-    """Busca a coleção do itch agora. O ciclo normal espera 2 min e depois 30."""
+    """Busca a coleção do itch agora. O ciclo normal espera 2 min e depois 30.
+
+    Se outra sincronização já estiver baixando, esta espera a trava e tenta
+    de novo. A que está no meio leu os perfis antes e não vê o perfil novo.
+    """
     try:
         caminhos = itch_sync.caminhos_padrao()
         caminhos.config = CFG
@@ -1214,7 +1218,7 @@ def agendar_sync_da_colecao():
         return
     threading.Thread(
         target=itch_sync.sincronizar,
-        kwargs={"caminhos": caminhos},
+        kwargs={"caminhos": caminhos, "esperar_trava": True},
         name="itch-sync-perfil",
         daemon=True,
     ).start()
