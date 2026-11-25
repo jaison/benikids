@@ -26,6 +26,7 @@ import zipfile
 
 REPO = "jaison/benikids"
 ASSET = "Benikids-Windows.zip"
+MANIFESTO = "manifesto-arquivos.txt"
 SEMVER = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)$")
 UA = {"User-Agent": "benikids-atualizador-windows", "Accept": "application/vnd.github+json"}
 INTERVALO = 20 * 3600  # procura de novo depois de 20 h
@@ -107,7 +108,8 @@ def extrair_com_cuidado(arquivo, destino):
 
 def conferir_pacote(raiz, versao):
     for preciso in ("instalar_windows.py", os.path.join("python", "pythonw.exe"),
-                    os.path.join("app", "server.py"), os.path.join("app", "version")):
+                    os.path.join("app", "server.py"), os.path.join("app", "version"),
+                    os.path.join("app", MANIFESTO)):
         if not os.path.exists(os.path.join(raiz, preciso)):
             raise RuntimeError(f"pacote incompleto: falta {preciso}")
     with open(os.path.join(raiz, "app", "version"), encoding="utf-8") as f:
@@ -197,9 +199,183 @@ def hora_de_atualizar(pronta, app_aberto, ocioso):
     return bool(pronta) and not app_aberto and ocioso >= OCIOSO_PARA_ATUALIZAR
 
 
+# Dentro da pasta do app, mas não são arquivos da versão: capas baixadas pelo itch,
+# o Python embutido, a config se um dia cair aqui, e logs. Na dúvida, não apaga.
+_PROTEGIDOS_PREFIXO = ("themes/covers", "python")
+_PROTEGIDOS_NOME = ("config.json", "config.json.bak", "config.json.novo")
+_LER_AGORA = object()
+
+
+def _normalizar_relativo(relativo):
+    """Caminho relativo seguro (sem absoluto, sem '..'), com barras '/', ou None."""
+    if not isinstance(relativo, str):
+        return None
+    rel = relativo.replace("\\", "/").strip()
+    if not rel or rel.startswith(("/", "#")) or (len(rel) >= 2 and rel[1] == ":"):
+        return None
+    partes = rel.split("/")
+    if any(parte in ("", ".", "..") for parte in partes):
+        return None
+    return "/".join(partes)
+
+
+def protegido(relativo):
+    """Dado do usuário, ou algo que não é arquivo do app. Não apagar."""
+    rel = _normalizar_relativo(relativo)
+    if rel is None:
+        return True
+    if rel == MANIFESTO or rel.endswith(".log"):
+        return True
+    baixo = rel.casefold()
+    if baixo in _PROTEGIDOS_NOME or baixo.split("/")[-1] in _PROTEGIDOS_NOME:
+        return True
+    for prefixo in _PROTEGIDOS_PREFIXO:
+        if baixo == prefixo or baixo.startswith(prefixo + "/"):
+            return True
+    return False
+
+
+def alvo_dentro(destino, relativo):
+    """Caminho absoluto do arquivo, só se continuar dentro de destino."""
+    rel = _normalizar_relativo(relativo)
+    if rel is None:
+        return None
+    destino = os.path.abspath(destino)
+    alvo = os.path.abspath(os.path.join(destino, *rel.split("/")))
+    if not alvo.startswith(destino + os.sep):
+        return None
+    return alvo
+
+
+def ler_manifesto(pasta):
+    """Conjunto de caminhos do manifesto, ou None se a pasta não tem a lista.
+
+    Linha inválida é ignorada. Arquivo vazio devolve conjunto vazio (a versão
+    disse que não tinha arquivos), diferente de None (instalação antiga, sem lista).
+    """
+    try:
+        with open(os.path.join(pasta, MANIFESTO), encoding="utf-8") as f:
+            texto = f.read(2 * 1024 * 1024)
+    except (OSError, UnicodeError):
+        return None
+    caminhos = set()
+    for linha in texto.splitlines():
+        rel = _normalizar_relativo(linha)
+        if rel is not None and not protegido(rel):
+            caminhos.add(rel)
+    return caminhos
+
+
+def gravar_manifesto(pasta):
+    """Grava a lista dos arquivos do app (a que o pacote do Windows leva)."""
+    pasta = os.path.abspath(pasta)
+    arquivos = []
+    for raiz, pastas, nomes in os.walk(pasta):
+        pastas[:] = [nome for nome in pastas if nome != "__pycache__"]
+        for nome in nomes:
+            if nome == MANIFESTO:
+                continue
+            caminho = os.path.join(raiz, nome)
+            if os.path.islink(caminho) or not os.path.isfile(caminho):
+                continue
+            rel = _normalizar_relativo(os.path.relpath(caminho, pasta).replace(os.sep, "/"))
+            if rel is None or protegido(rel):
+                continue
+            arquivos.append(rel)
+    arquivos.sort()
+    destino = os.path.join(pasta, MANIFESTO)
+    temp = destino + ".novo"
+    with open(temp, "w", encoding="utf-8", newline="\n") as f:
+        if arquivos:
+            f.write("\n".join(arquivos) + "\n")
+    os.replace(temp, destino)
+    return arquivos
+
+
+def _apagar_pycache(destino, log):
+    """Apaga pastas __pycache__ dentro do app. Não entra em capas nem no Python."""
+    destino = os.path.abspath(destino)
+    apagadas = 0
+    for raiz, pastas, _nomes in os.walk(destino):
+        rel_raiz = os.path.relpath(raiz, destino).replace(os.sep, "/")
+        if rel_raiz == ".":
+            rel_raiz = ""
+        ficar = []
+        for nome in pastas:
+            rel = f"{rel_raiz}/{nome}" if rel_raiz else nome
+            if protegido(rel):
+                continue
+            if nome == "__pycache__":
+                alvo = os.path.join(raiz, nome)
+                try:
+                    shutil.rmtree(alvo)
+                    apagadas += 1
+                except OSError as erro:
+                    log(f"limpeza: não consegui apagar {rel} ({erro})")
+                continue
+            ficar.append(nome)
+        pastas[:] = ficar
+    if apagadas == 1:
+        log("limpeza: apaguei 1 pasta __pycache__ velha")
+    elif apagadas:
+        log(f"limpeza: apaguei {apagadas} pastas __pycache__ velhas")
+    else:
+        log("limpeza: nenhum __pycache__ velho")
+    return apagadas
+
+
+def limpar_arquivos_velhos(destino, pasta_nova, anterior=_LER_AGORA, log=None):
+    """Apaga do app instalado o que saiu desta versão, e os __pycache__ velhos.
+
+    anterior é a lista lida ANTES de copiar o pacote por cima (senão a lista nova
+    esconde a antiga). Passe None se a versão anterior não tinha lista: aí apaga
+    só os __pycache__. Sem o argumento, a lista é lida agora. Sem lista no pacote
+    novo, também apaga só os __pycache__. Nunca apaga fora de destino, nem capas,
+    config, logs ou o Python embutido. Arquivo em uso fica para a próxima vez;
+    a instalação segue.
+    """
+    log = log or (lambda _texto: None)
+    destino = os.path.abspath(destino)
+    if anterior is _LER_AGORA:
+        anterior = ler_manifesto(destino)
+    novo = ler_manifesto(pasta_nova) if pasta_nova else None
+    apagados = []
+    if novo is None:
+        log("limpeza: o pacote novo não trouxe a lista de arquivos; apaguei só os __pycache__")
+    elif anterior is None:
+        log("limpeza: sem lista da versão anterior; apaguei só os __pycache__")
+    else:
+        novas = {caminho.casefold() for caminho in novo}
+        for rel in sorted(anterior):
+            if rel.casefold() in novas or protegido(rel):
+                continue
+            alvo = alvo_dentro(destino, rel)
+            if alvo is None or os.path.islink(alvo) or not os.path.isfile(alvo):
+                if alvo is not None and os.path.lexists(alvo):
+                    log(f"limpeza: deixei {rel}")
+                continue
+            try:
+                os.remove(alvo)
+            except OSError as erro:
+                log(f"limpeza: não consegui apagar {rel} ({erro})")
+                continue
+            apagados.append(rel)
+        if apagados:
+            mostra = ", ".join(apagados[:8])
+            if len(apagados) > 8:
+                mostra += f" e mais {len(apagados) - 8}"
+            palavra = "arquivo que saiu" if len(apagados) == 1 else "arquivos que saíram"
+            log(f"limpeza: apaguei {len(apagados)} {palavra} desta versão: {mostra}")
+        else:
+            log("limpeza: nenhum arquivo velho para apagar")
+    _apagar_pycache(destino, log)
+    return apagados
+
+
 def aplicar_e_sair(raiz_pacote, log=print):
     """Chama o instalador da versão nova (com o Python dela) e devolve True: o iniciador
-    deve sair logo, para o instalador poder trocar os arquivos e abrir o Benikids de novo."""
+    deve sair logo, para o instalador poder trocar os arquivos, apagar os que saíram
+    da versão e abrir o Benikids de novo."""
     pythonw = os.path.join(raiz_pacote, "python", "pythonw.exe")
     argv = [pythonw, os.path.join(raiz_pacote, "instalar_windows.py"), "--atualizacao", str(os.getpid())]
     try:
