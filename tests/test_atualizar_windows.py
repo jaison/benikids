@@ -248,6 +248,23 @@ class LimpaArquivosVelhosTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.destino, "timer_fim.py")))
         self.assertTrue(any("não consegui apagar timer_fim.py" in linha for linha in self.logs))
 
+    def test_a_locked_file_stays_on_the_list_for_the_next_install(self):
+        # a cópia já gravou a lista nova, sem o arquivo que não saiu
+        escrever(self.destino, "timer_fim.py")
+        lista(self.destino, ["server.py"])
+        lista(self.novo, ["server.py"])
+        real = os.remove
+
+        def remove(caminho):
+            if caminho.endswith("timer_fim.py"):
+                raise OSError("em uso")
+            real(caminho)
+
+        with mock.patch("atualizar_windows.os.remove", side_effect=remove):
+            self.limpar(anterior={"server.py", "timer_fim.py"})
+        self.assertIn("timer_fim.py", aw.ler_manifesto(self.destino))
+        self.assertTrue(any("próxima instalação" in linha for linha in self.logs))
+
     def test_does_not_remove_a_directory_or_a_symlink(self):
         os.makedirs(os.path.join(self.destino, "pasta_velha"))
         alvo = escrever(self.destino, "server.py", "fica")

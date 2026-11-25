@@ -340,6 +340,7 @@ def limpar_arquivos_velhos(destino, pasta_nova, anterior=_LER_AGORA, log=None):
         anterior = ler_manifesto(destino)
     novo = ler_manifesto(pasta_nova) if pasta_nova else None
     apagados = []
+    falhas = []
     if novo is None:
         log("limpeza: o pacote novo não trouxe a lista de arquivos; apaguei só os __pycache__")
     elif anterior is None:
@@ -357,6 +358,7 @@ def limpar_arquivos_velhos(destino, pasta_nova, anterior=_LER_AGORA, log=None):
             try:
                 os.remove(alvo)
             except OSError as erro:
+                falhas.append(rel)
                 log(f"limpeza: não consegui apagar {rel} ({erro})")
                 continue
             apagados.append(rel)
@@ -368,8 +370,35 @@ def limpar_arquivos_velhos(destino, pasta_nova, anterior=_LER_AGORA, log=None):
             log(f"limpeza: apaguei {len(apagados)} {palavra} desta versão: {mostra}")
         else:
             log("limpeza: nenhum arquivo velho para apagar")
+        if falhas:
+            _lembrar_para_a_proxima(destino, falhas, log)
     _apagar_pycache(destino, log)
     return apagados
+
+
+def _lembrar_para_a_proxima(destino, falhas, log):
+    """A cópia já gravou a lista nova, sem o arquivo que ficou em uso. Anota o nome
+    de novo, senão a próxima instalação não sabe que ele ainda precisa sair."""
+    caminho = os.path.join(destino, MANIFESTO)
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            texto = f.read()
+    except OSError:
+        texto = ""
+    linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
+    existentes = {linha.casefold() for linha in linhas}
+    extras = [rel for rel in falhas if rel.casefold() not in existentes and not protegido(rel)]
+    if not extras:
+        return
+    prefixo = "\n" if texto and not texto.endswith("\n") else ""
+    try:
+        with open(caminho, "a", encoding="utf-8", newline="\n") as f:
+            f.write(prefixo + "".join(rel + "\n" for rel in extras))
+    except OSError as erro:
+        log(f"limpeza: não anotei o que ficou em uso ({erro})")
+        return
+    for rel in extras:
+        log(f"limpeza: {rel} ficou em uso; tento de novo na próxima instalação")
 
 
 def aplicar_e_sair(raiz_pacote, log=print):
