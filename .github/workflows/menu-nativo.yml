@@ -174,6 +174,18 @@ jobs:
           cp themes/*.jpg "$P/app/themes/themes/"
           tr -d ' \n' < VERSION > "$P/app/version"
           cp menu/beni-menu.exe "$P/app/"
+          # Lista do que esta versão instala. Na hora de instalar ou atualizar, o que
+          # estava na lista anterior e não está nesta é apagado (arquivo velho não fica
+          # para ser importado por engano). Capas, config e logs não entram na lista.
+          python3 -c 'import sys; sys.path.insert(0, "src"); import atualizar_windows; arquivos = atualizar_windows.gravar_manifesto(sys.argv[1]); print("manifesto:", len(arquivos), "arquivos")' "$P/app"
+          test -s "$P/app/manifesto-arquivos.txt"
+          grep -qx 'server.py' "$P/app/manifesto-arquivos.txt"
+          grep -qx 'beni-menu.exe' "$P/app/manifesto-arquivos.txt"
+          grep -qx 'version' "$P/app/manifesto-arquivos.txt"
+          if grep -qE '^(themes/covers(/|$)|python(/|$)|config\.json$)' "$P/app/manifesto-arquivos.txt"; then
+            echo "manifesto listou dado que não pode ser apagado" >&2
+            exit 1
+          fi
           python3 scripts/windows/config-padrao.py "$P/config-padrao.json"
           cp scripts/windows/instalar_windows.py "$P/"
           # pythonw: sem a janela preta do console (os avisos do instalador são janelas)
