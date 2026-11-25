@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import datetime
 import http.server
 import json
 import os
@@ -627,35 +628,159 @@ def _fetch_remote_text(url, timeout=5):
 # Estado do atualizador automático deste projeto (beni/sistema/beni-atualizar).
 AUTO_UPDATE_STATE = "/var/lib/beni-launcher/estado.json"
 AUTO_UPDATE_TIMER = "/etc/systemd/system/beni-atualizar-verificar.timer"
+# O botão dos pais só cria este arquivo. O systemd (root) vê a mudança e roda
+# beni-atualizar verificar. A pasta é 1777, criada pelo instalar-sistema.sh;
+# o clique não precisa de root e o conteúdo do arquivo não vira comando.
+GATILHO_ATUALIZACAO = "/var/lib/beni-launcher/gatilho/agora"
+# O timer do Linux é de hora em hora. Mais de 3 h sem procura: não dizer "em dia".
+LINUX_VERIFICACAO_RECENTE = 3 * 3600
+_SEMVER_ATUALIZACAO = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
-def auto_update_status(state_file=AUTO_UPDATE_STATE, timer_file=AUTO_UPDATE_TIMER):
-    """O que o atualizador automático já fez: versão baixada, última verificação, erro."""
+def _ler_estado_atualizador(state_file):
     try:
         with open(state_file, encoding="utf-8") as handle:
             state = json.load(handle)
-        if not isinstance(state, dict):
-            state = {}
+        return state if isinstance(state, dict) else {}
     except (OSError, ValueError):
-        state = {}
+        return {}
+
+
+def _frase_quando_iso(texto, agora):
+    """'agora', 'às HH:MM' ou 'em DD/MM/AAAA às HH:MM' a partir de um ISO do atualizador."""
+    try:
+        quando = datetime.datetime.fromisoformat(texto)
+    except (TypeError, ValueError):
+        return None
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=agora.tzinfo)
+    delta = (agora - quando).total_seconds()
+    if 0 <= delta < 120:
+        return "agora"
+    local = quando.astimezone(agora.tzinfo)
+    hora = local.strftime("%H:%M")
+    if local.date() == agora.date():
+        return f"às {hora}"
+    return local.strftime("em %d/%m/%Y às %H:%M")
+
+
+def _versao_maior(candidata, instalada):
+    """True se candidata é uma versão publicada mais nova que a instalada."""
+    def partes(valor):
+        achado = _SEMVER_ATUALIZACAO.match((valor or "").strip())
+        return tuple(int(x) for x in achado.groups()) if achado else None
+
+    nova, velha = partes(candidata), partes(instalada)
+    if not nova:
+        return False
+    if not velha:
+        return True
+    return nova > velha
+
+
+def _erro_linux_para_os_pais(erro):
+    if not isinstance(erro, str) or not erro.strip():
+        return None
+    baixo = erro.lower()
+    if "sem acesso" in baixo or "github respondeu" in baixo:
+        return "Não deu para verificar (sem internet?)."
+    if "falha ao baixar" in baixo:
+        return "Não deu para baixar a atualização."
+    if "falhou ao instalar" in baixo:
+        return erro.split(":", 1)[0].strip().capitalize()
+    return erro
+
+
+def mensagem_atualizacao_linux(state, installed, auto, agora=None):
+    """(texto, tipo) da área dos pais no Linux. Não diz 'em dia' sem procura recente."""
+    agora = agora or datetime.datetime.now().astimezone()
+    if not auto:
+        return ("Atualizações automáticas desligadas neste computador "
+                "(rode ./instalar.sh para ligar).", "error")
+    if state.get("verificando"):
+        return "Procurando atualizações…", "empty"
+    staged = state.get("baixada") if isinstance(state.get("baixada"), str) else None
+    erro = _erro_linux_para_os_pais(state.get("erro"))
+    if staged:
+        if state.get("forcada"):
+            extra = "Vai ser instalada assim que nenhum app estiver aberto."
+        else:
+            extra = ("Vai ser instalada quando o notebook for ligado de novo "
+                     "(ou de madrugada, se ficar ligado).")
+        texto = f"Versão {staged} baixada. {extra}"
+        if erro:
+            texto += " ⚠ " + erro
+        return texto, "success"
+    if erro:
+        return erro, "error"
+    disponivel = state.get("disponivel") if isinstance(state.get("disponivel"), str) else None
+    if not staged and _versao_maior(disponivel, installed):
+        # A Release saiu, mas o binário do menu ainda não veio no CI.
+        return (f"A versão {disponivel} saiu, mas o pacote ainda não está pronto. "
+                "Vou tentar de novo sozinho.", "empty")
+    ultima = state.get("ultimaVerificacao") if isinstance(state.get("ultimaVerificacao"), str) else None
+    quando = _frase_quando_iso(ultima, agora) if ultima else None
+    if quando is None:
+        return "Ainda não procurei se há uma versão nova. Toque em Ver atualizações.", "empty"
+    try:
+        instante = datetime.datetime.fromisoformat(ultima)
+        if instante.tzinfo is None:
+            instante = instante.replace(tzinfo=agora.tzinfo)
+        idade = (agora - instante).total_seconds()
+    except (TypeError, ValueError):
+        idade = None
+    if idade is None or idade >= LINUX_VERIFICACAO_RECENTE or idade < 0:
+        return (f"A última verificação foi {quando}. "
+                "Toque em Ver atualizações para procurar de novo.", "empty")
+    return f"Você tem a versão mais nova ({installed}). Verificado {quando}.", "success"
+
+
+def pedir_verificacao_linux(caminho=GATILHO_ATUALIZACAO):
+    """Pede a procura agora, sem root: só grava o arquivo que o systemd vigia.
+
+    Devolve 'pedido' ou 'indisponivel' (a pasta ainda não existe nesta versão
+    do sistema, ou não dá para gravar). Não cria a pasta: o pai dela guarda o
+    pacote baixado e não pode ficar gravável pela criança.
+    """
+    try:
+        fd = os.open(caminho, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    except OSError:
+        return "indisponivel"
+    try:
+        os.write(fd, b"1\n")
+    except OSError:
+        return "indisponivel"
+    finally:
+        os.close(fd)
+    return "pedido"
+
+
+def auto_update_status(state_file=AUTO_UPDATE_STATE, timer_file=AUTO_UPDATE_TIMER, agora=None):
+    """O que o atualizador automático já fez: versão baixada, última verificação, erro."""
+    state = _ler_estado_atualizador(state_file)
     installed = get_version()
     staged = state.get("baixada") if isinstance(state.get("baixada"), str) else None
     latest = state.get("disponivel") if isinstance(state.get("disponivel"), str) else installed
     def text(key, limit=300):
         value = state.get(key)
         return value[:limit] if isinstance(value, str) else None
+    auto = os.path.isfile(timer_file)
+    mensagem, tipo = mensagem_atualizacao_linux(state, installed, auto, agora)
     return {
         "installedVersion": installed,
         "latestVersion": staged or latest,
         "source": "release",
         "updateAvailable": False,   # instala sozinho: sem botão "Atualizar agora"
-        "autoUpdate": os.path.isfile(timer_file),
+        "autoUpdate": auto,
         "staged": staged,
         "forced": bool(state.get("forcada")) and bool(staged),
         "lastCheck": text("ultimaVerificacao", 40),
         "installedAt": text("instaladaEm", 40),
         "lastError": text("erro"),
         "notes": text("notas", 1000),
+        "checking": bool(state.get("verificando")),
+        "message": mensagem,
+        "messageKind": tipo,
     }
 
 
@@ -669,7 +794,7 @@ def windows_update_status():
         "installedVersion": installed,
         "latestVersion": estado["baixada"] or installed,
         "source": "release",
-        "updateAvailable": False,   # instala sozinho: sem botão "Atualizar agora"
+        "updateAvailable": False,   # instala sozinho: sem botão "Instalar agora"
         "autoUpdate": True,
         "staged": estado["baixada"],
         "forced": False,
@@ -677,8 +802,10 @@ def windows_update_status():
         "installedAt": None,
         "lastError": estado["erro"],
         "notes": None,
-        "installHint": "Vai ser instalada quando o Benikids abrir de novo, ou quando o computador "
-                       "ficar 20 minutos parado no menu.",
+        "checking": False,
+        "message": estado["texto"],
+        "messageKind": estado["tipo"],
+        "installHint": "Vai ser instalada quando o computador ficar parado no menu.",
     }
 
 
@@ -686,6 +813,32 @@ def get_update_status(timeout=5):
     if os.name == "nt":
         return windows_update_status()
     return auto_update_status()
+
+
+def verificar_atualizacao_agora():
+    """O botão Ver atualizações. No Windows procura no GitHub agora (ignora as 6 h).
+    No Linux pede ao serviço do systemd por um arquivo; o clique não precisa de root."""
+    if os.name == "nt":
+        import atualizar_windows
+
+        try:
+            atualizar_windows.verificar(APP_ROOT, forcar=True)
+        except Exception as exc:  # noqa: BLE001 — o texto sai do estado gravado
+            log_runtime_event(
+                "update.failed",
+                level="warning",
+                exceptionType=type(exc).__name__,
+            )
+        return windows_update_status()
+    status = auto_update_status()
+    if not status.get("autoUpdate"):
+        return status
+    status["pending"] = pedir_verificacao_linux() == "pedido"
+    if not status["pending"]:
+        status["message"] = ("Não deu para pedir a verificação agora. "
+                             "As atualizações automáticas seguem de hora em hora.")
+        status["messageKind"] = "empty"
+    return status
 
 
 def legacy_update_status(timeout=5):
@@ -2457,6 +2610,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 )
             except Exception as e:
                 self.json_response({"status": "error", "message": str(e)}, 500)
+            return
+        if action == "api/update/verificar":
+            if not self.require_admin():
+                return
+            try:
+                status = verificar_atualizacao_agora()
+            except Exception as exc:  # noqa: BLE001
+                log_runtime_event(
+                    "update.failed",
+                    level="warning",
+                    exceptionType=type(exc).__name__,
+                )
+                self.json_response(
+                    {"message": "Não deu para verificar (sem internet?).", "messageKind": "error"},
+                    503,
+                )
+                return
+            log_runtime_event("update.forced", pending=bool(status.get("pending")))
+            self.json_response(status)
             return
         if action == "api/install-package":
             if not self.require_admin():

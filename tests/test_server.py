@@ -2393,6 +2393,11 @@ class FrontendSafetyTests(unittest.TestCase):
         self.assertIn("window.location='/media.html?tile='", launch_function)
         self.assertNotIn("special:browser:", launch_function)
         self.assertNotIn("special:external-browser:", launch_function)
+        self.assertIn("showLaunchWarning(tile,status)", launch_function)
+        aviso = source[source.index("function showLaunchWarning"):source.index("async function launchTile")]
+        self.assertIn("tile.label", aviso)
+        self.assertIn("status==='missing'", aviso)
+        self.assertIn("ainda não está instalado", aviso)
 
     def test_cover_media_library_is_local_bilingual_and_safe_dom_rendered(self):
         root = REPOSITORY_ROOT / "src"
@@ -2441,6 +2446,7 @@ class FrontendSafetyTests(unittest.TestCase):
     def test_frontend_uses_the_local_update_status_endpoint(self):
         source = frontend_source()
         self.assertIn("fetch('/api/update/status'", source)
+        self.assertIn("fetch('/api/update/verificar'", source)
         self.assertNotIn("raw.githubusercontent.com/TrissyGE/cozy-kids-launcher/main/VERSION", source)
 
     def test_diagnostics_download_is_local_and_bilingual(self):

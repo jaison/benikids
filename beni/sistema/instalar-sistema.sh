@@ -91,9 +91,14 @@ install -D -m 0755 "$AQUI/beni-atualizar" /usr/local/sbin/beni-atualizar
 install -d -m 0755 /usr/local/lib/beni-launcher
 install -m 0755 "$AQUI/instalar-sistema.sh" /usr/local/lib/beni-launcher/instalar-sistema.sh
 install -m 0644 "$AQUI/pacotes-apt.txt" "$AQUI/pacotes-flatpak.txt" /usr/local/lib/beni-launcher/
-for unit in beni-atualizar-verificar.service beni-atualizar-verificar.timer beni-atualizar-aplicar.service; do
+for unit in beni-atualizar-verificar.service beni-atualizar-verificar.timer beni-atualizar-aplicar.service beni-atualizar-agora.path; do
   install -m 0644 "$AQUI/$unit" "/etc/systemd/system/$unit"
 done
+# A pasta do estado fica só do root (o pacote baixado mora ali). O gatilho é
+# outra pasta, gravável, para o botão "Ver atualizações" pedir uma procura
+# sem senha de administrador. O systemd só reage ao arquivo existir.
+install -d -m 0755 /var/lib/beni-launcher
+install -d -m 1777 /var/lib/beni-launcher/gatilho
 install -d -m 0755 /etc/beni-launcher
 if [[ ! -f /etc/beni-launcher/atualizar.conf ]]; then
   cat > /etc/beni-launcher/atualizar.conf <<EOF
@@ -125,4 +130,6 @@ if [[ $ATUALIZACAO -eq 1 ]]; then
 else
   systemctl enable --now beni-atualizar-verificar.timer >/dev/null
 fi
+systemctl enable --now beni-atualizar-agora.path >/dev/null \
+  || aviso "não consegui ligar o botão Ver atualizações (as procuras de hora em hora continuam)"
 echo "  atualizador ligado: $(systemctl is-enabled beni-atualizar-verificar.timer) (veja: beni-atualizar estado)"

@@ -1,11 +1,15 @@
 import hashlib
+import http.client
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
+import urllib.error
 import zipfile
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -51,12 +55,23 @@ class AtualizarWindowsTests(unittest.TestCase):
             "https://exemplo/sha": f"{soma}  {aw.ASSET}\n".encode(),
         }
         self.pedidos = []
+        self.respostas = respostas
 
         def abrir(url, timeout=30):
             self.pedidos.append(url)
-            return io.BytesIO(respostas[url])
+            dado = self.respostas[url]
+            if isinstance(dado, Exception):
+                raise dado
+            return io.BytesIO(dado)
 
         return abrir
+
+    def publicar(self, versao):
+        dados = pacote_zip(versao)
+        self.respostas["https://api.github.com/repos/jaison/benikids/releases/latest"] = json.dumps(
+            release(versao)).encode()
+        self.respostas["https://exemplo/zip"] = dados
+        self.respostas["https://exemplo/sha"] = f"{hashlib.sha256(dados).hexdigest()}  {aw.ASSET}\n".encode()
 
     def test_only_newer_published_releases_with_the_package_count(self):
         self.assertIsNotNone(aw.release_nova(release("1.0.5"), "1.0.4"))
@@ -84,13 +99,19 @@ class AtualizarWindowsTests(unittest.TestCase):
 
     def test_parents_see_the_downloaded_version_and_failures(self):
         vazio = aw.estado_para_os_pais(self.app, self.base)
-        self.assertEqual(vazio, {"baixada": None, "ultimaVerificacao": None, "erro": None})
+        self.assertIsNone(vazio["baixada"])
+        self.assertIsNone(vazio["ultimaVerificacao"])
+        self.assertIsNone(vazio["erro"])
+        self.assertIn("Ainda não procurei", vazio["texto"])
+        self.assertNotIn("versão mais nova", vazio["texto"])
         abrir = self.servidor(release("1.0.5"), pacote_zip("1.0.5"))
         aw.verificar(self.app, self.base, abrir, agora=1000)
         estado = aw.estado_para_os_pais(self.app, self.base)
         self.assertEqual(estado["baixada"], "1.0.5")
         self.assertTrue(estado["ultimaVerificacao"])
         self.assertIsNone(estado["erro"])
+        self.assertIn("Versão 1.0.5 baixada", estado["texto"])
+        self.assertIn("parado no menu", estado["texto"])
         aw.marcar_falha("1.0.5", self.base)
         self.assertIn("1.0.5", aw.estado_para_os_pais(self.app, self.base)["erro"])
 
@@ -118,6 +139,163 @@ class AtualizarWindowsTests(unittest.TestCase):
         aw.marcar_falha("1.0.5", self.base)
         self.assertIsNone(aw.pendente(self.app, self.base))
 
+    def test_force_ignores_the_interval_and_the_minute_limit_holds(self):
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000))
+        self.assertEqual(len(self.pedidos), 1)
+
+        self.publicar("1.0.5")
+        self.pedidos.clear()
+        # dentro das 6 h a procura automática não fala com o GitHub
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=2000))
+        self.assertEqual(self.pedidos, [])
+        # o botão ignora as 6 h e baixa
+        self.assertEqual(aw.verificar(self.app, self.base, abrir, agora=2000, forcar=True), "1.0.5")
+        self.assertTrue(self.pedidos)
+
+        self.publicar("1.0.6")
+        self.pedidos.clear()
+        # menos de um minuto: nem o botão pergunta de novo
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=2030, forcar=True))
+        self.assertEqual(self.pedidos, [])
+        self.assertEqual(aw.verificar(self.app, self.base, abrir, agora=2000 + 61, forcar=True), "1.0.6")
+        self.assertTrue(self.pedidos)
+
+    def test_each_state_has_an_honest_sentence(self):
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
+        self.assertIn("Ainda não procurei", texto)
+        self.assertNotIn("versão mais nova", texto)
+        self.assertEqual(tipo, "empty")
+
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000, forcar=True))
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
+        self.assertEqual(texto, "Você tem a versão mais nova (1.0.4). Verificado agora.")
+        self.assertEqual(tipo, "success")
+        texto, _tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 180)
+        self.assertTrue(texto.startswith("Você tem a versão mais nova (1.0.4). Verificado às "))
+        self.assertNotIn("Em dia", texto)
+
+        self.publicar("1.0.5")
+        self.assertEqual(aw.verificar(self.app, self.base, abrir, agora=1000 + 180, forcar=True), "1.0.5")
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 180)
+        self.assertEqual(
+            texto,
+            "Versão 1.0.5 baixada; vai ser instalada quando o computador ficar parado no menu.",
+        )
+        self.assertEqual(tipo, "success")
+
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 180 + aw.INTERVALO)
+        # a versão baixada continua valendo, mesmo se a procura já é antiga
+        self.assertIn("Versão 1.0.5 baixada", texto)
+
+    def test_offline_is_not_reported_as_up_to_date_and_retries_sooner(self):
+        def abrir(url, timeout=30):
+            self.pedidos.append(url)
+            raise urllib.error.URLError("offline")
+
+        self.pedidos = []
+        with self.assertRaises(aw.FalhaDeRede):
+            aw.verificar(self.app, self.base, abrir, agora=1000, forcar=True)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
+        self.assertEqual(texto, "Não deu para verificar (sem internet?).")
+        self.assertEqual(tipo, "error")
+        self.assertNotIn("versão mais nova", texto)
+
+        self.pedidos.clear()
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1030, forcar=True))
+        self.assertEqual(self.pedidos, [])
+        # a procura automática não espera 6 h quando a última nem chegou ao GitHub
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000 + 10 * 60))
+        self.assertEqual(self.pedidos, [])
+        with self.assertRaises(aw.FalhaDeRede):
+            aw.verificar(self.app, self.base, abrir, agora=1000 + aw.REPETIR_SEM_REDE)
+        self.assertTrue(self.pedidos)
+
+    def test_a_check_that_breaks_midway_is_not_the_newest_version(self):
+        def abrir_zip(erro):
+            def abrir(url, timeout=30):
+                self.pedidos.append(url)
+                if url == "https://exemplo/zip":
+                    raise erro
+                return io.BytesIO(self.respostas[url])
+            return abrir
+
+        for erro in (ConnectionResetError("reset"), http.client.IncompleteRead(b"pedaco")):
+            with self.subTest(erro=type(erro).__name__):
+                shutil.rmtree(self.base, ignore_errors=True)
+                aw.verificar(self.app, self.base, self.servidor(release("1.0.4"), pacote_zip("1.0.4")), agora=1000)
+                self.publicar("1.0.5")
+                self.pedidos.clear()
+                with self.assertRaises(aw.FalhaDeRede):
+                    aw.verificar(self.app, self.base, abrir_zip(erro), agora=1000 + 120, forcar=True)
+                texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+                self.assertNotIn("versão mais nova", texto)
+                self.assertIn("sem internet", texto)
+                self.assertEqual(tipo, "error")
+                estado = aw._estado(self.base)
+                self.assertTrue(estado.get("sem_rede"))
+                self.assertGreater(float(estado["tentado_em"]), float(estado["verificado_em"]))
+                self.pedidos.clear()
+                self.assertIsNone(aw.verificar(self.app, self.base, abrir_zip(erro), agora=1000 + 120 + 10 * 60))
+                self.assertEqual(self.pedidos, [])
+
+    def test_disk_full_during_download_is_not_the_newest_version(self):
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        aw.verificar(self.app, self.base, abrir, agora=1000)
+        self.publicar("1.0.5")
+        real_open = open
+
+        def open_sem_disco(path, mode="r", *args, **kwargs):
+            if os.path.basename(str(path)) == aw.ASSET and "w" in str(mode):
+                raise OSError(28, "No space left on device")
+            return real_open(path, mode, *args, **kwargs)
+
+        with mock.patch("builtins.open", open_sem_disco):
+            with self.assertRaises(OSError):
+                aw.verificar(self.app, self.base, abrir, agora=1000 + 120, forcar=True)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+        self.assertNotIn("versão mais nova", texto)
+        self.assertIn("Não deu para baixar", texto)
+        self.assertEqual(tipo, "error")
+        self.pedidos.clear()
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000 + 120 + 10 * 60))
+        self.assertEqual(self.pedidos, [])
+        with mock.patch("builtins.open", open_sem_disco):
+            with self.assertRaises(OSError):
+                aw.verificar(self.app, self.base, abrir, agora=1000 + 120 + aw.REPETIR_SEM_REDE)
+        self.assertTrue(self.pedidos)
+
+    def test_attempt_newer_than_the_last_success_does_not_claim_up_to_date(self):
+        aw._gravar_estado(self.base, verificado_em=1000, tentado_em=1000 + 120,
+                          sem_rede=False, erro_download=None)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+        self.assertNotIn("versão mais nova", texto)
+        self.assertEqual(tipo, "error")
+
+    def test_a_ready_version_that_already_failed_does_not_promise_to_install(self):
+        abrir = self.servidor(release("1.0.5"), pacote_zip("1.0.5"))
+        aw.verificar(self.app, self.base, abrir, agora=1000)
+        aw.marcar_falha("1.0.5", self.base)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
+        self.assertEqual(texto, "A versão 1.0.5 não conseguiu instalar.")
+        self.assertNotIn("vai ser instalada", texto)
+        self.assertEqual(tipo, "error")
+        self.publicar("1.0.6")
+        self.assertEqual(aw.verificar(self.app, self.base, abrir, agora=1000 + 120, forcar=True), "1.0.6")
+        aw.marcar_falha("1.0.5", self.base)
+        texto, _tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+        self.assertIn("Versão 1.0.6 baixada", texto)
+        self.assertIn("vai ser instalada", texto)
+        self.assertIn("A versão 1.0.5 não conseguiu instalar.", texto)
+
+    def test_a_check_older_than_the_interval_does_not_claim_the_newest_version(self):
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        aw.verificar(self.app, self.base, abrir, agora=1000)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + aw.INTERVALO)
+        self.assertNotIn("versão mais nova", texto)
+        self.assertIn("Toque em Ver atualizações", texto)
+        self.assertEqual(tipo, "empty")
 
 
 class HoraDeAtualizarTests(unittest.TestCase):

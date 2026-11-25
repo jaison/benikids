@@ -1215,8 +1215,7 @@ def run_scenarios(browser, release_fixture, installed_version, artifacts, restor
     )
     log_scenario("screen timer starts, renders its badge, and stops")
 
-    # Beni Launcher: as atualizações são automáticas (beni-atualizar); o botão só
-    # mostra o estado e nunca oferece "Atualizar agora".
+    # O botão procura agora. A instalação continua sozinha: sem "Atualizar agora".
     browser.click("[data-admin-section='system']")
     browser.click("#checkUpdateBtn")
     encoded_installed = json.dumps(installed_version)
@@ -1230,7 +1229,7 @@ def run_scenarios(browser, release_fixture, installed_version, artifacts, restor
         browser,
         "document.getElementById('updateRow').style.display === 'none' && "
         f"document.getElementById('versionDisplay').textContent.includes({encoded_installed}) && "
-        "/Atualiza[çc][õo]es autom[áa]ticas|Em dia|baixada/.test(document.getElementById('updateMsg').textContent)",
+        "/vers[ãa]o mais nova|baixada|procurei|verificar|Atualiza|hora em hora|Espere um minuto/i.test(document.getElementById('updateMsg').textContent)",
         "Automatic-update status was not rendered",
     )
     log_scenario("update panel shows the automatic-update status")
