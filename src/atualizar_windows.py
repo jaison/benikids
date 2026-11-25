@@ -16,6 +16,7 @@ não rascunho nem pré-release). O pacote do Windows vai anexado à Release pelo
 """
 
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -142,11 +143,30 @@ def _segundos_desde(estado, chave, agora):
     return delta
 
 
+def _procura_incompleta(estado):
+    """True se a última tentativa começou e não chegou a gravar verificado_em.
+
+    Nesse meio (rede caiu, disco cheio, leitura cortada) a versão instalada
+    não pode ser anunciada como a mais nova: a procura nem terminou.
+    """
+    try:
+        tentado = float(estado.get("tentado_em"))
+    except (TypeError, ValueError):
+        return False
+    verificado = estado.get("verificado_em")
+    if verificado is None:
+        return True
+    try:
+        return tentado > float(verificado)
+    except (TypeError, ValueError):
+        return True
+
+
 def _ler_url(abrir, url, timeout, limite):
     try:
         with abrir(url, timeout=timeout) as resposta:
             return resposta.read(limite)
-    except (urllib.error.URLError, TimeoutError) as erro:
+    except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException) as erro:
         raise FalhaDeRede("sem resposta") from erro
 
 
@@ -170,18 +190,26 @@ def _verificar(app_root, base, abrir, agora, repo, forcar):
     if tentativa is not None and 0 <= tentativa < MINIMO_ENTRE_VERIFICACOES:
         return None
     if not forcar:
-        if estado.get("sem_rede"):
+        # Rede ou procura cortada no meio: tenta de novo em meia hora.
+        # verificado_em antigo não pode segurar as 6 h.
+        if estado.get("sem_rede") or _procura_incompleta(estado):
             if tentativa is not None and 0 <= tentativa < REPETIR_SEM_REDE:
                 return None
         else:
             verificada = _segundos_desde(estado, "verificado_em", agora)
             if verificada is not None and 0 <= verificada < INTERVALO:
                 return None
-    _gravar_estado(base, tentado_em=agora, sem_rede=False)
+    # Não apaga sem_rede aqui. Se a procura quebrar no meio, o estado antigo
+    # (ou o except abaixo) continua dizendo que esta tentativa não terminou.
+    _gravar_estado(base, tentado_em=agora)
     try:
         return _procurar(app_root, base, abrir, agora, repo)
     except FalhaDeRede:
         _gravar_estado(base, sem_rede=True, erro_download=None)
+        raise
+    except Exception:
+        if not _estado(base).get("erro_download"):
+            _gravar_estado(base, sem_rede=False, erro_download=True)
         raise
 
 
@@ -217,9 +245,13 @@ def _procurar(app_root, base, abrir, agora, repo):
                     break
                 soma.update(bloco)
                 saida.write(bloco)
-    except (urllib.error.URLError, TimeoutError) as erro:
+    except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException) as erro:
         shutil.rmtree(trabalho, ignore_errors=True)
         raise FalhaDeRede("sem resposta") from erro
+    except OSError:
+        shutil.rmtree(trabalho, ignore_errors=True)
+        _gravar_estado(base, sem_rede=False, erro_download=True)
+        raise
     if soma.hexdigest() != esperado:
         shutil.rmtree(trabalho, ignore_errors=True)
         _gravar_estado(base, verificado_em=agora, sem_rede=False, erro_download=True)
@@ -266,13 +298,16 @@ def mensagem_para_os_pais(app_root, base=None, agora=None):
     baixada = pronta[0] if pronta and nova and (not instalada or nova > instalada) else None
     falhou = estado.get("falhou")
     aviso = f" A versão {falhou} não conseguiu instalar." if isinstance(falhou, str) and falhou else ""
+    if baixada and isinstance(falhou, str) and falhou == baixada:
+        # pendente() recusa esta versão: prometer a instalação engana o pai
+        return f"A versão {falhou} não conseguiu instalar.", "error"
     if baixada:
         texto = (f"Versão {baixada} baixada; vai ser instalada quando o computador "
                  "ficar parado no menu.")
         return texto + aviso, "error" if aviso else "success"
-    if estado.get("sem_rede"):
+    if estado.get("sem_rede") or (_procura_incompleta(estado) and not estado.get("erro_download")):
         return "Não deu para verificar (sem internet?).", "error"
-    if estado.get("erro_download"):
+    if estado.get("erro_download") or _procura_incompleta(estado):
         return "Não deu para baixar a atualização.", "error"
     ultima = _segundos_desde(estado, "verificado_em", agora)
     if ultima is None:

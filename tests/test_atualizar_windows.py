@@ -1,12 +1,15 @@
 import hashlib
+import http.client
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
 import urllib.error
 import zipfile
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -208,6 +211,83 @@ class AtualizarWindowsTests(unittest.TestCase):
         with self.assertRaises(aw.FalhaDeRede):
             aw.verificar(self.app, self.base, abrir, agora=1000 + aw.REPETIR_SEM_REDE)
         self.assertTrue(self.pedidos)
+
+    def test_a_check_that_breaks_midway_is_not_the_newest_version(self):
+        def abrir_zip(erro):
+            def abrir(url, timeout=30):
+                self.pedidos.append(url)
+                if url == "https://exemplo/zip":
+                    raise erro
+                return io.BytesIO(self.respostas[url])
+            return abrir
+
+        for erro in (ConnectionResetError("reset"), http.client.IncompleteRead(b"pedaco")):
+            with self.subTest(erro=type(erro).__name__):
+                shutil.rmtree(self.base, ignore_errors=True)
+                aw.verificar(self.app, self.base, self.servidor(release("1.0.4"), pacote_zip("1.0.4")), agora=1000)
+                self.publicar("1.0.5")
+                self.pedidos.clear()
+                with self.assertRaises(aw.FalhaDeRede):
+                    aw.verificar(self.app, self.base, abrir_zip(erro), agora=1000 + 120, forcar=True)
+                texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+                self.assertNotIn("versão mais nova", texto)
+                self.assertIn("sem internet", texto)
+                self.assertEqual(tipo, "error")
+                estado = aw._estado(self.base)
+                self.assertTrue(estado.get("sem_rede"))
+                self.assertGreater(float(estado["tentado_em"]), float(estado["verificado_em"]))
+                self.pedidos.clear()
+                self.assertIsNone(aw.verificar(self.app, self.base, abrir_zip(erro), agora=1000 + 120 + 10 * 60))
+                self.assertEqual(self.pedidos, [])
+
+    def test_disk_full_during_download_is_not_the_newest_version(self):
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        aw.verificar(self.app, self.base, abrir, agora=1000)
+        self.publicar("1.0.5")
+        real_open = open
+
+        def open_sem_disco(path, mode="r", *args, **kwargs):
+            if os.path.basename(str(path)) == aw.ASSET and "w" in str(mode):
+                raise OSError(28, "No space left on device")
+            return real_open(path, mode, *args, **kwargs)
+
+        with mock.patch("builtins.open", open_sem_disco):
+            with self.assertRaises(OSError):
+                aw.verificar(self.app, self.base, abrir, agora=1000 + 120, forcar=True)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+        self.assertNotIn("versão mais nova", texto)
+        self.assertIn("Não deu para baixar", texto)
+        self.assertEqual(tipo, "error")
+        self.pedidos.clear()
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000 + 120 + 10 * 60))
+        self.assertEqual(self.pedidos, [])
+        with mock.patch("builtins.open", open_sem_disco):
+            with self.assertRaises(OSError):
+                aw.verificar(self.app, self.base, abrir, agora=1000 + 120 + aw.REPETIR_SEM_REDE)
+        self.assertTrue(self.pedidos)
+
+    def test_attempt_newer_than_the_last_success_does_not_claim_up_to_date(self):
+        aw._gravar_estado(self.base, verificado_em=1000, tentado_em=1000 + 120,
+                          sem_rede=False, erro_download=None)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+        self.assertNotIn("versão mais nova", texto)
+        self.assertEqual(tipo, "error")
+
+    def test_a_ready_version_that_already_failed_does_not_promise_to_install(self):
+        abrir = self.servidor(release("1.0.5"), pacote_zip("1.0.5"))
+        aw.verificar(self.app, self.base, abrir, agora=1000)
+        aw.marcar_falha("1.0.5", self.base)
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
+        self.assertEqual(texto, "A versão 1.0.5 não conseguiu instalar.")
+        self.assertNotIn("vai ser instalada", texto)
+        self.assertEqual(tipo, "error")
+        self.publicar("1.0.6")
+        self.assertEqual(aw.verificar(self.app, self.base, abrir, agora=1000 + 120, forcar=True), "1.0.6")
+        aw.marcar_falha("1.0.5", self.base)
+        texto, _tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 120)
+        self.assertIn("Versão 1.0.6 baixada", texto)
+        self.assertIn("vai ser instalada", texto)
+        self.assertIn("A versão 1.0.5 não conseguiu instalar.", texto)
 
     def test_a_check_older_than_the_interval_does_not_claim_the_newest_version(self):
         abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
