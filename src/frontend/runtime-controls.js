@@ -1,5 +1,26 @@
 // Timer logic
 let timerWarningShown=false;
+let confirmaTelaTimer=null;
+let timerQuaseFim=null;
+// Avisa o servidor que esta tela "Acabou o tempo!" está na frente, para a vigia
+// não abrir a dela. A aba aberta pelo menu nativo (beni-cliente) esconde este
+// bloco: quem confirma é o menu nativo. Sem foco, a janela está atrás de um jogo.
+function confirmarTelaDoTimer(){
+  if(document.documentElement.classList.contains('beni-cliente')) return;
+  const bloco=document.getElementById('timerBlock');
+  if(!bloco||bloco.classList.contains('hidden')||!document.hasFocus()) return;
+  fetch('/api/timer/tela',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"mostrando":true}'}).catch(function(){});
+}
+function acompanharTelaDoTimer(){
+  confirmarTelaDoTimer();
+  if(confirmaTelaTimer!==null) return;
+  confirmaTelaTimer=setInterval(confirmarTelaDoTimer,2000);
+}
+function pararTelaDoTimer(){
+  if(confirmaTelaTimer===null) return;
+  clearInterval(confirmaTelaTimer);
+  confirmaTelaTimer=null;
+}
 // Minutos que faltam, arredondados para cima (59 s ainda é "1 minuto"), no singular
 // ou no plural do idioma (roteiro 25: aparecia "Faltam 1 minutes").
 function timerMinutesLeft(sec){
@@ -28,13 +49,21 @@ async function pollTimer(){
         badge.className='expired';
         setIconLabel(badge,'timer',uiText.timerExpired);
         showTimerBlock();
-      }else if(data.warning && !timerWarningShown){
-        badge.className='warning';
-        timerWarningShown=true;
-        showTimerWarning(data.remainingSeconds);
-      }else if(!data.warning){
-        badge.className='';
-        hideTimerWarning();
+      }else{
+        // tempo estendido em outra tela (vigia, menu nativo, área dos pais)
+        hideTimerBlock();
+        if(data.warning && !timerWarningShown){
+          badge.className='warning';
+          timerWarningShown=true;
+          showTimerWarning(data.remainingSeconds);
+        }else if(!data.warning){
+          badge.className='';
+          hideTimerWarning();
+        }
+      }
+      if(!data.expired && data.remainingSeconds>0 && data.remainingSeconds<=20){
+        clearTimeout(timerQuaseFim);
+        timerQuaseFim=setTimeout(pollTimer, Math.max(300, data.remainingSeconds*1000+300));
       }
     }else{
       timerWarningShown=false;
@@ -57,8 +86,10 @@ function hideTimerWarning(){
 }
 function showTimerBlock(){
   document.getElementById('timerBlock').classList.remove('hidden');
+  if(!document.documentElement.classList.contains('beni-cliente')) acompanharTelaDoTimer();
 }
 function hideTimerBlock(){
+  pararTelaDoTimer();
   document.getElementById('timerBlock').classList.add('hidden');
   document.getElementById('timerBlockPin').value='';
   document.getElementById('timerBlockErr').textContent='';
@@ -143,6 +174,8 @@ async function exitFromBlock(){
   const err=document.getElementById('pinErr');
   if(err) err.textContent=uiText.pinWrong;
 }
+
+window.addEventListener('focus', function(){ confirmarTelaDoTimer(); });
 
 // Touch swipe
 let touchStartX=null, touchStartY=null, suppressTileClicksUntil=0;
