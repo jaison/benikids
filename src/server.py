@@ -629,6 +629,7 @@ AUTO_UPDATE_TIMER = "/etc/systemd/system/beni-atualizar-verificar.timer"
 GATILHO_ATUALIZACAO = "/var/lib/beni-launcher/gatilho/agora"
 # O timer do Linux é de hora em hora. Mais de 3 h sem procura: não dizer "em dia".
 LINUX_VERIFICACAO_RECENTE = 3 * 3600
+_SEMVER_ATUALIZACAO = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
 def _ler_estado_atualizador(state_file):
@@ -656,6 +657,20 @@ def _frase_quando_iso(texto, agora):
     if local.date() == agora.date():
         return f"às {hora}"
     return local.strftime("em %d/%m/%Y às %H:%M")
+
+
+def _versao_maior(candidata, instalada):
+    """True se candidata é uma versão publicada mais nova que a instalada."""
+    def partes(valor):
+        achado = _SEMVER_ATUALIZACAO.match((valor or "").strip())
+        return tuple(int(x) for x in achado.groups()) if achado else None
+
+    nova, velha = partes(candidata), partes(instalada)
+    if not nova:
+        return False
+    if not velha:
+        return True
+    return nova > velha
 
 
 def _erro_linux_para_os_pais(erro):
@@ -693,6 +708,11 @@ def mensagem_atualizacao_linux(state, installed, auto, agora=None):
         return texto, "success"
     if erro:
         return erro, "error"
+    disponivel = state.get("disponivel") if isinstance(state.get("disponivel"), str) else None
+    if not staged and _versao_maior(disponivel, installed):
+        # A Release saiu, mas o binário do menu ainda não veio no CI.
+        return (f"A versão {disponivel} saiu, mas o pacote ainda não está pronto. "
+                "Vou tentar de novo sozinho.", "empty")
     ultima = state.get("ultimaVerificacao") if isinstance(state.get("ultimaVerificacao"), str) else None
     quando = _frase_quando_iso(ultima, agora) if ultima else None
     if quando is None:

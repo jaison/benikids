@@ -10,6 +10,8 @@ com o menu fechando por alguns instantes e voltando sozinho, mas só quando
 nenhum app está aberto, e:
   - logo, se as notas da Release tiverem a marca [forcar];
   - senão, de madrugada (JANELA_INICIO..JANELA_FIM, padrão 2h–5h).
+  A procura pedida na área dos pais não instala na hora: o menu ficaria
+  fechado no meio da tela.
   beni-atualizar estado      mostra o estado (o mesmo JSON que a área dos pais lê)
 
 Só as Releases do repositório configurado contam (tag vX.Y.Z, não rascunho nem
@@ -128,6 +130,27 @@ def now():
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def consumir_gatilho(caminho=None, agora=None, janela=5 * 60):
+    """True se os pais acabaram de pedir a procura. Apaga o arquivo nos dois casos.
+
+    O arquivo velho (sobrou de um clique que ninguém atendeu) não conta: a
+    procura da hora pode instalar de madrugada. A procura deste clique não.
+    O caminho é lido na hora: o valor padrão não pode ficar preso na carga
+    do módulo.
+    """
+    caminho = GATILHO if caminho is None else caminho
+    agora = time.time() if agora is None else agora
+    try:
+        idade = agora - os.path.getmtime(caminho)
+    except OSError:
+        return False
+    try:
+        os.unlink(caminho)
+    except OSError:
+        pass
+    return 0 <= idade < janela
+
+
 def verificacao_muito_recente(state, agora=None, minimo=MINIMO_ENTRE_VERIFICACOES):
     """True se a última procura terminou há menos de `minimo` segundos."""
     texto = state.get("ultimaVerificacao") if isinstance(state, dict) else None
@@ -220,6 +243,9 @@ def download_native_menu(release, dest):
 # ----------------------------------------------------------------- verificar
 
 def cmd_verificar():
+    # O clique dos pais só pede a procura. Instalar de madrugada no meio da
+    # área dos pais fechava o menu. O timer (sem gatilho) continua instalando.
+    do_gatilho = consumir_gatilho()
     if verificacao_muito_recente(load_state()):
         log("verificar: a última procura foi há menos de um minuto")
         return 0
@@ -230,12 +256,12 @@ def cmd_verificar():
     # (o campo verificando diz que ainda está em andamento).
     save_state(instalada=installed, repositorio=conf["REPO"], verificando=True)
     try:
-        return _cmd_verificar(conf, user, installed)
+        return _cmd_verificar(conf, user, installed, do_gatilho)
     finally:
         save_state(ultimaVerificacao=now(), verificando=False)
 
 
-def _cmd_verificar(conf, user, installed):
+def _cmd_verificar(conf, user, installed, do_gatilho=False):
     if os.path.exists(os.path.join(STATE_DIR, "pacotes-pendentes")) and os.path.isfile(SYSTEM_SCRIPT):
         result = subprocess.run(["bash", SYSTEM_SCRIPT, "--so-pacotes", user.pw_name],
                                 cwd=os.path.dirname(SYSTEM_SCRIPT), stdout=subprocess.PIPE,
@@ -274,7 +300,7 @@ def _cmd_verificar(conf, user, installed):
     if staged == latest and os.path.isfile(os.path.join(STAGED, "pacote.tar.gz")):
         save_state(forcada=forced)
         log(f"verificar: {latest} já baixada")
-        return maybe_apply_live(conf, user, forced)
+        return maybe_apply_live(conf, user, forced, do_gatilho)
     os.makedirs(STATE_DIR, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="baixando-", dir=STATE_DIR)
     try:
@@ -286,8 +312,11 @@ def _cmd_verificar(conf, user, installed):
         check_package(root, latest)
         shutil.rmtree(os.path.join(tmp, "x"))
         if not download_native_menu(release, tmp) and release_is_fresh(release):
-            # o GitHub Actions ainda está compilando o menu nativo desta versão
+            # o GitHub Actions ainda está compilando o menu nativo desta versão.
+            # Sem disponivel, a área dos pais lia ultimaVerificacao e dizia
+            # "você tem a versão mais nova" durante essas horas.
             shutil.rmtree(tmp, ignore_errors=True)
+            save_state(erro=None, disponivel=latest)
             log(f"verificar: {latest} publicada há pouco; esperando o menu nativo ficar pronto")
             return 0
         with open(os.path.join(tmp, "versao"), "w", encoding="utf-8") as handle:
@@ -301,7 +330,7 @@ def _cmd_verificar(conf, user, installed):
         save_state(erro=None, disponivel=latest, baixada=latest, baixadaEm=now(),
                    notas=notes[:1000], forcada=forced)
         log(f"verificar: {latest} baixada{' (forçada)' if forced else ''}")
-        return maybe_apply_live(conf, user, forced)
+        return maybe_apply_live(conf, user, forced, do_gatilho)
     except Exception as exc:  # noqa: BLE001
         shutil.rmtree(tmp, ignore_errors=True)
         save_state(erro=f"falha ao baixar {latest}: {exc}")
@@ -416,7 +445,10 @@ def notify(user, text):
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def maybe_apply_live(conf, user, forced):
+def maybe_apply_live(conf, user, forced, do_gatilho=False):
+    if do_gatilho:
+        log("ao vivo: procura pedida na área dos pais; não instalo agora")
+        return 0
     if not (forced or in_night_window(conf)):
         return 0
     if launcher_busy():

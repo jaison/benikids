@@ -75,6 +75,104 @@ class UpdaterTest(unittest.TestCase):
             atualizar.maybe_apply_live({}, None, forced=True)
         aplicar.assert_not_called()
 
+    def test_parent_trigger_does_not_install_at_night(self):
+        with mock.patch.object(atualizar, "in_night_window", return_value=True), \
+                mock.patch.object(atualizar, "launcher_busy", return_value=False), \
+                mock.patch.object(atualizar, "cmd_aplicar") as aplicar, \
+                mock.patch.object(atualizar, "log"):
+            atualizar.maybe_apply_live({}, None, forced=False, do_gatilho=True)
+        aplicar.assert_not_called()
+
+    def test_night_window_still_installs_without_the_parent_trigger(self):
+        with mock.patch.object(atualizar, "in_night_window", return_value=True), \
+                mock.patch.object(atualizar, "launcher_busy", return_value=False), \
+                mock.patch.object(atualizar, "launcher_pids", return_value=[]), \
+                mock.patch.object(atualizar, "stop_launcher"), \
+                mock.patch.object(atualizar, "cmd_aplicar") as aplicar, \
+                mock.patch.object(atualizar, "log"):
+            atualizar.maybe_apply_live({}, mock.Mock(), forced=False, do_gatilho=False)
+        aplicar.assert_called_once()
+
+    def test_fresh_release_without_the_menu_records_disponivel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp) / "raiz"
+            for rel in ("instalar.sh", "src/server.py", "beni/sistema/instalar-sistema.sh"):
+                arquivo = raiz / rel
+                arquivo.parent.mkdir(parents=True, exist_ok=True)
+                arquivo.write_text("x")
+            (raiz / "VERSION").write_text("1.0.8\n")
+            publicado = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            corpo = {
+                "tag_name": "v1.0.8", "draft": False, "prerelease": False, "body": "",
+                "published_at": publicado, "assets": [],
+            }
+
+            class Resposta:
+                def __init__(self, conteudo):
+                    self.buf = io.StringIO(conteudo) if isinstance(conteudo, str) else io.BytesIO(conteudo)
+
+                def __enter__(self):
+                    return self.buf
+
+                def __exit__(self, *args):
+                    return False
+
+            def fetch(url, timeout=30):
+                if "api.github.com" in url:
+                    return Resposta(json.dumps(corpo))
+                return Resposta(b"nao-e-tar")
+
+            def extrair(archive, dest):
+                os.makedirs(dest, exist_ok=True)
+                return str(raiz)
+
+            estado = Path(tmp) / "estado.json"
+            with mock.patch.object(atualizar, "STATE_DIR", tmp), \
+                    mock.patch.object(atualizar, "STATE", str(estado)), \
+                    mock.patch.object(atualizar, "STAGED", str(Path(tmp) / "baixada")), \
+                    mock.patch.object(atualizar, "fetch", fetch), \
+                    mock.patch.object(atualizar, "safe_extract", extrair), \
+                    mock.patch.object(atualizar, "maybe_apply_live") as aplicar, \
+                    mock.patch.object(atualizar, "log"):
+                codigo = atualizar._cmd_verificar(
+                    {"REPO": "jaison/benikids"}, mock.Mock(pw_name="crianca"), "1.0.6", False)
+            self.assertEqual(codigo, 0)
+            aplicar.assert_not_called()
+            gravado = json.loads(estado.read_text(encoding="utf-8"))
+            self.assertEqual(gravado.get("disponivel"), "1.0.8")
+            self.assertIsNone(gravado.get("baixada"))
+            self.assertFalse(gravado.get("erro"))
+
+    def test_recent_trigger_is_consumed_and_an_old_one_is_not_a_parent_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gatilho = Path(tmp) / "agora"
+            gatilho.write_text("1\n")
+            agora = 1_700_000_000
+            os.utime(gatilho, (agora, agora))
+            self.assertTrue(atualizar.consumir_gatilho(str(gatilho), agora=agora + 2))
+            self.assertFalse(gatilho.exists())
+            gatilho.write_text("1\n")
+            os.utime(gatilho, (agora - 600, agora - 600))
+            self.assertFalse(atualizar.consumir_gatilho(str(gatilho), agora=agora))
+            self.assertFalse(gatilho.exists())
+
+    def test_verificar_tells_the_download_step_the_request_came_from_parents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gatilho = Path(tmp) / "agora"
+            gatilho.write_text("1\n")
+            with mock.patch.object(atualizar, "GATILHO", str(gatilho)), \
+                    mock.patch.object(atualizar, "verificacao_muito_recente", return_value=False), \
+                    mock.patch.object(atualizar, "read_conf", return_value={"USUARIO": "crianca", "REPO": "jaison/benikids"}), \
+                    mock.patch.object(atualizar, "user_info", return_value=mock.Mock(pw_name="crianca")), \
+                    mock.patch.object(atualizar, "installed_version", return_value="1.0.6"), \
+                    mock.patch.object(atualizar, "save_state", return_value={}), \
+                    mock.patch.object(atualizar, "_cmd_verificar", return_value=0) as procurar, \
+                    mock.patch.object(atualizar, "log"):
+                self.assertEqual(atualizar.cmd_verificar(), 0)
+            procurar.assert_called_once()
+            self.assertTrue(procurar.call_args.args[-1])
+            self.assertFalse(gatilho.exists())
+
     def test_not_forced_outside_window_does_nothing(self):
         with mock.patch.object(atualizar, "in_night_window", return_value=False), \
                 mock.patch.object(atualizar, "cmd_aplicar") as aplicar:
@@ -143,6 +241,21 @@ class AutoUpdateStatusTest(unittest.TestCase):
                 sem_rede = server_module.auto_update_status(str(state), str(timer), agora=quando)
                 self.assertEqual(sem_rede["message"], "Não deu para verificar (sem internet?).")
                 self.assertEqual(sem_rede["messageKind"], "error")
+                state.write_text(json.dumps({
+                    "disponivel": "1.0.8",
+                    "ultimaVerificacao": quando.isoformat(),
+                }))
+                esperando = server_module.auto_update_status(str(state), str(timer), agora=quando)
+                self.assertIn("A versão 1.0.8 saiu", esperando["message"])
+                self.assertIn("ainda não está pronto", esperando["message"])
+                self.assertNotIn("versão mais nova", esperando["message"])
+                state.write_text(json.dumps({
+                    "disponivel": "1.0.8",
+                    "baixada": "1.0.7",
+                    "ultimaVerificacao": quando.isoformat(),
+                }))
+                ja_baixada = server_module.auto_update_status(str(state), str(timer), agora=quando)
+                self.assertIn("Versão 1.0.7 baixada", ja_baixada["message"])
 
     def test_linux_button_writes_a_trigger_and_does_not_need_root(self):
         import server as server_module
@@ -169,6 +282,14 @@ class AutoUpdateStatusTest(unittest.TestCase):
         unit = (ROOT / "beni/sistema/beni-atualizar-agora.path").read_text(encoding="utf-8")
         self.assertIn("PathModified=/var/lib/beni-launcher/gatilho/agora", unit)
         self.assertIn("Unit=beni-atualizar-verificar.service", unit)
+
+    def test_parent_button_only_gives_up_before_one_minute_and_still_waits(self):
+        js = (ROOT / "src/frontend/parent-settings.js").read_text(encoding="utf-8")
+        trecho = js[js.index("function procuraTemMenosDeUmMinuto"):js.index("async function startupUpdateCheck")]
+        self.assertIn("idade<60*1000", trecho)
+        self.assertIn("inicio>=5000", trecho)
+        self.assertIn("inicio>15000", trecho)
+        self.assertNotIn("3*60*1000", trecho)
 
 
 class CatalogMigrationTest(unittest.TestCase):

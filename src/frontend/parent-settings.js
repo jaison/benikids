@@ -47,6 +47,11 @@ async function mostrarAtualizacao(){
     if(btn) btn.disabled=false;
   }
 }
+function procuraTemMenosDeUmMinuto(lastCheck,agora){
+  if(!lastCheck) return false;
+  const idade=(agora||Date.now())-new Date(lastCheck).getTime();
+  return idade>=0&&idade<60*1000;
+}
 async function checkUpdate(){
   // Procura agora: no Windows fala com o GitHub; no Linux pede ao serviço.
   const btn=document.getElementById('checkUpdateBtn');
@@ -70,11 +75,14 @@ async function checkUpdate(){
         if(st.checking) viu=true;
         if(viu&&!st.checking) break;
         if(!st.checking&&(st.lastCheck||'')!==antes) break;
-        const jaEraAgora=st.lastCheck&&(Date.now()-new Date(st.lastCheck).getTime())<3*60*1000;
-        if(!st.checking&&(st.lastCheck||'')===antes&&jaEraAgora) break;
+        // O serviço só ignora menos de 60 s. Entre 1 e 3 min ele ainda procura:
+        // sair no primeiro poll mostrava o texto antigo. Mesmo abaixo de 60 s,
+        // espera 5 s por `verificando` (o .path pode demorar um instante).
+        if(!st.checking&&(st.lastCheck||'')===antes&&procuraTemMenosDeUmMinuto(st.lastCheck)&&Date.now()-inicio>=5000) break;
+        // 15 s sem o serviço acordar: o .path não viu o arquivo.
         if(!viu&&Date.now()-inicio>15000) break;
       }
-      const recente=st.lastCheck&&(Date.now()-new Date(st.lastCheck).getTime())<3*60*1000;
+      const recente=procuraTemMenosDeUmMinuto(st.lastCheck);
       if(st.checking){
         st=Object.assign({},st,{
           message:'Ainda estou procurando. Toque em Ver atualizações de novo daqui a pouco.',
