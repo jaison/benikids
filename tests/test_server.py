@@ -2390,6 +2390,10 @@ class FrontendSafetyTests(unittest.TestCase):
         launch_function = source[source.index("function launchTile"):source.index("// PIN handling")]
         self.assertIn("fetch('/launch/'", launch_function)
         self.assertIn("isMediaLibraryTile(tile)", launch_function)
+        faltou = launch_function[launch_function.index("response.status===404"):]
+        self.assertIn("data.status==='missing'", faltou)
+        self.assertIn("tile.label", faltou)
+        self.assertIn("appMissing", faltou)
         self.assertIn("window.location='/media.html?tile='", launch_function)
         self.assertNotIn("special:browser:", launch_function)
         self.assertNotIn("special:external-browser:", launch_function)

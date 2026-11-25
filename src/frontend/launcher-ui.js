@@ -366,6 +366,18 @@ async function launchTile(id){
       await pollAvailability();
       return;
     }
+    if(response.status===404){
+      let data={};
+      try{ data=await response.json(); }catch(e){}
+      if(data.status==='missing'){
+        cancelLauncherFocusReturn();
+        const nome=tile.label||'Este jogo';
+        document.getElementById('startText').textContent=(uiText.appMissing||'{app} não está neste computador. Peça para um adulto.').replace('{app}', nome);
+        if(startFeedbackTimer!==null) clearTimeout(startFeedbackTimer);
+        startFeedbackTimer=setTimeout(hideStartFeedback,4000);
+        return;
+      }
+    }
     if(!response.ok&&!response.redirected){ cancelLauncherFocusReturn(); return; }
     try{ localStorage.setItem(profileStorageKey(),id); }catch(e){}
     if(response.redirected){
@@ -493,9 +505,9 @@ document.addEventListener('change',async event=>{
     }else{
       box.checked=!!data.ligado;
       dnsFamiliaPronto=true;
-      if(msg) msg.textContent=data.ligado
+      if(msg) msg.textContent=data.aviso||(data.ligado
         ?'Filtro ligado. Vale para as redes deste computador, mesmo depois de Sair.'
-        :'Filtro desligado. As redes voltaram ao DNS que tinham antes. Rede sem esse registro fica no automático.';
+        :'Filtro desligado. As redes voltaram ao DNS que tinham antes. Rede sem esse registro fica no automático.');
     }
   }catch(e){
     box.checked=!quer;

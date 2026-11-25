@@ -102,6 +102,7 @@
   "importConfirm": "Dies überschreibt die gesamte Konfiguration. Fortfahren?",
   "startingApp": "Starte {app}...",
   "startedApp": "{app} ist bereit",
+  "appMissing": "{app} ist auf diesem Computer nicht da. Frag eine erwachsene Person.",
   "feedbackOptions": "Akustisches Feedback",
   "soundFeedback": "Sanfte lokale Klänge",
   "speechFeedback": "App-Namen vorlesen (Linux)",

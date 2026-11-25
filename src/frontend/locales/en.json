@@ -102,6 +102,7 @@
   "importConfirm": "This will overwrite all settings. Continue?",
   "startingApp": "Starting {app}...",
   "startedApp": "{app} is ready",
+  "appMissing": "{app} is not on this computer. Ask an adult.",
   "feedbackOptions": "Audio feedback",
   "soundFeedback": "Gentle local sounds",
   "speechFeedback": "Read app names aloud (Linux)",
