@@ -102,10 +102,15 @@ async function apagar(corpo, env) {
 }
 
 // ---------- Problemas → Issues no GitHub ----------
-// Uma vez por dia: cada assinatura nova vira uma Issue (no máximo NOVAS_POR_DIA); uma
-// assinatura que já tem Issue ganha um comentário com as ocorrências do dia (e é reaberta,
-// se estava fechada). O repositório é público, então a Issue nunca leva o detalhe (fim de log) nem o id da instalação.
+// Uma vez por dia: cada assinatura nova vira uma Issue (no máximo NOVAS_POR_DIA).
+// Quem não couber fica na tabela issues_fila. O cursor (issues_estado.ate_n) só
+// avança pelo que já foi tratado; a fila volta na rodada seguinte mesmo com n
+// antigo. Uma vaga por dia fica para essa fila, senão um problema raro (poucas
+// ocorrências) espera para sempre atrás dos que mais acontecem.
+// Assinatura que já tem Issue ganha um comentário, e a Issue é reaberta se estava
+// fechada. O repositório é público: a Issue nunca leva o detalhe (fim de log) nem o id.
 const NOVAS_POR_DIA = 5;
+const COMENTARIOS_POR_DIA = 30;
 const REPO = "jaison/benikids";
 
 function chave(assinatura) {
@@ -132,10 +137,55 @@ async function github(env, metodo, caminho, corpo) {
   return resposta.json();
 }
 
+function porVezes(a, b) {
+  return b.vezes - a.vezes;
+}
+
+// Sem espera, as vagas vão para o que mais aconteceu. Se há espera e também
+// assinatura nova, uma vaga fica para a espera mais antiga (menor n): assim um
+// problema raro não fica para sempre atrás dos que mais se repetem. Se só há
+// espera, abre as que mais aconteceram.
+export function escolherParaAbrir(semIssue, limite = NOVAS_POR_DIA) {
+  const espera = semIssue.filter((g) => g.esperando);
+  const novas = semIssue.filter((g) => !g.esperando).sort(porVezes);
+  if (!espera.length) return novas.slice(0, limite);
+  if (!novas.length) return espera.slice().sort(porVezes).slice(0, limite);
+  const daLote = novas.slice(0, Math.max(0, limite - 1));
+  const escolhidas = daLote.slice();
+  const maisAntiga = espera.slice().sort((a, b) => (a.ultimo - b.ultimo) || (b.vezes - a.vezes));
+  for (const g of maisAntiga) {
+    if (escolhidas.length >= limite) break;
+    escolhidas.push(g);
+  }
+  return escolhidas;
+}
+
+async function gravarFila(env, pendentes) {
+  const comandos = [env.DB.prepare(`DELETE FROM issues_fila`).bind()];
+  const vistas = new Set();
+  for (const p of pendentes) {
+    if (vistas.has(p.assinatura)) continue;
+    vistas.add(p.assinatura);
+    comandos.push(env.DB.prepare(
+      `INSERT INTO issues_fila (assinatura, numero) VALUES (?1, ?2)`
+    ).bind(p.assinatura, p.numero ?? null));
+  }
+  for (let i = 0; i < comandos.length; i += 40) await env.DB.batch(comandos.slice(i, i + 40));
+}
+
 export async function issues(env, chamar = github) {
   if (!env.GITHUB_TOKEN) return { novas: 0, comentadas: 0 };
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS issues_fila (assinatura TEXT PRIMARY KEY, numero INTEGER)`
+  ).run();
   const estado = await env.DB.prepare(`SELECT ate_n FROM issues_estado WHERE um = 1`).first();
   const desde = estado ? estado.ate_n : 0;
+  const { results: aguardando } = await env.DB.prepare(`SELECT assinatura, numero FROM issues_fila`).all();
+  const fila = new Map((aguardando || []).map((r) => [r.assinatura, r.numero || null]));
+  const { results: cadastradas } = await env.DB.prepare(`SELECT chave, numero FROM issues`).all();
+  const jaAbertas = new Map((cadastradas || []).map((r) => [r.chave, r.numero]));
+  // n novo, ou assinatura que ficou na fila, ou assinatura que ainda não tem Issue
+  // (o cursor antigo pode ter passado por ela sem publicar).
   const { results: brutas } = await env.DB.prepare(
     `SELECT p.assinatura AS assinatura, MIN(p.etapa) AS etapa, COUNT(*) AS vezes,
             COUNT(DISTINCT p.id) AS instalacoes, MAX(p.n) AS ultimo, MIN(p.recebido) AS desde,
@@ -143,68 +193,131 @@ export async function issues(env, chamar = github) {
             GROUP_CONCAT(DISTINCT p.sistema) AS sistemas
        FROM problemas p
       WHERE p.assinatura IS NOT NULL
-        AND p.n > ?1
+        AND (
+             p.n > ?1
+          OR p.assinatura IN (SELECT assinatura FROM issues_fila)
+          OR NOT EXISTS (SELECT 1 FROM issues i WHERE i.chave = p.assinatura)
+        )
       GROUP BY p.assinatura
       ORDER BY vezes DESC`
   ).bind(desde).all();
   // assinaturas que ficam iguais depois de limpas contam juntas
   const separar = (v) => String(v || "").split(",").join("\u001f");
   const porChave = new Map();
-  let ate = desde;
   for (const l of brutas || []) {
-    ate = Math.max(ate, l.ultimo);
     const k = chave(l.assinatura);
     if (!k) continue;
-    const g = porChave.get(k) || { k, etapa: l.etapa, vezes: 0, instalacoes: 0, desde: l.desde, versoes: [], plataformas: [], sistemas: [] };
+    const g = porChave.get(k) || {
+      k, etapa: l.etapa, vezes: 0, instalacoes: 0, desde: l.desde, ultimo: 0,
+      versoes: [], plataformas: [], sistemas: [], assinaturas: [], esperando: false, numeroGitHub: null,
+    };
     g.vezes += l.vezes;
     g.instalacoes += l.instalacoes;
+    g.ultimo = Math.max(g.ultimo, l.ultimo || 0);
     if (l.desde < g.desde) g.desde = l.desde;
     g.versoes.push(separar(l.versoes));
     g.plataformas.push(separar(l.plataformas));
     g.sistemas.push(separar(l.sistemas));
+    if (!g.assinaturas.includes(l.assinatura)) g.assinaturas.push(l.assinatura);
+    if (fila.has(l.assinatura)) {
+      g.esperando = true;
+      if (fila.get(l.assinatura)) g.numeroGitHub = fila.get(l.assinatura);
+    }
+    const numero = jaAbertas.get(k);
+    if (numero) g.existente = { numero };
+    else if (g.numeroGitHub) g.existente = { numero: g.numeroGitHub, soGravar: true };
     porChave.set(k, g);
   }
-  const linhas = [...porChave.values()].sort((a, b) => b.vezes - a.vezes).slice(0, 30);
+  const linhas = [...porChave.values()];
+  const resumoDe = (l) =>
+    `- **Ocorrências:** ${l.vezes} em ${l.instalacoes} instalação(ões), desde ${l.desde}\n` +
+    `- **Versões:** ${lista(l.versoes.join("\u001f"))}\n` +
+    `- **Plataformas:** ${lista(l.plataformas.join("\u001f"))}\n` +
+    `- **Sistemas:** ${lista(l.sistemas.join("\u001f"))}`;
+
   let novas = 0, comentadas = 0;
-  for (const l of linhas) {
-    const k = l.k;
-    const resumo =
-      `- **Ocorrências:** ${l.vezes} em ${l.instalacoes} instalação(ões), desde ${l.desde}\n` +
-      `- **Versões:** ${lista(l.versoes.join("\u001f"))}\n` +
-      `- **Plataformas:** ${lista(l.plataformas.join("\u001f"))}\n` +
-      `- **Sistemas:** ${lista(l.sistemas.join("\u001f"))}`;
-    const existente = await env.DB.prepare(`SELECT numero FROM issues WHERE chave = ?1`).bind(k).first();
-    if (!existente && novas >= NOVAS_POR_DIA) {
-      l.adiada = true;
-      continue;
-    }
+  const paraComentar = linhas
+    .filter((l) => l.existente && !l.existente.soGravar && (l.ultimo > desde || l.esperando))
+    .sort((a, b) => (b.esperando - a.esperando) || (b.vezes - a.vezes));
+  let comentarios = 0;
+  for (const l of paraComentar) {
+    if (comentarios >= COMENTARIOS_POR_DIA) break;
     try {
-      if (existente) {
-        await chamar(env, "POST", `/issues/${existente.numero}/comments`, { body: `Novas ocorrências:\n\n${resumo}` });
+      await chamar(env, "POST", `/issues/${l.existente.numero}/comments`, { body: `Novas ocorrências:\n\n${resumoDe(l)}` });
+      try {
         // Uma Issue fechada que volta a acontecer é reaberta: só o comentário passava
         // despercebido (ex.: fechada por ter sido algo de um dia, e o problema volta).
-        await chamar(env, "PATCH", `/issues/${existente.numero}`, { state: "open" });
-        comentadas++;
-        continue;
+        await chamar(env, "PATCH", `/issues/${l.existente.numero}`, { state: "open" });
+      } catch (erro) {
+        console.log("reabrir", l.k, erro && erro.message);
       }
+      l.tratada = true;
+      comentadas++;
+      comentarios++;
+    } catch (erro) {
+      console.log("issue", l.k, erro && erro.message);
+    }
+  }
+  for (const l of linhas) {
+    if (!l.existente || !l.existente.soGravar || l.tratada) continue;
+    try {
+      await env.DB.prepare(`INSERT INTO issues (chave, numero) VALUES (?1, ?2)`).bind(l.k, l.existente.numero).run();
+      l.tratada = true;
+    } catch (erro) {
+      console.log("issue", l.k, erro && erro.message);
+      l.numeroGitHub = l.existente.numero;
+    }
+  }
+  const semIssue = linhas.filter((l) => !l.existente && !l.tratada);
+  for (const l of escolherParaAbrir(semIssue)) {
+    try {
       const issue = await chamar(env, "POST", "/issues", {
-        title: `Problema relatado: ${k}`,
+        title: `Problema relatado: ${l.k}`,
         labels: ["telemetria"],
         body:
           `Aberta pela telemetria do Benikids (relatórios de problema, com o consentimento dos pais).\n\n` +
-          `- **Assinatura:** \`${k}\`\n- **Etapa:** \`${chave(l.etapa) || "—"}\`\n${resumo}\n\n` +
+          `- **Assinatura:** \`${l.k}\`\n- **Etapa:** \`${chave(l.etapa) || "—"}\`\n${resumoDe(l)}\n\n` +
           `O fim do log fica só no banco da telemetria (tabela \`problemas\`, assinatura acima), por privacidade.`,
       });
-      await env.DB.prepare(`INSERT INTO issues (chave, numero) VALUES (?1, ?2)`).bind(k, issue.number).run();
-      novas++;
+      if (!issue || !issue.number) throw new Error("GitHub não devolveu o número da Issue");
+      try {
+        await env.DB.prepare(`INSERT INTO issues (chave, numero) VALUES (?1, ?2)`).bind(l.k, issue.number).run();
+        l.tratada = true;
+        novas++;
+      } catch (erro) {
+        // A Issue já existe no GitHub. Na próxima rodada só grava o número, sem abrir outra.
+        console.log("issue", l.k, erro && erro.message);
+        l.numeroGitHub = issue.number;
+      }
     } catch (erro) {
-      console.log("issue", k, erro && erro.message); // uma falha não segura as outras
+      console.log("issue", l.k, erro && erro.message);
     }
   }
-  // As que passaram do limite de novas por dia (proteção contra envios falsos) ganham Issue
-  // quando voltarem a acontecer; continuam no banco de qualquer jeito.
+  for (const l of linhas) {
+    // Entrou só porque a chave crua não está em issues, mas a assinatura limpa já tem Issue
+    // e não houve ocorrência nova: não comenta de novo.
+    if (l.existente && !l.existente.soGravar && !l.tratada && !(l.ultimo > desde || l.esperando)) l.tratada = true;
+  }
+
+  const pendentes = [];
+  const assinaturaPendente = new Set();
+  for (const l of linhas) {
+    if (l.tratada) continue;
+    for (const assinatura of l.assinaturas) {
+      pendentes.push({ assinatura, numero: l.numeroGitHub ?? null });
+      assinaturaPendente.add(assinatura);
+    }
+  }
+  let ate = desde;
+  for (const l of brutas || []) {
+    if (assinaturaPendente.has(l.assinatura)) continue;
+    ate = Math.max(ate, l.ultimo || 0);
+  }
+  // A fila é gravada antes do cursor. Se o processo cair no meio, a rodada seguinte
+  // ainda vê estas assinaturas (pela fila ou por n > cursor).
+  await gravarFila(env, pendentes);
   await env.DB.prepare(`INSERT INTO issues_estado (um, ate_n) VALUES (1, ?1) ON CONFLICT(um) DO UPDATE SET ate_n = ?1`).bind(ate).run();
-  return { novas, comentadas, adiadas: linhas.filter((l) => l.adiada).length };
+  return { novas, comentadas, adiadas: linhas.filter((l) => !l.tratada && !l.existente).length };
 }
 
 const ROTAS = { "/v1/ping": ping, "/v1/uso": uso, "/v1/problema": problema, "/v1/apagar": apagar };
