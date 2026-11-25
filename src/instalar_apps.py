@@ -513,7 +513,24 @@ def _linhas_dns(resultados):
     ]
 
 
-def script_admin(pares, pasta, politicas=False, dns=False):
+def _linhas_dns_script(resultados):
+    """Substitui o .ps1 quando o filtro já está em 0 ou 1.
+
+    Não liga de novo. Anota "dns-script|0" ou o erro, sem parar o lote dos apps.
+    """
+    miolo = "\n".join(dns_familia.linhas_atualizar_script())
+    return [
+        "try {",
+        "$ErrorActionPreference = 'Stop'",
+        miolo,
+        "$c = 0",
+        "} catch { $c = 'erro: ' + $_.Exception.Message }",
+        "finally { $ErrorActionPreference = 'Continue' }",
+        f"Add-Content -Encoding UTF8 -Path {_ps(resultados)} -Value ('dns-script|' + $c)",
+    ]
+
+
+def script_admin(pares, pasta, politicas=False, dns=False, dns_script=False):
     """O PowerShell do lote: as políticas do Edge e o DNS com filtro (se faltam),
     as dependências e cada app, anotando os códigos."""
     logs = os.path.join(pasta, "logs")
@@ -524,6 +541,8 @@ def script_admin(pares, pasta, politicas=False, dns=False):
         linhas += _linhas_politicas_edge(resultados)
     if dns:
         linhas += _linhas_dns(resultados)
+    if dns_script:
+        linhas += _linhas_dns_script(resultados)
     for item, arquivo in pares:
         for n, dep in enumerate(dependencias(arquivo)):
             linhas.append(_linha_instalar(f"{item['id']}-dependencia{n + 1}", dep, "", logs, resultados))
@@ -551,11 +570,13 @@ def ler_resultados(caminho):
 CODIGOS_OK = {"0", "1641", "3010"}  # 1641/3010: instalou e pede para reiniciar
 
 
-def instalar_como_admin(pares, pasta, ao_terminar_app=None, politicas=False, dns=False):
+def instalar_como_admin(pares, pasta, ao_terminar_app=None, politicas=False, dns=False, dns_script=False):
     """Roda todos os instaladores "para todos" de uma vez, com um só pedido do UAC
     (a conta da criança não é administradora: o Windows pede a senha de um adulto).
     Enquanto o lote roda, avisa ao_terminar_app(id, código) a cada app que termina."""
-    texto, resultados = script_admin(pares, pasta, politicas=politicas, dns=dns)
+    texto, resultados = script_admin(
+        pares, pasta, politicas=politicas, dns=dns, dns_script=dns_script,
+    )
     try:
         os.remove(resultados)
     except OSError:
@@ -703,14 +724,18 @@ def trabalhar(itens, avisos, pasta=None):
         if arquivo:
             pares.append((item, arquivo))
     # bloqueador de anúncios, páginas bloqueadas e o DNS com filtro: vão no mesmo
-    # pedido de senha. Quem já tem não pede de novo. DnsFamilia=0 é escolha dos
-    # pais (desligado de propósito): falta() fica falso e a reinstalação não liga.
+    # pedido de senha. Quem já tem não liga de novo. DnsFamilia=0 é escolha dos
+    # pais: falta() fica falso. O .ps1 mesmo assim é trocado, senão a tarefa
+    # continua com o script antigo (placa nova não entra no JSON).
     politicas = politicas_edge.faltam()
     dns = dns_familia.falta()
-    if pares or politicas or dns:
+    dns_script = (not dns) and dns_familia.precisa_atualizar_script()
+    if pares or politicas or dns or dns_script:
         for item, _arquivo in pares:
             avisos.put((item["id"], "instalando", "instala depois da senha"))
-        marcador = "+".join(parte for parte, vai in (("politicas", politicas), ("dns", dns)) if vai)
+        marcador = "+".join(
+            parte for parte, vai in (("politicas", politicas), ("dns", dns), ("dns-script", dns_script)) if vai
+        )
         avisos.put((None, "admin", marcador))
         por_id = {item["id"]: item for item, _ in pares}
 
@@ -731,7 +756,9 @@ def trabalhar(itens, avisos, pasta=None):
                 avisos.put((item_id, "erro", f"não instalou (código {codigo})"))
                 relatar_falha(por_id[item_id], codigo, pasta)
 
-        codigos = instalar_como_admin(pares, pasta, terminou, politicas=politicas, dns=dns)
+        codigos = instalar_como_admin(
+            pares, pasta, terminou, politicas=politicas, dns=dns, dns_script=dns_script,
+        )
         if "fim" not in codigos and not any(i in codigos for i in por_id):
             avisos.put((None, "sem_senha", ""))  # o adulto não digitou a senha (ou cancelou)
         for item, _arquivo in pares:
@@ -808,7 +835,9 @@ def janela(itens):
                     extras = []
                     if "politicas" in (texto or ""):
                         extras.append("o bloqueador de anúncios")
-                    if "dns" in (texto or ""):
+                    if "dns-script" in (texto or ""):
+                        extras.append("a atualização do filtro de internet")
+                    elif "dns" in (texto or ""):
                         extras.append("o filtro de internet")
                     extra = (" e " + " e ".join(extras)) if extras else ""
                     rodape.config(text="Agora o Windows pede a senha de um administrador do computador,\n"

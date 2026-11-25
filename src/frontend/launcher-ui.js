@@ -569,9 +569,9 @@ document.addEventListener('change',async event=>{
     }else{
       box.checked=!!data.ligado;
       dnsFamiliaPronto=true;
-      if(msg) msg.textContent=data.ligado
+      if(msg) msg.textContent=data.aviso||(data.ligado
         ?'Filtro ligado. Vale para as redes deste computador, mesmo depois de Sair.'
-        :'Filtro desligado. As redes voltaram a usar o DNS automático.';
+        :'Filtro desligado. As redes voltaram ao DNS que tinham antes. Rede sem esse registro fica no automático.');
     }
   }catch(e){
     box.checked=!quer;

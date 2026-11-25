@@ -2287,11 +2287,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 )
                 return
             import dns_familia
-            ok = dns_familia.aplicar(body["ligado"])
+            ok, resumo = dns_familia.aplicar(body["ligado"])
             estado = dns_familia.ler()
             log_runtime_event("dns.familia", level="info" if ok else "warning")
             if ok:
-                self.json_response({"status": "ok", **estado})
+                corpo = {"status": "ok", **estado}
+                aviso = dns_familia.aviso_para_os_pais(body["ligado"], resumo)
+                if aviso:
+                    corpo["aviso"] = aviso
+                self.json_response(corpo)
             else:
                 self.json_response({
                     "status": "cancelado",

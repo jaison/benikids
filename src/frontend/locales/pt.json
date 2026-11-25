@@ -102,6 +102,7 @@
   "importConfirm": "Isso vai substituir todas as configurações. Continuar?",
   "startingApp": "Abrindo {app}...",
   "startedApp": "{app} está pronto",
+  "appMissing": "{app} não está neste computador. Peça para um adulto.",
   "feedbackOptions": "Sons e voz",
   "soundFeedback": "Sons suaves",
   "speechFeedback": "Ler o nome dos apps em voz alta (Linux)",

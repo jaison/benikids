@@ -83,7 +83,7 @@ class InstalarAppsTest(unittest.TestCase):
         with mock.patch.object(instalar_apps.catalogo_windows, "localizar", return_value=None), \
              mock.patch.object(instalar_apps, "instalar", side_effect=instalar), \
              mock.patch.object(instalar_apps, "baixar", side_effect=lambda item, pasta: f"{item['id']}.exe"), \
-             mock.patch.object(instalar_apps, "instalar_como_admin", side_effect=lambda pares, pasta, ao_terminar=None, politicas=False, dns=False: lote.extend(i["id"] for i, _ in pares) or {}):
+             mock.patch.object(instalar_apps, "instalar_como_admin", side_effect=lambda pares, pasta, ao_terminar=None, politicas=False, dns=False, dns_script=False: lote.extend(i["id"] for i, _ in pares) or {}):
             fila = queue.Queue()
             instalar_apps.trabalhar(itens, fila)
         self.assertEqual(ordem, ["usuario", "teimoso"])  # o "machine" nem passa pela fila sem senha
@@ -180,6 +180,15 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertIn("-Action Block", linha)
         self.assertIn("GCompris*/bin/GCompris.exe", linha)
         self.assertLess(texto.index("GCompris.msi"), texto.index("New-NetFirewallRule"))
+
+    def test_lote_atualiza_o_script_do_dns_sem_ligar_o_filtro(self):
+        texto, _ = instalar_apps.script_admin([], self.tmp.name, dns_script=True)
+        self.assertIn("'dns-script|' + $c", texto)
+        self.assertIn("dns-familia.ps1", texto)
+        self.assertNotIn("-Value 1 -PropertyType DWord", texto)
+        self.assertNotIn("-Marca", texto)
+        # um erro ao trocar o script não para o lote
+        self.assertIn("catch { $c = 'erro: '", texto)
 
     def test_mesmo_pacote_para_dois_apps_baixa_e_instala_uma_vez(self):
         itens = [
