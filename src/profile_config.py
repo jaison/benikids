@@ -135,8 +135,12 @@ def perfil_modelo():
     if not caminho:
         raise ValueError("Não achei o catálogo padrão")
     with open(caminho, encoding="utf-8") as handle:
-        texto = handle.read().replace("{{HOME}}", os.path.expanduser("~"))
-    cfg = json.loads(texto)
+        texto = handle.read()
+    # O catálogo traz {{HOME}}. No Windows o caminho é C:\Users\... e o \U
+    # não é um escape JSON válido: json.loads quebraria e nenhum perfil nasceria.
+    # json.dumps escapa; as aspas de fora saem.
+    home = json.dumps(os.path.expanduser("~"))[1:-1]
+    cfg = json.loads(texto.replace("{{HOME}}", home))
     perfis = [p for p in (cfg.get("profiles") or []) if isinstance(p, dict)]
     if not perfis:
         raise ValueError("Não achei o catálogo padrão")

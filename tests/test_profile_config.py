@@ -1,7 +1,9 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
@@ -251,6 +253,23 @@ class NovoPerfilPorGeneroTests(unittest.TestCase):
         stored = config_validation.validate_stored_config(legacy_config())
         with self.assertRaisesRegex(ValueError, "menino ou menina"):
             profile_config.add_profile(stored, "Novo", gender="")
+
+    def test_home_do_windows_nao_quebra_o_catalogo(self):
+        # C:\Users\... tem \U, que não é escape JSON. Sem escapar, o perfil não nasce.
+        home = "C:\\Users\\crianca"
+        cru = '{"cmd":["' + home + '/.local/bin/cozy-jogos"]}'
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(cru)
+        with tempfile.TemporaryDirectory() as tmp:
+            modelo = Path(tmp) / "config-modelo.json"
+            modelo.write_text(
+                '{"profiles":[{"id":"default","tiles":[{"id":"snes","cmd":["{{HOME}}/.local/bin/cozy-jogos"]}]}]}',
+                encoding="utf-8",
+            )
+            with mock.patch.object(profile_config.os.path, "expanduser", return_value=home), \
+                    mock.patch.object(profile_config, "caminho_do_modelo", return_value=str(modelo)):
+                perfil = profile_config.perfil_modelo()
+        self.assertEqual(perfil["tiles"][0]["cmd"], [home + "/.local/bin/cozy-jogos"])
 
 
 if __name__ == "__main__":
