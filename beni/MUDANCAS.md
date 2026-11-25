@@ -131,3 +131,13 @@ compilar: [cliente/LEIA-ME.md](../cliente/LEIA-ME.md).
 - Versão do projeto em `VERSION` (1.0.0), gravada em `~/.local/share/cozy-kids-launcher/version`.
 - `instalar.sh` agora chama `sudo beni/sistema/instalar-sistema.sh` para tudo que é root (pacotes de `pacotes-apt.txt`/`pacotes-flatpak.txt`, políticas do Firefox, DNS, atualizador) e aplica as migrações de `beni/config/migracoes.json` (`beni/ferramentas/migrar-config.py`; as já aplicadas ficam em `~/.config/cozy-kids-launcher/migracoes-aplicadas.json`).
 - Autostart `~/.config/autostart/cozy-kids-launcher-autostart.desktop` → `cozy-iniciar`.
+
+## Ubuntu 24.04 (sem depender do Mint)
+
+O notebook de teste era Linux Mint. O Ubuntu 24.04 (GNOME, Firefox em snap, idioma inglês) quebrava em quatro pontos. Não há migração de catálogo: os tiles continuam os mesmos.
+
+- **Firefox snap.** O snap não lê `~/.cache`. O perfil dos sites ia para lá, o Firefox caía no perfil da família e dizia que já estava aberto. Agora o perfil do snap fica em `~/snap/firefox/common/cozy-kids-launcher/`, com `--no-remote` e `--new-instance`. O `.deb` do Mint continua em `~/.cache`. O nome da instância (`MOZ_APP_REMOTINGNAME`) é outro, para não grudar no Firefox da família.
+- **Limite de domínio.** O `policies.json` vale para todo Firefox da máquina. Bloquear `<all_urls>` ali tiraria a internet da família, então **não** foi feito. O Firefox comum também não guarda extensão sem assinatura. A mesma extensão dos sites do Windows é instalada só no perfil do Benikids, como extensão temporária, pelo Marionette (porta 28290, só em 127.0.0.1, enquanto o site está aberto). A lista de domínios é a de `src/navegacao_sites.py` (no PhET, só as simulações).
+- **Idioma.** Se faltar `pt_BR`, o instalador pede `language-pack-pt` (e `locale-gen` se o pacote não gerar o locale). Os atalhos carregam `cozy-locale`, que põe `LANG` e `LC_ALL` em `pt_BR.UTF-8` quando o locale existe.
+- **Jogos.** O SuperTux procura `supertux2` e, se não achar, `supertux` (o nome no Ubuntu). O Klotski no Mint continua no flatpak. Fora do Mint, usa o `gnome-klotski` do apt. Se só houver o flatpak, tenta com `GLYCIN_DISABLE_SANDBOX=1` e `GSK_RENDERER=cairo`, porque o glycin fecha o jogo quando o sandbox de imagem não sobe.
+- **Wayland.** `wmctrl`, `xdotool` e o `xrandr` não enxergam a sessão Wayland do GNOME. O instalador avisa e pede a sessão **Ubuntu on Xorg**. Não reescreve essa parte. O XScreenSaver não é usado; no GNOME o instalador desliga o bloqueio de tela da conta da criança.

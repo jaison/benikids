@@ -83,7 +83,9 @@ Os pais mudam qualquer app de categoria em Pais → Tempo de tela.
 
   No Linux isso é o `userContent.css` do Firefox. No Windows é a extensão do Edge (`src/edge/sites-limpos/`), as mesmas regras de CSS. Não vai no uBlock Origin Lite: filtrar a Escola Games travava o jogo, e o uBOL não tem filtro cosmético avulso na política.
   As páginas proibidas também ficam bloqueadas por política do Firefox (no Windows, `URLBlocklist` do Edge).
-  **No Windows**, a mesma extensão limita a navegação da janela do site aos domínios daquele tile (e, no PhET, só `/sims/html/` e a página local). Outro site volta para o tile. Não pede senha de administrador: as regras vão na cópia da extensão, no cache, ao abrir. O Firefox do Linux não tem essa lista; lá o bloqueio continua sendo o dos caminhos do `policies.json` mais o CSS.
+  **No Windows e no Linux**, a mesma extensão limita a navegação da janela do site aos domínios daquele tile (e, no PhET, só `/sims/html/` e a página local). Outro site volta para o tile. Não pede senha de administrador.
+  No Windows as regras vão na cópia da extensão, no cache, ao abrir (`--load-extension`).
+  No Linux o Firefox comum não aceita extensão sem assinatura, e o `policies.json` vale para **todo** o Firefox da máquina (o da família também). Por isso o limite **não** vai no `WebsiteFilter`. O Benikids grava a extensão no perfil dos sites e instala ela só naquela abertura, pelo Marionette (porta 28290, só em 127.0.0.1, enquanto o site está aberto). O `policies.json` continua só com os bloqueios antigos (Escola Games, DNS).
   O comando do Chromium monta as flags num lugar só (`flags_do_chromium`): um `--disable-features` e um `--load-extension` com a lista de pastas. A extensão de controle entra nessa lista; uma segunda flag de qualquer uma das duas é ignorada pelo navegador.
 - Downloads vão direto para `~/Imagens/Desenhos`, sem o painel do Firefox, que abriria o gerenciador de arquivos.
 
@@ -141,7 +143,7 @@ login → ~/.config/autostart → cozy-iniciar
                  └─ tocar num ícone → process_supervisor.py + overlay.py (❌, tempo, ‹ Voltar)
                         ├─ apps locais: atalhos em ~/.local/bin (supertux, gcompris, …)
                         ├─ sites: Firefox em modo quiosque, um perfil por criança
-                        │     (uBlock, CSS dos sites; site_logins.py faz o login pelo Marionette)
+                        │     (no snap, em ~/snap/firefox/common/; uBlock, CSS, limite do tile)
                         └─ jogos de navegador: navegador-jogos → Chromium em modo quiosque
                                → cozy-jogo.html (amplia o jogo) + carregando.py (tela de espera)
 ```
@@ -519,12 +521,31 @@ A lista detalhada, arquivo por arquivo, está em [beni/MUDANCAS.md](../beni/MUDA
 | Python | 3.12 (só biblioteca padrão) |
 
 **Requisitos:**
-- Linux Mint XFCE ou outra distro baseada em Ubuntu 24.04 com XFCE.
-- Sessão **X11** (não Wayland).
+- Linux Mint XFCE, Ubuntu 24.04 ou um derivado (Zorin, Pop!_OS) com os pacotes do `instalar.sh`.
+- Sessão **X11** (no Ubuntu, na tela de entrar: engrenagem → **Ubuntu on Xorg**). Wayland não serve; veja abaixo.
 - Internet na instalação.
 - Um usuário comum para as crianças, com login automático.
+- Idioma: se o `pt_BR` não estiver instalado, o instalador pede o `language-pack-pt`. Os atalhos usam português quando esse locale existe.
 
-Em Mint Cinnamon/MATE quase tudo funciona, mas os ajustes de barra e bloqueio são específicos do XFCE.
+Em Mint Cinnamon/MATE quase tudo funciona, mas os ajustes de barra e bloqueio são específicos do XFCE. No Ubuntu (GNOME) o instalador desliga o bloqueio de tela da conta da criança.
+
+### Ubuntu, snap e Wayland
+
+O Firefox do Ubuntu é **snap**. Ele não lê perfil em `~/.cache` (pasta oculta) e, se abrir no perfil da família, diz que o Firefox já está aberto. Os sites usam um perfil só do Benikids em `~/snap/firefox/common/cozy-kids-launcher/`, com `--no-remote` e `--new-instance`. O menu, quando cai no navegador, faz o mesmo com outro perfil (`cozy-kids-launcher-profile`). O `.deb` do Mint continua em `~/.cache`, como antes.
+
+O SuperTux no Ubuntu pode se chamar `supertux` em vez de `supertux2`; o atalho procura os dois. O Klotski no Mint continua no flatpak. No Ubuntu usa o pacote `gnome-klotski`. Se só existir o flatpak e ele fechar na hora (glycin/GTK), o atalho tenta de novo com `GLYCIN_DISABLE_SANDBOX=1` e `GSK_RENDERER=cairo` — fora do Mint, para não mudar o jogo que já funciona lá.
+
+O que **não** funciona no Wayland (GNOME), e por isso o instalador avisa em vez de reescrever:
+
+| Peça | Para quê | No Wayland |
+|---|---|---|
+| `wmctrl` | tela cheia dos jogos, pílula por cima, janela dos pais atrás do menu | não vê as janelas do GNOME |
+| `xdotool` | foco, F11, teclas do controle no menu | idem |
+| `xrandr` | tamanho da tela no SuperTux | pode não ver a tela; o jogo cai em 1366×768 |
+| ajustes do XFCE | barra e bloqueio do Mint | não existem no GNOME |
+| XScreenSaver | o Benikids não usa | o bloqueio do GNOME é outro; o instalador desliga o da conta da criança |
+
+Na VM sem placa de vídeo o menu nativo volta para o menu do navegador. Isso é esperado.
 
 **Windows:** notebook com Windows 10, Intel Core i5, Intel HD 4000 + GeForce GTX 660M, 16 GB, tela
 ultrawide 2560×1080, usuário da criança sem administrador. O menu fica em 0% de CPU parado e ~190 MB.
