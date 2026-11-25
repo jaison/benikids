@@ -2393,6 +2393,11 @@ class FrontendSafetyTests(unittest.TestCase):
         self.assertIn("window.location='/media.html?tile='", launch_function)
         self.assertNotIn("special:browser:", launch_function)
         self.assertNotIn("special:external-browser:", launch_function)
+        self.assertIn("showLaunchWarning(tile,status)", launch_function)
+        aviso = source[source.index("function showLaunchWarning"):source.index("async function launchTile")]
+        self.assertIn("tile.label", aviso)
+        self.assertIn("status==='missing'", aviso)
+        self.assertIn("ainda não está instalado", aviso)
 
     def test_cover_media_library_is_local_bilingual_and_safe_dom_rendered(self):
         root = REPOSITORY_ROOT / "src"

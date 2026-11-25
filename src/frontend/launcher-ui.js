@@ -342,6 +342,25 @@ function showLaunchSuccess(tile){
   if(startFeedbackTimer!==null) clearTimeout(startFeedbackTimer);
   startFeedbackTimer=setTimeout(hideStartFeedback,900);
 }
+function showLaunchWarning(tile,status){
+  const nome=(tile&&tile.label)||'Este app';
+  const overlay=document.getElementById('startOverlay');
+  const emoji=document.getElementById('startEmoji');
+  const text=document.getElementById('startText');
+  let frase='Não deu para abrir '+nome+'. Tente de novo daqui a pouco.';
+  let icone='😕';
+  if(status==='missing'){
+    frase=nome+' ainda não está instalado. Peça para a mamãe ou o papai instalar este app.';
+    icone='📦';
+  }else if(status==='crashed'){
+    frase='Não deu para abrir '+nome+'. Este app fechou sozinho. Peça ajuda para a mamãe ou o papai.';
+  }
+  if(emoji) emoji.textContent=icone;
+  if(text) text.textContent=frase;
+  if(overlay) overlay.classList.remove('hidden','launch-starting','launch-success');
+  if(startFeedbackTimer!==null) clearTimeout(startFeedbackTimer);
+  startFeedbackTimer=setTimeout(hideStartFeedback,8000);
+}
 async function launchTile(id){
   const tile=cfg.tiles.find(t=>t.id===id);
   if(!tile) return;
@@ -366,7 +385,13 @@ async function launchTile(id){
       await pollAvailability();
       return;
     }
-    if(!response.ok&&!response.redirected){ cancelLauncherFocusReturn(); return; }
+    if(!response.ok&&!response.redirected){
+      cancelLauncherFocusReturn();
+      let status='';
+      try{ status=(await response.json()).status||''; }catch(e){}
+      showLaunchWarning(tile,status);
+      return;
+    }
     try{ localStorage.setItem(profileStorageKey(),id); }catch(e){}
     if(response.redirected){
       cancelLauncherFocusReturn();
