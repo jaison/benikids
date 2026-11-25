@@ -1,4 +1,12 @@
 #!/bin/sh
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Cozy Kids Launcher: abre o Tux Paint novo (Flathub) em tela cheia, sem trocar a resolução.
 # --nolockfile: sem ele, abrir de novo menos de 30 s depois sai sem janela (a criança acha
 # que "não abriu"; roteiro 33, no Windows).

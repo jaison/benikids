@@ -1,4 +1,22 @@
 #!/bin/sh
 # Cozy Kids Launcher: SuperTux em tela cheia na resolução atual da tela, sem prender o mouse.
+# O Ubuntu 24.04 instala o binário como supertux; o Mint ainda pode ter supertux2.
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
+BIN=""
+for c in /usr/games/supertux2 /usr/games/supertux /usr/bin/supertux2 /usr/bin/supertux; do
+  if [ -x "$c" ]; then BIN="$c"; break; fi
+done
+if [ -z "$BIN" ]; then
+  echo "supertux: não achei o jogo (pacote supertux; o binário pode ser supertux ou supertux2)" >&2
+  exit 1
+fi
+# No Wayland o xrandr pode não ver a tela; aí fica a resolução de reserva.
 RES=$(xrandr 2>/dev/null | awk '/\*/{print $1; exit}'); RES=${RES:-1366x768}; W=${RES%x*}; H=${RES#*x}
-LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec /usr/games/supertux2 -f -g "${W}x${H}"
+LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec "$BIN" -f -g "${W}x${H}"

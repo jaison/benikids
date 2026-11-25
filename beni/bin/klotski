@@ -1,3 +1,55 @@
 #!/bin/sh
 # Cozy Kids Launcher: Klotski (blocos deslizantes) em tela cheia.
-exec cozy-fullscreen gnome-klotski flatpak run org.gnome.Klotski
+# Mint: o flatpak, como antes. Ubuntu e derivados: o binário gnome-klotski do apt
+# (o flatpak novo fecha por causa do glycin). Se só houver flatpak, tenta mesmo assim.
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
+
+ID=""
+if [ -r /etc/os-release ]; then
+  ID=$(. /etc/os-release && printf '%s' "$ID")
+fi
+
+contorno_glycin() {
+  # glycin (carregador de imagem do GTK novo) fecha o jogo quando o sandbox
+  # não sobe (VM sem GPU, AppArmor). GTK3 ignora GSK_RENDERER. No Mint não mexe.
+  if [ "$ID" != "linuxmint" ]; then
+    GSK_RENDERER="${GSK_RENDERER:-cairo}"
+    GLYCIN_DISABLE_SANDBOX="${GLYCIN_DISABLE_SANDBOX:-1}"
+    export GSK_RENDERER GLYCIN_DISABLE_SANDBOX
+  fi
+}
+
+abre_apt() {
+  BIN=""
+  if command -v gnome-klotski >/dev/null 2>&1; then
+    BIN=$(command -v gnome-klotski)
+  elif [ -x /usr/games/gnome-klotski ]; then
+    BIN=/usr/games/gnome-klotski
+  else
+    return 1
+  fi
+  contorno_glycin
+  exec cozy-fullscreen gnome-klotski "$BIN"
+}
+
+abre_flatpak() {
+  command -v flatpak >/dev/null 2>&1 || return 1
+  flatpak info org.gnome.Klotski >/dev/null 2>&1 || flatpak info --user org.gnome.Klotski >/dev/null 2>&1 || return 1
+  contorno_glycin
+  exec cozy-fullscreen gnome-klotski flatpak run org.gnome.Klotski
+}
+
+if [ "$ID" = "linuxmint" ]; then
+  abre_flatpak || abre_apt
+else
+  abre_apt || abre_flatpak
+fi
+echo "klotski: não achei o jogo (pacote gnome-klotski ou flatpak org.gnome.Klotski)" >&2
+exit 1

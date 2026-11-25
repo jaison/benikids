@@ -11,7 +11,7 @@ import time
 
 from app_detection import browser_family
 from browser_policy import is_safe_web_url
-from navegacao_sites import limites_da_url, preparar_extensao
+from navegacao_sites import PASTA_LIMITE_NO_PERFIL, limites_da_url, log_linux, preparar_extensao
 from process_state import owned_process_alive, terminate_owned_process
 
 
@@ -110,29 +110,125 @@ def _safe_profile_id(profile_id):
     return "".join(ch for ch in (profile_id or "") if ch.isalnum() or ch in "-_")[:64]
 
 
-def external_firefox_profile(cache_root, profile_id=""):
+def conteudo_indica_firefox_snap(caminho, conteudo):
+    """O binário (ou o script que o Ubuntu põe no lugar) é o Firefox do snap.
+
+    O .deb do Mint não entra aqui. Um caminho com /snap/ ou o script que chama
+    `snap run firefox` / `/snap/bin/firefox` entra.
+    """
+    caminho = (caminho or "").replace("\\", "/")
+    if "/snap/" in caminho:
+        return True
+    texto = conteudo or ""
+    marcas = (
+        "/snap/bin/firefox",
+        "snap run firefox",
+        '["snap", "run", "firefox"]',
+        "['snap', 'run', 'firefox']",
+    )
+    return any(marca in texto for marca in marcas)
+
+
+def sessao_linux():
+    return sys.platform.startswith("linux")
+
+
+def firefox_e_snap(browser):
+    """Este comando `firefox` é o snap (não o .deb do Mint nem o ESR)."""
+    if not sessao_linux():
+        return False
+    if os.path.basename(browser or "firefox") != "firefox":
+        return False
+    caminho = browser if browser and os.path.isabs(browser) else (shutil.which(browser or "firefox") or "")
+    if not caminho:
+        return False
+    real = os.path.realpath(caminho)
+    if conteudo_indica_firefox_snap(caminho, "") or conteudo_indica_firefox_snap(real, ""):
+        return True
+    if os.path.basename(real) == "snap":
+        return True
+    try:
+        with open(caminho, encoding="utf-8", errors="replace") as handle:
+            texto = handle.read(12000)
+    except OSError:
+        return False
+    return conteudo_indica_firefox_snap("", texto)
+
+
+def _home_do_usuario():
+    return os.path.expanduser("~")
+
+
+def tem_locale_pt_br(saida):
+    """locale -a lista pt_BR.utf8 ou pt_BR.UTF-8."""
+    for linha in (saida or "").splitlines():
+        if linha.strip().lower().replace("-", "") == "pt_br.utf8":
+            return True
+    return False
+
+
+def ambiente_pt_br():
+    """LANG/LC_ALL em português, se o locale existir. Vazio fora do Linux ou sem o locale."""
+    if not sessao_linux():
+        return {}
+    cache = getattr(ambiente_pt_br, "_cache", None)
+    if cache is None:
+        try:
+            proc = subprocess.run(
+                ["locale", "-a"], capture_output=True, text=True, timeout=5,
+            )
+            cache = tem_locale_pt_br(proc.stdout)
+        except (OSError, subprocess.TimeoutExpired):
+            cache = False
+        ambiente_pt_br._cache = cache
+    if not cache:
+        return {}
+    return {"LANG": "pt_BR.UTF-8", "LC_ALL": "pt_BR.UTF-8", "LANGUAGE": "pt_BR:pt"}
+
+
+def _semear_perfil_firefox(origem, destino):
+    """Copia extensões, CSS e user.js. Não copia cookies nem senhas."""
+    if not origem or not os.path.isdir(origem):
+        return
+    for name in EXTERNAL_PROFILE_SEED:
+        source = os.path.join(origem, name)
+        target = os.path.join(destino, name)
+        if os.path.exists(target):
+            continue
+        try:
+            if os.path.isdir(source):
+                shutil.copytree(source, target)
+            elif os.path.isfile(source):
+                shutil.copy2(source, target)
+        except OSError:
+            pass
+
+
+def external_firefox_profile(cache_root, profile_id="", snap=False):
     """Perfil do Firefox dos sites de cada criança (cookies e logins separados).
 
     O perfil padrão ("default") continua no diretório antigo; os outros nascem
     com as extensões, o CSS e as preferências do padrão, mas sem cookies/senhas.
+    No snap o perfil fica em ~/snap/firefox/common/: o snap não lê ~/.cache.
     """
-    base = os.path.join(os.fspath(cache_root), "external-firefox-profile")
+    cache_base = os.path.join(os.fspath(cache_root), "external-firefox-profile")
+    if snap:
+        base = os.path.join(
+            _home_do_usuario(), "snap", "firefox", "common",
+            "cozy-kids-launcher", "external-firefox-profile",
+        )
+    else:
+        base = cache_base
     safe = _safe_profile_id(profile_id)
     if not safe or safe == "default":
-        return base
-    path = f"{base}-{safe}"
+        path = base
+    else:
+        path = f"{base}-{safe}"
     if not os.path.isdir(path):
         os.makedirs(path, exist_ok=True)
-        for name in EXTERNAL_PROFILE_SEED:
-            source = os.path.join(base, name)
-            target = os.path.join(path, name)
-            try:
-                if os.path.isdir(source):
-                    shutil.copytree(source, target)
-                elif os.path.isfile(source):
-                    shutil.copy2(source, target)
-            except OSError:
-                pass
+        origem = cache_base if path == base else (base if os.path.isdir(base) else cache_base)
+        if os.path.abspath(origem) != os.path.abspath(path):
+            _semear_perfil_firefox(origem, path)
     return path
 
 
@@ -359,15 +455,43 @@ def external_browser_command(
             # sem o fragmento: o log fica com o caminho codificado, não com o jogo
             _log_windows("jogo: Edge em quiosque na moldura local " + url.split("#", 1)[0])
         return command + ["--kiosk", f"--app={url}"]
-    profile = external_firefox_profile(cache_root, profile_id)
+    snap = firefox_e_snap(browser)
+    profile = external_firefox_profile(cache_root, profile_id, snap=snap)
     garantir_perfil_firefox(profile)
     if os.name == "nt":
         _log_windows("navegador: DoH desligado (network.trr.mode=5) e userContent.css no perfil")
-    if marionette_port:
-        # login automático (site_logins.py): o Marionette só liga neste tile
-        _set_user_pref(profile, "marionette.port", int(marionette_port))
-        return [browser, "--no-remote", "--profile", profile, "--marionette", "--kiosk", url]
-    return [browser, "--no-remote", "--profile", profile, "--kiosk", url]
+    # No Linux o limite de domínio é a extensão no perfil (não o policies.json,
+    # que valeria para o Firefox da família). O Firefox comum só aceita essa
+    # cópia sem assinatura como extensão temporária, pelo Marionette.
+    limitar = sessao_linux()
+    if marionette_port or limitar:
+        if marionette_port:
+            porta = int(marionette_port)
+        else:
+            from site_logins import MARIONETTE_PORT
+            porta = MARIONETTE_PORT
+        _set_user_pref(profile, "marionette.port", porta)
+    if limitar:
+        try:
+            preparar_extensao(
+                os.path.join(profile, PASTA_LIMITE_NO_PERFIL), url, firefox=True,
+            )
+            log_linux(
+                "navegador: Firefox "
+                + ("snap" if snap else "deb")
+                + ", perfil do Benikids, quiosque; limite para "
+                + limites_da_url(url)["resumo"]
+            )
+        except OSError:
+            log_linux("navegador: não consegui gravar o limite de navegação; o site abre sem ele")
+    comando = [browser, "--no-remote"]
+    if limitar:
+        # --new-instance: o snap não reaproveita o Firefox que a família já abriu
+        comando.append("--new-instance")
+    comando += ["--profile", profile]
+    if marionette_port or limitar:
+        comando.append("--marionette")
+    return comando + ["--kiosk", url]
 
 
 def _set_user_pref(profile, name, value):
@@ -581,6 +705,9 @@ class ApplicationLauncher:
                 ])
             wrapped.extend(["--", *command])
             env = dict(os.environ)
+            # Ubuntu vem em inglês: jogos e o Firefox dos sites falam português
+            # se o locale estiver instalado. Quem passou env_extra manda por último.
+            env.update(ambiente_pt_br())
             if path_extra:
                 # Só para este app e seus filhos (ex.: o Quatro em Linha acha o motor de IA
                 # pelo PATH); o PATH do servidor não muda.

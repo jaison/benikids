@@ -1,4 +1,12 @@
 #!/bin/sh
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Cozy Kids Launcher: Luanti (mundo de blocos parecido com Minecraft).
 # Antes de abrir: sem o aviso de "nova versão disponível" (a criança não tem o que
 # fazer com ele e ele busca na internet), em português e em tela cheia. Só grava a

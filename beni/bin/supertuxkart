@@ -1,4 +1,12 @@
 #!/bin/sh
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Cozy Kids Launcher: SuperTuxKart sempre na resolução atual da tela (se o jogo trocar a
 # resolução, a tela do notebook pode ficar apagada ao fechar).
 RES=$(xrandr 2>/dev/null | awk '/\*/{print $1; exit}'); RES=${RES:-1366x768}; W=${RES%x*}; H=${RES#*x}

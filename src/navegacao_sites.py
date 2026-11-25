@@ -1,13 +1,16 @@
 """Limite de navegação da janela do site, um tile de cada vez.
 
-O Firefox do Linux não tem lista de domínios permitidos: o WebsiteFilter
-(beni/firefox/policies.json) só bloqueia alguns caminhos. No Edge/Chrome a
-extensão sites-limpos, carregada com --load-extension, ganha regras
-declarativeNetRequest para a navegação de topo (main_frame). Iframe, script e
-CDN não passam por aqui: o anúncio continua no --host-resolver-rules.
+No Edge/Chrome a extensão sites-limpos, carregada com --load-extension, ganha
+regras declarativeNetRequest para a navegação de topo (main_frame). Iframe,
+script e CDN não passam por aqui: o anúncio continua no --host-resolver-rules.
 
-A lista sai da URL do tile. A cópia da extensão fica no cache do Benikids, sem
-política de máquina e sem UAC.
+No Firefox do Linux a mesma lista vira a mesma extensão, instalada só no perfil
+do Benikids (não no policies.json: aquilo vale para o Firefox da família). O
+Firefox comum não aceita extensão local sem assinatura; o Benikids instala a
+cópia como extensão temporária pelo Marionette, enquanto o site está aberto.
+
+A lista sai da URL do tile. A cópia da extensão fica no perfil/cache do
+Benikids, sem política de máquina e sem UAC.
 """
 
 import html
@@ -15,8 +18,14 @@ import json
 import os
 import re
 import shutil
+import sys
+import time
 import zlib
 from urllib.parse import urlsplit, urlunsplit
+
+# Pasta da extensão dentro do perfil do Firefox dos sites (o snap só lê o perfil).
+PASTA_LIMITE_NO_PERFIL = "benikids-sites-limpos"
+ID_EXTENSAO_FIREFOX = "sites-limpos@benikids"
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 EXTENSAO = os.path.join(AQUI, "edge", "sites-limpos")
@@ -261,7 +270,20 @@ def _gravar_guarda(destino, limites, modelo):
         handle.write(texto)
 
 
-def preparar_extensao(destino, url, origem=EXTENSAO):
+def log_linux(texto):
+    """Uma linha em ~/.cache/cozy-kids-launcher/beni-linux.log (sem caminho de casa)."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        pasta = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher")
+        os.makedirs(pasta, exist_ok=True)
+        with open(os.path.join(pasta, "beni-linux.log"), "a", encoding="utf-8") as handle:
+            handle.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
+def preparar_extensao(destino, url, origem=EXTENSAO, firefox=False):
     """Copia a extensão para o cache e grava as regras deste tile. Devolve o caminho."""
     os.makedirs(destino, exist_ok=True)
     for nome in os.listdir(origem):
@@ -279,5 +301,11 @@ def preparar_extensao(destino, url, origem=EXTENSAO):
     _gravar_guarda(os.path.join(destino, "guarda.js"), limites, os.path.join(origem, "guarda.js"))
     with open(os.path.join(destino, "manifest.json"), encoding="utf-8") as handle:
         base = json.load(handle)
-    _gravar_json(os.path.join(destino, "manifest.json"), completar_manifesto(base, regras))
+    manifesto = completar_manifesto(base, regras)
+    if firefox:
+        # id estável: a extensão temporária é reinstalada a cada abertura
+        manifesto["browser_specific_settings"] = {
+            "gecko": {"id": ID_EXTENSAO_FIREFOX, "strict_min_version": "128.0"},
+        }
+    _gravar_json(os.path.join(destino, "manifest.json"), manifesto)
     return destino

@@ -3,6 +3,14 @@ set -euo pipefail
 # Sem gerenciamento de sessão do XFCE: o Firefox (e os jogos) tentam se registrar
 # no xfce4-session e, se ele não responde, ficam parados para sempre sem abrir.
 unset SESSION_MANAGER
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 if [[ -d /snap/bin ]] && [[ ":$PATH:" != *":/snap/bin:"* ]]; then
   export PATH="$PATH:/snap/bin"
 fi
@@ -443,21 +451,21 @@ while true; do
       if [[ "$BROWSER_FAMILY" == "chromium" ]]; then
         "$BROWSER_CMD" "${CHROMIUM_FLAGS[@]}" --kiosk "$URL" 9>&- >/dev/null 2>&1 &
       else
-        "$BROWSER_CMD" --no-remote --profile "$FIREFOX_PROFILE" --new-window --kiosk "$URL" 9>&- >/dev/null 2>&1 &
+        MOZ_APP_REMOTINGNAME=benikids-menu "$BROWSER_CMD" --no-remote --new-instance --profile "$FIREFOX_PROFILE" --new-window --kiosk "$URL" 9>&- >/dev/null 2>&1 &
       fi
       ;;
     fullscreen)
       if [[ "$BROWSER_FAMILY" == "chromium" ]]; then
         "$BROWSER_CMD" "${CHROMIUM_FLAGS[@]}" "$CHROMIUM_FULLSCREEN_SWITCH" "$URL" 9>&- >/dev/null 2>&1 &
       else
-        "$BROWSER_CMD" --no-remote --profile "$FIREFOX_PROFILE" --new-window --fullscreen "$URL" 9>&- >/dev/null 2>&1 &
+        MOZ_APP_REMOTINGNAME=benikids-menu "$BROWSER_CMD" --no-remote --new-instance --profile "$FIREFOX_PROFILE" --new-window --fullscreen "$URL" 9>&- >/dev/null 2>&1 &
       fi
       ;;
     window|*)
       if [[ "$BROWSER_FAMILY" == "chromium" ]]; then
         "$BROWSER_CMD" "${CHROMIUM_FLAGS[@]}" "$URL" 9>&- >/dev/null 2>&1 &
       else
-        "$BROWSER_CMD" --no-remote --profile "$FIREFOX_PROFILE" --new-window "$URL" 9>&- >/dev/null 2>&1 &
+        MOZ_APP_REMOTINGNAME=benikids-menu "$BROWSER_CMD" --no-remote --new-instance --profile "$FIREFOX_PROFILE" --new-window "$URL" 9>&- >/dev/null 2>&1 &
       fi
       ;;
   esac

@@ -597,6 +597,68 @@ def auto_login(site, username, password, target_url, port=MARIONETTE_PORT, log=N
             client.close()
 
 
+def pedido_extensao_temporaria(pasta):
+    """Argumentos do Marionette Addon:Install. A cópia não é assinada: temporary=True."""
+    return {"path": os.path.abspath(pasta), "temporary": True}
+
+
+def instalar_limite(client, pasta):
+    """Instala a extensão dos sites só nesta execução do Firefox."""
+    if not pasta or not os.path.isfile(os.path.join(pasta, "manifest.json")):
+        raise FileNotFoundError("limite")
+    return client.cmd("Addon:Install", pedido_extensao_temporaria(pasta))
+
+
+def acompanhar_site_firefox(pasta, login_args=None, resumo="", log=None, port=MARIONETTE_PORT):
+    """Liga o limite de navegação e, se este tile tem login salvo, entra na conta.
+
+    login_args é None ou (site, username, password, target_url). A porta do
+    Marionette fica aberta enquanto o Firefox dos sites estiver aberto: o mesmo
+    risco já aceito no login automático, agora em todo site, só no perfil da
+    criança e só em 127.0.0.1.
+    """
+    from navegacao_sites import log_linux
+
+    log = log or (lambda *a, **k: None)
+    client = None
+    try:
+        client = Marionette(port)
+        client.begin()
+        try:
+            instalar_limite(client, pasta)
+            log_linux("navegador: navegação de topo limitada a " + (resumo or "o site do tile"))
+            log("site.limite", result="ok")
+        except Exception as exc:  # noqa: BLE001 — o site abre mesmo sem o limite
+            log_linux("navegador: não consegui instalar o limite de navegação")
+            log("site.limite", level="warning", result="failure",
+                exceptionType=type(exc).__name__)
+        client.end()
+    except Exception as exc:  # noqa: BLE001
+        log_linux("navegador: não consegui instalar o limite de navegação")
+        log("site.limite", level="warning", result="failure",
+            exceptionType=type(exc).__name__)
+    finally:
+        if client is not None:
+            client.close()
+    if login_args:
+        site, username, password, target_url = login_args
+        auto_login(
+            site, username, password, target_url, port=port, log=log, driver="marionette",
+        )
+
+
+def iniciar_limite_firefox(pasta, login_args=None, resumo="", log=None, port=MARIONETTE_PORT):
+    thread = threading.Thread(
+        target=acompanhar_site_firefox,
+        args=(pasta, login_args),
+        kwargs={"resumo": resumo, "log": log, "port": port},
+        name="site-limite-firefox",
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
 def start_auto_login(site, username, password, target_url, log=None, driver="marionette"):
     port = DEVTOOLS_PORT if driver == "devtools" else MARIONETTE_PORT
     thread = threading.Thread(

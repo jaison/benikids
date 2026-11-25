@@ -1,3 +1,11 @@
 #!/bin/sh
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Cozy Kids Launcher: abre o GCompris novo (Flathub), em tela cheia, só com atividades para 8 anos+.
 exec flatpak run org.kde.gcompris -f --difficulty 3-6

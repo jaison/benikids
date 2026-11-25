@@ -1,0 +1,10 @@
+#!/bin/sh
+# Idioma do Benikids. Os atalhos fazem: . cozy-locale
+# Se o português do Brasil estiver instalado, jogos e Firefox usam ele
+# (o Ubuntu vem em inglês). Se não estiver, o idioma da sessão fica como está.
+if locale -a 2>/dev/null | grep -qi '^pt_BR\.utf-\?8$'; then
+  LANG=pt_BR.UTF-8
+  LC_ALL=pt_BR.UTF-8
+  LANGUAGE=pt_BR:pt
+  export LANG LC_ALL LANGUAGE
+fi

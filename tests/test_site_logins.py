@@ -74,7 +74,10 @@ class ExternalProfileTest(unittest.TestCase):
     def test_marionette_only_when_asked(self):
         with tempfile.TemporaryDirectory() as root:
             plain = external_browser_command("firefox", "https://x.org/", root, profile_id="default")
-            self.assertNotIn("--marionette", plain)
+            if sys.platform.startswith("linux"):
+                self.assertIn("--marionette", plain)
+            else:
+                self.assertNotIn("--marionette", plain)
             driven = external_browser_command(
                 "firefox", "https://pt.khanacademy.org/", root, profile_id="default", marionette_port=28290,
             )

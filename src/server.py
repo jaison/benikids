@@ -2569,6 +2569,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         self.json_response({"status": "error", "message": "No supported browser found"}, 503)
                         return
                     try:
+                        ambiente = {}
+                        if browser and sys.platform.startswith("linux") and browser_family(browser) == "firefox":
+                            # não gruda no Firefox que a família já deixou aberto
+                            ambiente["MOZ_APP_REMOTINGNAME"] = "benikids-sites"
                         launch_owned_tile(
                             command,
                             "external",
@@ -2576,6 +2580,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             tile_id=tile_id,
                             profile_id=cfg.get("activeProfileId", ""),
                             track_activity=cfg.get("activityTrackingEnabled", False),
+                            env_extra=ambiente or None,
                         )
                     except OSError:
                         log_runtime_event(
@@ -2589,7 +2594,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             503,
                         )
                         return
-                    if login_driver and command and (
+                    limite_linux = (
+                        sys.platform.startswith("linux")
+                        and command
+                        and "--marionette" in command
+                        and "--profile" in command
+                    )
+                    if limite_linux:
+                        perfil = command[command.index("--profile") + 1]
+                        from navegacao_sites import PASTA_LIMITE_NO_PERFIL, limites_da_url
+                        login_args = None
+                        if login_driver == "marionette" and auto_login:
+                            site, login = auto_login
+                            login_args = (site, login["username"], login["password"], url)
+                        site_logins.iniciar_limite_firefox(
+                            os.path.join(perfil, PASTA_LIMITE_NO_PERFIL),
+                            login_args,
+                            resumo=limites_da_url(url)["resumo"],
+                            log=log_runtime_event,
+                        )
+                    elif login_driver and command and (
                         "--marionette" in command
                         or any(arg.startswith("--remote-debugging-port=") for arg in command)
                     ):

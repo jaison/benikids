@@ -105,7 +105,11 @@ class EdgeCommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             command = external_browser_command("firefox", "https://x.org/", root, devtools_port=28291)
             self.assertEqual(command[-2:], ["--kiosk", "https://x.org/"])
-            self.assertNotIn("--marionette", command)
+            self.assertFalse(any("remote-debugging" in a for a in command))
+            if sys.platform.startswith("linux"):
+                self.assertIn("--marionette", command)
+            else:
+                self.assertNotIn("--marionette", command)
 
 
 MINIMO = {

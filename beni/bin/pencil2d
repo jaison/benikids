@@ -1,4 +1,12 @@
 #!/bin/sh
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Benikids: Pencil2D (Desenho Animado) em tela cheia.
 B=/usr/games/pencil2d; [ -x "$B" ] || B=/usr/bin/pencil2d
 exec cozy-fullscreen pencil2d "$B" "$@"

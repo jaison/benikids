@@ -55,6 +55,21 @@ pacotes() {
     flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     flatpak install --system -y --noninteractive flathub "${fp[@]}"
   fi
+  if locale -a 2>/dev/null | grep -qi '^pt_BR\.utf-\?8$'; then
+    echo "  pt_BR já está instalado."
+  else
+    passo "Idioma português (pt_BR)"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y language-pack-pt language-pack-gnome-pt \
+      || aviso "não instalei o language-pack-pt"
+    if ! locale -a 2>/dev/null | grep -qi '^pt_BR\.utf-\?8$'; then
+      DEBIAN_FRONTEND=noninteractive apt-get install -y locales || true
+      if [[ -f /etc/locale.gen ]]; then
+        sed -i 's/^# *\(pt_BR.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+      fi
+      grep -qx 'pt_BR.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null || echo 'pt_BR.UTF-8 UTF-8' >> /etc/locale.gen
+      locale-gen pt_BR.UTF-8 || aviso "não consegui gerar o locale pt_BR.UTF-8"
+    fi
+  fi
 }
 if [[ $SEM_PACOTES -eq 0 ]]; then
   if [[ $ATUALIZACAO -eq 1 || $SO_PACOTES -eq 1 ]]; then
@@ -68,6 +83,9 @@ fi
 [[ $SO_PACOTES -eq 1 ]] && exit 0
 
 # ------------------------------------------------------ políticas do Firefox
+# Bloqueios pontuais (Escola Games, DNS). Não use WebsiteFilter Block <all_urls>:
+# o policies.json vale para todo Firefox da máquina, inclusive o da família.
+# O limite de cada tile fica na extensão do perfil do Benikids.
 passo "Políticas do Firefox (bloqueios, uBlock, sem DNS próprio)"
 install -D -m 0644 "$REPO/beni/firefox/policies.json" /etc/firefox/policies/policies.json
 

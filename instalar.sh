@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  Beni Launcher — instalador
-#  Prepara um notebook com Linux Mint (XFCE) para crianças: instala o launcher
+#  Prepara um notebook com Linux (Mint, Ubuntu e derivados) para crianças: instala o launcher
 #  (baseado no Cozy Kids Launcher), os apps/jogos, os emuladores, os temas e
 #  todos os ajustes descritos no README.
 #
@@ -129,50 +129,74 @@ fi
 [[ -f "$CFG_DIR/itch-colecoes.json" ]] || cp "$REPO/beni/config/itch-colecoes.json" "$CFG_DIR/"
 echo "firefox" > "$CFG_DIR/browser"
 
-# Firefox do launcher: desliga a "navegação com cursor" (F7), que mostra uma linha piscando
-for P in "$HOME/.cache/cozy-kids-launcher/firefox-profile" "$HOME/.cache/cozy-kids-launcher/external-firefox-profile"; do
+# Firefox do launcher: desliga a "navegação com cursor" (F7), que mostra uma linha piscando.
+# No snap o perfil não pode ficar em ~/.cache (pasta oculta, o snap não lê).
+SNAP_FIREFOX=0
+[[ -d /snap/firefox || -x /snap/bin/firefox ]] && SNAP_FIREFOX=1
+PERFIS_CURSOR=(
+  "$HOME/.cache/cozy-kids-launcher/firefox-profile"
+  "$HOME/.cache/cozy-kids-launcher/external-firefox-profile"
+)
+if [[ $SNAP_FIREFOX -eq 1 ]]; then
+  PERFIS_CURSOR+=(
+    "$HOME/snap/firefox/common/cozy-kids-launcher-profile"
+    "$HOME/snap/firefox/common/cozy-kids-launcher/external-firefox-profile"
+  )
+fi
+for P in "${PERFIS_CURSOR[@]}"; do
   mkdir -p "$P"
   grep -q browsewithcaret "$P/user.js" 2>/dev/null || printf '%s\n' \
     'user_pref("accessibility.browsewithcaret", false);' \
     'user_pref("accessibility.browsewithcaret_shortcut.enabled", false);' >> "$P/user.js"
 done
-# Sites abertos pelo launcher (Escola Games etc.): bloqueador de anúncios uBlock Origin
-P="$HOME/.cache/cozy-kids-launcher/external-firefox-profile"
-mkdir -p "$P/extensions"
-cp "$REPO/beni/firefox/uBlock0@raymondhill.net.xpi" "$P/extensions/"
+# Sites abertos pelo launcher (Escola Games etc.): bloqueador de anúncios uBlock Origin.
 # Desenhos do Kleki (tile Desenhar) vão para ~/Imagens/Desenhos, sem o painel de
-# downloads (o ícone de pasta dele abriria o gerenciador de arquivos)
+# downloads (o ícone de pasta dele abriria o gerenciador de arquivos).
 DESENHOS="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Imagens")/Desenhos"
 mkdir -p "$DESENHOS"
-grep -q alwaysOpenPanel "$P/user.js" 2>/dev/null || printf '%s\n' \
-  'user_pref("browser.download.alwaysOpenPanel", false);' \
-  'user_pref("browser.download.folderList", 2);' \
-  "user_pref(\"browser.download.dir\", \"$DESENHOS\");" \
-  'user_pref("browser.download.useDownloadDir", true);' >> "$P/user.js"
-grep -q autoDisableScopes "$P/user.js" 2>/dev/null || printf '%s\n' \
-  'user_pref("extensions.autoDisableScopes", 0);' \
-  'user_pref("extensions.enabledScopes", 15);' >> "$P/user.js"
-# Avisos de cookies: o uBlock (policies.json) esconde a maioria; o Firefox ESR ainda
-# tem o recusador próprio (1 = recusa o opcional; se não dá para recusar, não faz
-# nada; nunca aceita por nós). O Firefox comum tirou o recurso e ignora a pref.
-# Não vai no policies.json: a política Preferences não aceita "cookiebanners.".
-grep -q cookiebanners "$P/user.js" 2>/dev/null || printf '%s\n' \
-  'user_pref("cookiebanners.service.mode", 1);' \
-  'user_pref("cookiebanners.service.mode.privateBrowsing", 1);' >> "$P/user.js"
-# Escola Games conta como "Aprender": esconde o menu "Jogos" (diversão) e bloqueia essas páginas
-mkdir -p "$P/chrome"
-cp "$REPO/beni/firefox/userContent.css" "$P/chrome/"
-grep -q legacyUserProfileCustomizations "$P/user.js" || \
-  echo 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' >> "$P/user.js"
+ajusta_perfil_sites() {
+  local P="$1"
+  mkdir -p "$P/extensions" "$P/chrome"
+  cp "$REPO/beni/firefox/uBlock0@raymondhill.net.xpi" "$P/extensions/"
+  grep -q alwaysOpenPanel "$P/user.js" 2>/dev/null || printf '%s\n' \
+    'user_pref("browser.download.alwaysOpenPanel", false);' \
+    'user_pref("browser.download.folderList", 2);' \
+    "user_pref(\"browser.download.dir\", \"$DESENHOS\");" \
+    'user_pref("browser.download.useDownloadDir", true);' >> "$P/user.js"
+  grep -q autoDisableScopes "$P/user.js" 2>/dev/null || printf '%s\n' \
+    'user_pref("extensions.autoDisableScopes", 0);' \
+    'user_pref("extensions.enabledScopes", 15);' >> "$P/user.js"
+  # Avisos de cookies: o uBlock (policies.json) esconde a maioria; o Firefox ESR ainda
+  # tem o recusador próprio (1 = recusa o opcional; se não dá para recusar, não faz
+  # nada; nunca aceita por nós). O Firefox comum tirou o recurso e ignora a pref.
+  # Não vai no policies.json: a política Preferences não aceita "cookiebanners.".
+  grep -q cookiebanners "$P/user.js" 2>/dev/null || printf '%s\n' \
+    'user_pref("cookiebanners.service.mode", 1);' \
+    'user_pref("cookiebanners.service.mode.privateBrowsing", 1);' >> "$P/user.js"
+  cp "$REPO/beni/firefox/userContent.css" "$P/chrome/"
+  grep -q legacyUserProfileCustomizations "$P/user.js" || \
+    echo 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' >> "$P/user.js"
+}
+copia_perfil_sites() {
+  local P="$1" Q
+  for Q in "$P"-*; do
+    [[ -d "$Q" ]] || continue
+    mkdir -p "$Q/extensions" "$Q/chrome"
+    cp "$P/extensions/"*.xpi "$Q/extensions/"
+    cp "$P/chrome/userContent.css" "$Q/chrome/"
+    cp "$P/user.js" "$Q/user.js"
+  done
+}
+P="$HOME/.cache/cozy-kids-launcher/external-firefox-profile"
+ajusta_perfil_sites "$P"
 # Cada criança tem o seu Firefox de sites (external-firefox-profile-<id>, criado no
 # 1º uso, para os logins e cookies não se misturarem): leva as mesmas extensões e ajustes.
-for Q in "$HOME"/.cache/cozy-kids-launcher/external-firefox-profile-*; do
-  [[ -d "$Q" ]] || continue
-  mkdir -p "$Q/extensions" "$Q/chrome"
-  cp "$P/extensions/"*.xpi "$Q/extensions/"
-  cp "$P/chrome/userContent.css" "$Q/chrome/"
-  cp "$P/user.js" "$Q/user.js"
-done
+copia_perfil_sites "$P"
+if [[ $SNAP_FIREFOX -eq 1 ]]; then
+  P="$HOME/snap/firefox/common/cozy-kids-launcher/external-firefox-profile"
+  ajusta_perfil_sites "$P"
+  copia_perfil_sites "$P"
+fi
 
 passo "Abrir sozinho no login + sincronizar o itch.io a cada 30 min"
 mkdir -p "$HOME/.config/autostart" "$HOME/.config/systemd/user"
@@ -222,7 +246,19 @@ if command -v xfconf-query >/dev/null && [[ -n "${DISPLAY:-}" ]]; then
   gsettings set apps.light-locker lock-after-screensaver 0 2>/dev/null || true
   gsettings set apps.light-locker late-locking false 2>/dev/null || true
 elif [[ $ATUALIZACAO -eq 0 ]]; then
-  aviso "fora de uma sessão XFCE: rode de novo dentro da sessão gráfica para aplicar estes ajustes."
+  aviso "fora de uma sessão XFCE: os ajustes da barra e do bloqueio do Mint ficam para a próxima vez, dentro da sessão."
+fi
+# Ubuntu (GNOME): o bloqueio de tela não é o do XFCE. Desliga o do GNOME na conta
+# da criança. Não mexe no Mint (lá o desktop não é GNOME).
+DESKTOP="${XDG_CURRENT_DESKTOP:-}${XDG_SESSION_DESKTOP:-}"
+if [[ "$DESKTOP" == *[Gg][Nn][Oo][Mm][Ee]* || "$DESKTOP" == *[Uu]buntu* ]]; then
+  gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
+  gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false 2>/dev/null || true
+  gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
+fi
+if [[ $ATUALIZACAO -eq 0 && "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
+  aviso "Esta sessão é Wayland. O Benikids usa o X11 para a tela cheia, a pílula e o controle."
+  aviso "Na tela de entrar, clique na engrenagem e escolha \"Ubuntu on Xorg\" (sessão Xorg)."
 fi
 
 if [[ $ATUALIZACAO -eq 1 ]]; then

@@ -95,17 +95,15 @@ class LaunchActionTests(unittest.TestCase):
             self.assertIn("--app=https://example.com/kids", chromium)
             firefox_profile = Path(temp_dir) / "external-firefox-profile"
             self.assertTrue(firefox_profile.is_dir())
-            self.assertEqual(
-                firefox,
-                [
-                    "firefox",
-                    "--no-remote",
-                    "--profile",
-                    str(firefox_profile),
-                    "--kiosk",
-                    "https://example.com/kids",
-                ],
-            )
+            esperado = ["firefox", "--no-remote"]
+            if sys.platform.startswith("linux"):
+                # instância nova + Marionette para o limite de domínio do tile
+                esperado.append("--new-instance")
+            esperado += ["--profile", str(firefox_profile)]
+            if sys.platform.startswith("linux"):
+                esperado.append("--marionette")
+            esperado += ["--kiosk", "https://example.com/kids"]
+            self.assertEqual(firefox, esperado)
 
     def test_legacy_kde_wrapper_is_removed(self):
         self.assertEqual(

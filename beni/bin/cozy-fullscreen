@@ -1,4 +1,12 @@
 #!/bin/bash
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Cozy Kids Launcher: abre um app que normalmente abre em janela e coloca as janelas dele
 # em tela cheia, para as barras do Mint não aparecerem para a criança.
 # Uso: cozy-fullscreen <classe-da-janela> <comando> [args...]

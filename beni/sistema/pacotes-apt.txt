@@ -16,6 +16,9 @@ zenity
 tuxmath
 supertuxkart
 supertux
+# Klotski: no Ubuntu o binário do apt (gnome-klotski). No Mint o flatpak continua
+# primeiro (beni/bin/klotski). Os dois podem estar instalados.
+gnome-klotski
 pingus
 hex-a-hop
 frogatto

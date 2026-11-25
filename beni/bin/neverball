@@ -1,4 +1,12 @@
 #!/bin/sh
+# pt_BR se o idioma estiver instalado (o Ubuntu vem em inglês).
+case "$0" in
+  */*) _COZY_LOCALE="$(dirname "$0")/cozy-locale" ;;
+  *) _COZY_LOCALE="$HOME/.local/bin/cozy-locale" ;;
+esac
+[ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
+[ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
+unset _COZY_LOCALE
 # Benikids: Neverball (Bola Maluca) em tela cheia, sem prender o mouse.
 B=/usr/games/neverball; [ -x "$B" ] || B=/usr/bin/neverball
 LD_PRELOAD="$HOME/.local/lib/cozy-fixes/nograb.so" exec cozy-fullscreen neverball "$B" "$@"

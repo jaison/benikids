@@ -1059,9 +1059,12 @@ impl Menu {
                 ]);
         } else {
             cmd.arg("--no-remote")
+                .arg("--new-instance")
                 .arg("--profile")
                 .arg(&self.o.web_perfil)
                 .args(["--new-window", "--kiosk", &url]);
+            // não gruda no Firefox que a família já deixou aberto (snap)
+            cmd.env("MOZ_APP_REMOTINGNAME", "benikids-menu");
         }
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
