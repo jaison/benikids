@@ -1,6 +1,8 @@
 """Profile-aware configuration helpers for Cozy Kids Launcher."""
 
 import copy
+import json
+import os
 import re
 import uuid
 
@@ -108,8 +110,95 @@ def merge_active_config(data, runtime_config):
     return result
 
 
-def add_profile(data, name, avatar="", profile_id=None):
-    """Clone the active profile so a new child starts with usable settings."""
+AVATAR_POR_GENERO = {"menino": "👦", "menina": "👧"}
+
+
+def caminho_do_modelo():
+    """Catálogo padrão: ao lado do servidor (instalado) ou no repositório."""
+    aqui = os.path.dirname(os.path.abspath(__file__))
+    for caminho in (
+        os.path.join(aqui, "config-modelo.json"),
+        os.path.join(aqui, "..", "beni", "config", "config.json"),
+    ):
+        if os.path.isfile(caminho):
+            return caminho
+    return None
+
+
+def perfil_modelo():
+    """Primeiro perfil do catálogo padrão — o mesmo da configuração inicial.
+
+    Não é o perfil ativo: aquele já pode ter jogos escondidos ou o gênero
+    de outra criança.
+    """
+    caminho = caminho_do_modelo()
+    if not caminho:
+        raise ValueError("Não achei o catálogo padrão")
+    with open(caminho, encoding="utf-8") as handle:
+        texto = handle.read()
+    # O catálogo traz {{HOME}}. No Windows o caminho é C:\Users\... e o \U
+    # não é um escape JSON válido: json.loads quebraria e nenhum perfil nasceria.
+    # json.dumps escapa; as aspas de fora saem.
+    home = json.dumps(os.path.expanduser("~"))[1:-1]
+    cfg = json.loads(texto.replace("{{HOME}}", home))
+    perfis = [p for p in (cfg.get("profiles") or []) if isinstance(p, dict)]
+    if not perfis:
+        raise ValueError("Não achei o catálogo padrão")
+    return copy.deepcopy(perfis[0])
+
+
+def _tile_portavel(tile):
+    """Site ou jogo de navegador do Linux, no formato do Windows. O resto sai."""
+    import jogos_genero
+
+    cmd = tile.get("cmd") or []
+    if len(cmd) == 1 and isinstance(cmd[0], str) and cmd[0].startswith("special:"):
+        return copy.deepcopy(tile)
+    novo = jogos_genero.traduzir_navegador_jogos(cmd)
+    if not novo:
+        return None
+    tile = copy.deepcopy(tile)
+    tile["cmd"] = novo
+    return tile
+
+
+def tiles_da_plataforma(modelo, plataforma):
+    """Tiles de um perfil criado na configuração inicial, neste sistema.
+
+    Linux: os do perfil-modelo. Windows: os que funcionam em qualquer sistema
+    mais o catálogo (catalogo/windows.json), como scripts/windows/config-padrao.py.
+    """
+    tiles = copy.deepcopy(modelo.get("tiles") or [])
+    if plataforma != "windows":
+        return tiles
+    portateis = [tile for tile in (_tile_portavel(tile) for tile in tiles) if tile]
+    ids = {tile.get("id") for tile in portateis}
+    import catalogo_windows
+
+    for tile in catalogo_windows.tiles():
+        if tile["id"] not in ids:
+            portateis.append(copy.deepcopy(tile))
+    return portateis
+
+
+def add_profile(data, name, avatar="", profile_id=None, gender=None, plataforma=None):
+    """Perfil novo com o padrão do gênero, igual a um da configuração inicial.
+
+    Não copia tiles nem gênero do perfil ativo. O tempo de sessão e os
+    limites por categoria vêm do perfil-modelo (os da primeira criança),
+    não do irmão que está na tela: o limite de um pode ter sido apertado
+    de propósito. Limite por app, horário e favorito começam como no modelo.
+    """
+    if gender not in AVATAR_POR_GENERO:
+        raise ValueError("Escolha menino ou menina")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Digite o nome")
+    nome = " ".join(name.split())[:40]
+    if plataforma is None:
+        plataforma = "windows" if os.name == "nt" else "linux"
+    if plataforma not in ("linux", "windows"):
+        raise ValueError("plataforma inválida")
+
     result = copy.deepcopy(data)
     profiles = result.setdefault("profiles", [])
     if len(profiles) >= MAX_PROFILES:
@@ -121,16 +210,34 @@ def add_profile(data, name, avatar="", profile_id=None):
     if any(profile.get("id") == new_id for profile in profiles):
         raise ValueError("Profile id already exists")
 
-    profile = copy.deepcopy(active_profile(result))
-    profile["id"] = new_id
-    profile["name"] = name
-    profile["avatar"] = avatar
-    profile["title"] = name
-    profile["currentPage"] = 0
-    profile["favorites"] = []
-    profile["appLimits"] = {}
-    profile["weeklySchedule"] = {"enabled": False, "days": {}}
-    profile["appAvailability"] = {}
+    modelo = perfil_modelo()
+    profile = copy.deepcopy(modelo)
+    if not isinstance(avatar, str):
+        avatar = ""
+    avatar = avatar.strip()[:16]
+    profile.update(
+        id=new_id,
+        name=nome,
+        avatar=avatar or AVATAR_POR_GENERO[gender],
+        title=f"Oi, {nome}!",
+        theme="benikids",
+        currentPage=0,
+        gender=gender,
+        tiles=tiles_da_plataforma(modelo, plataforma),
+    )
+    profile.pop("telemetryId", None)
+    profile.pop("birthMonth", None)
+    profile.pop("tilesSeen", None)
+    ids = {tile.get("id") for tile in profile["tiles"] if isinstance(tile, dict)}
+    if isinstance(profile.get("favorites"), list):
+        profile["favorites"] = [i for i in profile["favorites"] if i in ids]
+    for chave in ("appLimits", "appAvailability"):
+        bruto = profile.get(chave)
+        if isinstance(bruto, dict):
+            profile[chave] = {k: v for k, v in bruto.items() if k in ids}
+    import jogos_genero
+
+    jogos_genero.aplicar_genero_inicial(profile, plataforma)
     profiles.append(profile)
     return result, new_id
 

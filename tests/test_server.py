@@ -466,6 +466,8 @@ class ServerApiTests(unittest.TestCase):
         server_module.clear_pin_failures()
         server_module.Handler.log_message = lambda *args, **kwargs: None
 
+        self._sync = mock.patch.object(server_module, "agendar_sync_da_colecao")
+        self._sync.start()
         server_module.save_cfg(base_config())
         self.httpd = server_module.create_server(port=0)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -474,6 +476,7 @@ class ServerApiTests(unittest.TestCase):
         self.base_url = f"http://127.0.0.1:{self.port}"
 
     def tearDown(self):
+        self._sync.stop()
         self.httpd.shutdown()
         self.httpd.server_close()
         self.thread.join(timeout=5)
@@ -770,7 +773,7 @@ class ServerApiTests(unittest.TestCase):
         status, created, _ = self.request(
             "/api/profiles/create",
             method="POST",
-            body={"name": "Alex", "avatar": "🚀"},
+            body={"name": "Alex", "avatar": "🚀", "gender": "menino"},
             origin=self.base_url,
         )
         self.assertEqual(status, 200)
@@ -785,6 +788,13 @@ class ServerApiTests(unittest.TestCase):
         _, catalog, _ = self.request("/api/media")
         self.assertEqual(catalog["favoriteIds"], [])
 
+        status, _, _ = self.request(
+            "/api/profiles/select",
+            method="POST",
+            body={"profileId": "default"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
         status, _, _ = self.request(
             "/api/media/favorite",
             method="POST",
@@ -1483,7 +1493,7 @@ class ServerApiTests(unittest.TestCase):
         status, created, _ = self.request(
             "/api/profiles/create",
             method="POST",
-            body={"name": "Alex", "avatar": "🚀"},
+            body={"name": "Alex", "avatar": "🚀", "gender": "menino"},
             origin=self.base_url,
         )
         self.assertEqual(status, 200)
@@ -2058,6 +2068,92 @@ class ServerApiTests(unittest.TestCase):
                                     body={"acao": "iniciar"}, origin="https://example.com")
         self.assertEqual(status, 403)
 
+    def test_perfil_novo_usa_o_genero_escolhido_e_a_troca_tira_os_bea(self):
+        atual = server_module.load_cfg()
+        atual["gender"] = "menina"
+        atual["timerMinutes"] = 5
+        atual["tiles"].append({
+            "id": "so-desta",
+            "label": "Só desta",
+            "emoji": "⭐",
+            "cmd": ["echo", "oi"],
+            "visible": True,
+            "category": "jogos",
+        })
+        server_module.save_cfg(atual)
+
+        status, erro, _ = self.request(
+            "/api/profiles/create",
+            method="POST",
+            body={"name": "Sem genero"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 400)
+
+        status, criado, _ = self.request(
+            "/api/profiles/create",
+            method="POST",
+            body={"name": "Novo", "gender": "menino"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        server_module.agendar_sync_da_colecao.assert_called()
+        status, selecionado, _ = self.request(
+            "/api/profiles/select",
+            method="POST",
+            body={"profileId": criado["profileId"]},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        perfil = selecionado["config"]
+        ids = [t["id"] for t in perfil["tiles"]]
+        self.assertEqual(perfil["gender"], "menino")
+        self.assertEqual(perfil["timerMinutes"], 30)
+        self.assertFalse(any(i.startswith("bea-") for i in ids))
+        self.assertNotIn("so-desta", ids)
+
+        status, menina, _ = self.request(
+            "/api/profiles/create",
+            method="POST",
+            body={"name": "Outra", "gender": "menina"},
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        status, selecionado, _ = self.request(
+            "/api/profiles/select",
+            method="POST",
+            body={"profileId": menina["profileId"]},
+            origin=self.base_url,
+        )
+        outra = selecionado["config"]
+        self.assertIn("bea-dollmaker", [t["id"] for t in outra["tiles"]])
+        outra["gender"] = "menino"
+        server_module.agendar_sync_da_colecao.reset_mock()
+        status, salvo, _ = self.request(
+            "/api/save-config",
+            method="POST",
+            body=outra,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        server_module.agendar_sync_da_colecao.assert_called()
+        ids = [t["id"] for t in salvo["config"]["tiles"]]
+        self.assertEqual(salvo["config"]["gender"], "menino")
+        self.assertFalse(any(i.startswith("bea-") for i in ids))
+
+    def test_sync_pedida_na_criacao_espera_a_trava(self):
+        self._sync.stop()
+        try:
+            with mock.patch.object(server_module.threading, "Thread") as thread:
+                server_module.agendar_sync_da_colecao()
+        finally:
+            self._sync.start()
+        self.assertEqual(thread.call_args.kwargs["target"], server_module.itch_sync.sincronizar)
+        self.assertTrue(thread.call_args.kwargs["kwargs"]["esperar_trava"])
+        self.assertEqual(thread.call_args.kwargs["kwargs"]["caminhos"].config, server_module.CFG)
+        self.assertTrue(thread.call_args.kwargs["daemon"])
+        thread.return_value.start.assert_called_once()
+
 
 class FrontendSafetyTests(unittest.TestCase):
     def test_frontend_uses_focused_external_assets(self):
@@ -2398,6 +2494,17 @@ class FrontendSafetyTests(unittest.TestCase):
         self.assertIn("tile.label", aviso)
         self.assertIn("status==='missing'", aviso)
         self.assertIn("ainda não está instalado", aviso)
+
+    def test_menu_web_avisa_com_o_nome_quando_o_app_nao_esta_instalado(self):
+        source = frontend_source()
+        launch_function = source[source.index("function launchTile"):source.index("// PIN handling")]
+        self.assertIn("response.status===404", launch_function)
+        self.assertIn("data.status==='missing'", launch_function)
+        self.assertIn(
+            "showUsageMessage('📦 '+tile.label,'Peça para a mamãe ou o papai instalar este app.')",
+            launch_function,
+        )
+        self.assertIn("hideStartFeedback()", launch_function)
 
     def test_cover_media_library_is_local_bilingual_and_safe_dom_rendered(self):
         root = REPOSITORY_ROOT / "src"

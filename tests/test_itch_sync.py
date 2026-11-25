@@ -573,6 +573,67 @@ class ItchSyncTests(unittest.TestCase):
         servidor = (REPOSITORIO / "src" / "server.py").read_text(encoding="utf-8")
         self.assertIn("itch_sync.iniciar()", servidor)
 
+    def _caminhos(self):
+        return itch_sync.Caminhos(
+            config=str(self.dir / "config.json"),
+            colecoes=str(self.dir / "colecoes.json"),
+            cache=str(self.dir / "cache.json"),
+            capas=str(self.dir / "covers"),
+            log=str(self.dir / "itch-sync.log"),
+            trava=str(self.dir / "lock"),
+            moldura=str(self.dir / "cozy-jogo.html"),
+            porta=38431,
+        )
+
+    def test_trava_ocupada_desiste_sem_esperar(self):
+        cfg_path = self.dir / "config.json"
+        cfg_path.write_text(json.dumps({
+            "profiles": [{"id": "ele", "name": "Perfil", "gender": "menino", "tiles": []}],
+        }), encoding="utf-8")
+        caminhos = self._caminhos()
+        Path(caminhos.trava).write_text("99999", encoding="utf-8")
+
+        def nao_dorme(_segundos):
+            raise AssertionError("não devia esperar a trava")
+
+        with mock.patch.object(itch_sync, "dormir", nao_dorme):
+            codigo = itch_sync.sincronizar(
+                caminhos, baixar=baixar_paginas(PAGINAS), plataforma="linux",
+            )
+        self.assertEqual(codigo, 0)
+        log = Path(caminhos.log).read_text(encoding="utf-8")
+        self.assertIn("outra sincronização em andamento\n", log)
+        self.assertNotIn("esperando para tentar de novo", log)
+        self.assertEqual(ids_itch(json.loads(cfg_path.read_text(encoding="utf-8"))["profiles"][0]), [])
+
+    def test_sync_do_perfil_novo_espera_a_trava_e_tenta_de_novo(self):
+        cfg_path = self.dir / "config.json"
+        cfg_path.write_text(json.dumps({
+            "profiles": [{"id": "ele", "name": "Perfil", "gender": "menino", "tiles": []}],
+        }), encoding="utf-8")
+        caminhos = self._caminhos()
+        trava = Path(caminhos.trava)
+        trava.write_text("99999", encoding="utf-8")
+
+        def solta(_segundos):
+            if trava.exists():
+                trava.unlink()
+
+        with mock.patch.object(itch_sync, "dormir", solta):
+            codigo = itch_sync.sincronizar(
+                caminhos, baixar=baixar_paginas(PAGINAS), plataforma="linux",
+                esperar_trava=True, prazo_trava=5,
+            )
+        self.assertEqual(codigo, 0)
+        log = Path(caminhos.log).read_text(encoding="utf-8")
+        self.assertIn("esperando para tentar de novo", log)
+        perfil = json.loads(cfg_path.read_text(encoding="utf-8"))["profiles"][0]
+        self.assertEqual(
+            ids_itch(perfil),
+            ["itch-mingle", "itch-pikwip", "itch-fossil-quest", "itch-serenitrove"],
+        )
+        self.assertFalse(trava.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

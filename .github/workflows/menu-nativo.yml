@@ -167,6 +167,7 @@ jobs:
           P=pacote/Beni
           mkdir -p "$P/app/themes/fonts" "$P/app/themes/themes"
           cp -r src/. "$P/app/"
+          cp beni/config/config.json "$P/app/config-modelo.json"
           rm -rf "$P/app/launcher.sh" "$P/app/update.sh" "$P/app/__pycache__" "$P/app/scratch"
           cp themes/*.jpg themes/*.svg "$P/app/themes/"
           cp themes/fonts/* "$P/app/themes/fonts/"

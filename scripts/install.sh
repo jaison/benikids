@@ -1635,6 +1635,8 @@ install -m 0644 "$SRC_DIR/browser_policy.py" "$APP_ROOT/browser_policy.py"
 install -m 0644 "$SRC_DIR/config_store.py" "$APP_ROOT/config_store.py"
 install -m 0644 "$SRC_DIR/config_validation.py" "$APP_ROOT/config_validation.py"
 install -m 0644 "$SRC_DIR/profile_config.py" "$APP_ROOT/profile_config.py"
+# Perfil novo lê este catálogo (o mesmo da configuração inicial), não o perfil ativo.
+install -m 0644 "$REPO_DIR/beni/config/config.json" "$APP_ROOT/config-modelo.json"
 install -m 0644 "$SRC_DIR/schedule_rules.py" "$APP_ROOT/schedule_rules.py"
 install -m 0644 "$SRC_DIR/lifecycle_state.py" "$APP_ROOT/lifecycle_state.py"
 install -m 0644 "$SRC_DIR/media_library.py" "$APP_ROOT/media_library.py"

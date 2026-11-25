@@ -51,6 +51,8 @@ passo "Launcher (código em $APP_ROOT)"
 mkdir -p "$APP_ROOT/themes/covers" "$APP_ROOT/themes/fonts"
 # copia o código; não apaga capas baixadas (themes/covers)
 cp -r "$REPO/src/." "$APP_ROOT/"
+# Perfil novo lê este catálogo (o mesmo da configuração inicial), não o perfil ativo.
+cp "$REPO/beni/config/config.json" "$APP_ROOT/config-modelo.json"
 rm -f "$APP_ROOT/launcher.sh"   # template do projeto original; usamos beni/bin/cozy-kids-launcher
 # O atualizador do projeto original instalaria o Cozy Kids Launcher por cima deste projeto.
 rm -f "$APP_ROOT/update.sh" "$APP_ROOT/update-trigger.sh"

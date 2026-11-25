@@ -414,6 +414,18 @@ def save_cfg(data):
         allow_pin_hash=True,
     )
     stored = merge_active_config(stored, validated)
+    atual = active_profile(stored)
+    # Toda gravação alinha os jogos ao gênero. Assim um perfil que já está
+    # "menino" mas ainda mostra os jogos de vestir (copiados antes desta
+    # correção) perde esses tiles no próximo Salvar, sem precisar trocar
+    # o gênero duas vezes. Oculto continua oculto; apagado não volta.
+    if atual.get("gender") in ("menino", "menina"):
+        import jogos_genero
+        jogos_genero.trocar_genero(
+            atual,
+            "windows" if os.name == "nt" else "linux",
+            porta=PORT,
+        )
     stored = save_stored_cfg(stored)
     return active_config(stored)
 
@@ -1368,6 +1380,25 @@ def clear_timer():
     remove_timer_state(TIMER_FILE)
 
 
+def agendar_sync_da_colecao():
+    """Busca a coleção do itch agora. O ciclo normal espera 2 min e depois 30.
+
+    Se outra sincronização já estiver baixando, esta espera a trava e tenta
+    de novo. A que está no meio leu os perfis antes e não vê o perfil novo.
+    """
+    try:
+        caminhos = itch_sync.caminhos_padrao()
+        caminhos.config = CFG
+    except Exception:  # noqa: BLE001 — sem caminho, a thread de 30 min tenta de novo
+        return
+    threading.Thread(
+        target=itch_sync.sincronizar,
+        kwargs={"caminhos": caminhos, "esperar_trava": True},
+        name="itch-sync-perfil",
+        daemon=True,
+    ).start()
+
+
 def timer_status(cfg):
     return calculate_timer_status(load_timer(), cfg, now=time.time())
 
@@ -1419,8 +1450,7 @@ def first_setup_config(stored, children, pin, start_on_login=True, telemetry=Tru
         # Menina recebe os jogos de vestir/maquiagem. Menino não fica com os
         # que vieram copiados do perfil-modelo. Sem gender a configuração nem chega aqui.
         import jogos_genero
-        jogos_genero.retirar_de_outros_generos(perfil)
-        jogos_genero.aplicar_perfil(
+        jogos_genero.aplicar_genero_inicial(
             perfil,
             "windows" if os.name == "nt" else "linux",
             porta=PORT,
@@ -2119,12 +2149,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     stored,
                     body.get("name"),
                     body.get("avatar", ""),
+                    gender=body.get("gender"),
                 )
                 stored = save_stored_cfg(stored)
             except (OSError, ValueError) as exc:
                 self.json_response({"status": "error", "message": str(exc)}, 400)
                 return
             log_runtime_event("profile.created")
+            agendar_sync_da_colecao()
             self.json_response({
                 "status": "ok",
                 "profileId": profile_id,
@@ -2185,12 +2217,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             data = self.read_json_body()
             if data is None:
                 return
+            genero_antes = cfg.get("gender")
             try:
                 data = validate_config(data, existing_pin_hash=cfg.get("pinHash", ""))
                 data = save_cfg(data)
             except (OSError, ValueError) as exc:
                 self.json_response({"status": "error", "message": str(exc)}, 400)
                 return
+            if data.get("gender") in ("menino", "menina") and data.get("gender") != genero_antes:
+                agendar_sync_da_colecao()
             write_browser_override(data)
             inicio_automatico.aplicar(data, APP_ROOT, AUTOSTART_DESKTOP)
             log_runtime_event(
@@ -2276,6 +2311,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             clear_admin_sessions()
             log_runtime_event("setup.completed", profiles=len(stored["profiles"]))
+            agendar_sync_da_colecao()
             self.json_response({"status": "ok", "profiles": profile_summaries(stored)})
             return
         if action == "api/verify-pin":

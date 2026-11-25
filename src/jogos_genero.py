@@ -142,8 +142,11 @@ def gravar_vistos(perfil, ids):
 
 
 def retirar_de_outros_generos(perfil, arquivo=ARQUIVO):
-    """Tira do perfil os jogos que são de outro gênero. Usado só na configuração inicial,
-    em que o perfil foi copiado do modelo e ainda não é uma escolha dos pais."""
+    """Tira do perfil os jogos que são de outro gênero.
+
+    Serve para um perfil que acabou de nascer do modelo (configuração inicial
+    ou perfil novo) e ainda não guarda escolha dos pais.
+    """
     if not isinstance(perfil, dict) or not isinstance(perfil.get("tiles"), list):
         return 0
     dados = carregar(arquivo)
@@ -204,6 +207,59 @@ def aplicar_perfil(perfil, plataforma="linux", moldura=None, porta=PORTA, arquiv
             tile["cmd"] = novo
     gravar_vistos(perfil, [jogo["id"] for jogo in lista])
     return acrescentados
+
+
+def aplicar_genero_inicial(perfil, plataforma="linux", moldura=None, porta=PORTA, arquivo=ARQUIVO):
+    """Monta os jogos do gênero num perfil novo, igual na configuração inicial.
+
+    Tira o que é de outro gênero (veio copiado do modelo) e acrescenta os
+    deste. Devolve quantos jogos entrou.
+    """
+    retirar_de_outros_generos(perfil, arquivo=arquivo)
+    return aplicar_perfil(
+        perfil, plataforma, moldura=moldura, porta=porta, arquivo=arquivo,
+    )
+
+
+def trocar_genero(perfil, plataforma="linux", moldura=None, porta=PORTA, arquivo=ARQUIVO):
+    """O gênero de um perfil que já existe mudou.
+
+    Os jogos exclusivos do gênero anterior saem, se estavam visíveis, e os
+    deste gênero entram. Jogo que os pais apagaram (id em tilesSeen, sem o
+    tile) não volta. Jogo que os pais ocultaram (visible false) continua
+    oculto, no mesmo lugar. Jogo que saiu só porque o gênero mudou pode
+    voltar se o gênero voltar. Devolve quantos jogos entrou.
+    """
+    if not isinstance(perfil, dict) or perfil.get("gender") not in ("menino", "menina"):
+        return 0
+    dados = carregar(arquivo)
+    gender = perfil.get("gender")
+    outros = {
+        jogo["id"]
+        for outro, lista in dados.items()
+        if outro != gender
+        for jogo in lista
+    }
+    tiles = perfil.get("tiles")
+    if not isinstance(tiles, list):
+        perfil["tiles"] = []
+        tiles = perfil["tiles"]
+    ficam = []
+    sairam = []
+    for tile in tiles:
+        tid = tile.get("id") if isinstance(tile, dict) else None
+        oculto = isinstance(tile, dict) and tile.get("visible") is False
+        if tid in outros and not oculto:
+            sairam.append(tid)
+            continue
+        ficam.append(tile)
+    perfil["tiles"] = ficam
+    if sairam and isinstance(perfil.get("tilesSeen"), list):
+        sair = set(sairam)
+        perfil["tilesSeen"] = [i for i in perfil["tilesSeen"] if i not in sair]
+    return aplicar_perfil(
+        perfil, plataforma, moldura=moldura, porta=porta, arquivo=arquivo,
+    )
 
 
 def aplicar(cfg, plataforma="linux", moldura=None, porta=PORTA, arquivo=ARQUIVO):
