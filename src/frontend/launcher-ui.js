@@ -366,6 +366,16 @@ async function launchTile(id){
       await pollAvailability();
       return;
     }
+    if(response.status===404){
+      let data=null;
+      try{ data=await response.json(); }catch(e){}
+      if(data&&data.status==='missing'){
+        cancelLauncherFocusReturn();
+        hideStartFeedback();
+        showUsageMessage('📦 '+tile.label,'Peça para a mamãe ou o papai instalar este app.');
+        return;
+      }
+    }
     if(!response.ok&&!response.redirected){ cancelLauncherFocusReturn(); return; }
     try{ localStorage.setItem(profileStorageKey(),id); }catch(e){}
     if(response.redirected){

@@ -2490,6 +2490,17 @@ class FrontendSafetyTests(unittest.TestCase):
         self.assertNotIn("special:browser:", launch_function)
         self.assertNotIn("special:external-browser:", launch_function)
 
+    def test_menu_web_avisa_com_o_nome_quando_o_app_nao_esta_instalado(self):
+        source = frontend_source()
+        launch_function = source[source.index("function launchTile"):source.index("// PIN handling")]
+        self.assertIn("response.status===404", launch_function)
+        self.assertIn("data.status==='missing'", launch_function)
+        self.assertIn(
+            "showUsageMessage('📦 '+tile.label,'Peça para a mamãe ou o papai instalar este app.')",
+            launch_function,
+        )
+        self.assertIn("hideStartFeedback()", launch_function)
+
     def test_cover_media_library_is_local_bilingual_and_safe_dom_rendered(self):
         root = REPOSITORY_ROOT / "src"
         page = (root / "media.html").read_text(encoding="utf-8")
