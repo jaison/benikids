@@ -6,12 +6,14 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import font as tkfont
 import urllib.error
 import urllib.request
 
+import timer_fim
 from process_state import terminate_owned_process
 
 HOME = os.path.expanduser("~")
@@ -107,6 +109,29 @@ def sair_com_pin(pin, pedir=None):
     return "saiu" if status in (200, 204) else "erro"
 
 
+def xid_da_janela(janela):
+    """XID de fora da janela Tk, ou None se não der para ler."""
+    try:
+        frame = janela.tk.call("wm", "frame", janela._w)
+        return int(str(frame), 0)
+    except Exception:  # noqa: BLE001
+        try:
+            return int(janela.winfo_id())
+        except Exception:  # noqa: BLE001
+            return None
+
+
+def _log_windows(texto):
+    if os.name != "nt":
+        return
+    try:
+        caminho = os.path.join(CACHE_DIR, "beni-windows.log")
+        with open(caminho, "a", encoding="utf-8") as handle:
+            handle.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
 def janela_na_frente(janela, campo, plataforma=None):
     """Põe a tela de tempo esgotado no primeiro plano e o foco num campo dela.
 
@@ -143,13 +168,17 @@ def janela_na_frente(janela, campo, plataforma=None):
 PARTIDA_SEGUNDOS = 12
 
 
-def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente, partida=False):
+def decidir(status, bloqueio_aberto, aviso_aberto, menu_na_frente, partida=False, app_aberto=False):
     """O que a vigia faz a cada volta. `menu_na_frente` é chamado só quando
     importa (pergunta ao servidor); `partida` = a vigia abriu há pouco. Devolve
-    uma lista de ações: "bloquear", "fechar_bloqueio", "aviso", "fechar_aviso"."""
+    uma lista de ações: "bloquear", "fechar_bloqueio", "aviso", "fechar_aviso",
+    "fechar_app" (timer da sessão acabou e ainda há app aberto)."""
     acoes = []
     if status.get("expired"):
         # com o menu na frente e sem app aberto, a tela é a do próprio menu
+        if app_aberto:
+            # a pílula também fecha; se ela travou, a vigia fecha do mesmo jeito
+            acoes.append("fechar_app")
         if bloqueio_aberto or not (partida or menu_na_frente()):
             acoes.append("bloquear")
         if aviso_aberto:
@@ -182,6 +211,8 @@ class WatchdogApp:
         self.poll_interval = 5000  # ms
         self.status = {}
         self.aberto_em = time.monotonic()
+        self._fechar_app = threading.Lock()
+        self._cobrir = threading.Lock()
 
     def show_warning(self, remaining):
         if self.warn_window is not None:
@@ -432,8 +463,12 @@ class WatchdogApp:
                 b.lift()
                 b.attributes("-topmost", True)
                 janela_na_frente(b, pin_entry)
+                # fora da thread do Tk: wmctrl/xdotool não podem travar o PIN
+                self._pedir_cobrir(xid_da_janela(b))
             except tk.TclError:
                 return
+            except Exception:  # noqa: BLE001 — a tela continua; o WM que falhou
+                pass
             b.after(500, stay_top)
 
         b.update_idletasks()
@@ -446,6 +481,43 @@ class WatchdogApp:
             except tk.TclError:
                 pass
             self.block_window = None
+            if os.name != "nt":
+                # o tempo foi estendido e o app sobreviveu: devolve o Alt+Tab
+                try:
+                    timer_fim.restaurar_app()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _pedir_cobrir(self, xid):
+        if os.name == "nt" or not self._cobrir.acquire(blocking=False):
+            return
+
+        def cobrir():
+            try:
+                timer_fim.por_o_bloqueio_na_frente(bloqueio=xid)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                self._cobrir.release()
+
+        try:
+            threading.Thread(target=cobrir, name="cobrir-bloqueio", daemon=True).start()
+        except Exception:  # noqa: BLE001
+            self._cobrir.release()
+
+    def _fechar_app_do_timer(self):
+        """SIGTERM e, se continuar, SIGKILL — o mesmo contrato do ✕. Uma vez
+        por vez: o poll de 5 s não empilha esperas."""
+        if not self._fechar_app.acquire(blocking=False):
+            return
+        try:
+            ok = timer_fim.tratar_expiracao(self.status)
+            if ok:
+                _log_windows("vigia: o timer acabou; o app foi encerrado")
+        except Exception:  # noqa: BLE001 — a tela de bloqueio continua
+            pass
+        finally:
+            self._fechar_app.release()
 
     def tick(self):
         if not self.polling:
@@ -454,12 +526,17 @@ class WatchdogApp:
         self.status = data
         remaining = data.get("remainingSeconds", 0)
         if data:  # servidor fora do ar: não mexe em nada
+            try:
+                aberto = timer_fim.app_aberto()
+            except Exception:  # noqa: BLE001
+                aberto = False
             acoes = decidir(
                 data,
                 self.block_window is not None,
                 self.warn_window is not None,
                 lambda: bool(api("/api/timer/tela").get("menuNaFrente")),
                 partida=time.monotonic() - self.aberto_em < PARTIDA_SEGUNDOS,
+                app_aberto=aberto,
             )
             if "fechar_bloqueio" in acoes:
                 self._destroy_block()
@@ -467,6 +544,12 @@ class WatchdogApp:
                 self._destroy_warn()
             if "bloquear" in acoes:
                 self.show_block()
+            if "fechar_app" in acoes:
+                threading.Thread(
+                    target=self._fechar_app_do_timer,
+                    name="fechar-app-timer",
+                    daemon=True,
+                ).start()
             if "aviso" in acoes:
                 self.show_warning(max(1, (remaining + 59) // 60))  # para cima, como a pílula e o menu
 
