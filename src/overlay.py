@@ -370,6 +370,15 @@ TIMER_COR_AVISO = "#fde047"
 TIMER_COR_FIM = "#fca5a5"
 
 
+def emoji_visivel(emoji):
+    """Emoji para escrever na tela. Capa de jogo ("img:covers/...") não é texto."""
+    texto = str(emoji or "")
+    corte = texto.find("img:")
+    if corte >= 0:
+        texto = texto[:corte]
+    return texto.strip()
+
+
 def rotulo_da_pilula(uso, timer, cor_padrao):
     """O que a pílula mostra: o tempo que acaba PRIMEIRO, entre o limite da categoria e o
     timer da sessão (roteiro 26: mostrava "28 min" de Aprender com o timer em 3 min).
@@ -386,7 +395,7 @@ def rotulo_da_pilula(uso, timer, cor_padrao):
         return f"⏱️ {format_remaining(t)}", (TIMER_COR_AVISO if timer.get("aviso") else cor_padrao)
     if u is not None:
         band = USAGE_COLORS[usage_band(u, uso.get("limite"))]
-        return f"{uso.get('emoji') or '⏳'} {format_remaining(u)}", band["pill_fg"]
+        return f"{emoji_visivel(uso.get('emoji')) or '⏳'} {format_remaining(u)}", band["pill_fg"]
     return "", None
 
 
@@ -1140,7 +1149,7 @@ class AppOverlay:
         ]
         if alternatives:
             parts = [
-                f"{alt.get('label', '')} {alt.get('emoji', '')} ({format_remaining(alt.get('availableSeconds'))})"
+                f"{alt.get('label', '')} {emoji_visivel(alt.get('emoji', ''))} ({format_remaining(alt.get('availableSeconds'))})".replace("  ", " ")
                 for alt in alternatives
             ]
             hint = "Você ainda pode brincar de " + " ou ".join(parts)

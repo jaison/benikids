@@ -7,23 +7,50 @@ function isMediaLibraryTile(tile){
 function kidsTiles(){ return visibleTiles().filter(t=>typeof escolhaTileNaLista!=='function'||escolhaTileNaLista(t)); }
 function pageCount(){ return Math.max(1, Math.ceil(kidsTiles().length / pageSize())); }
 function tilesForPage(page){ const all=kidsTiles(); const size=pageSize(); return all.slice(page*size, page*size + size); }
-async function loadConfig(){
-  const response=await fetch('/api/config',{cache:'no-store'});
-  if(!response.ok) throw new Error('Config could not be loaded');
-  const data=await response.json();
-  if(!data||typeof data!=='object'||!Array.isArray(data.tiles)) throw new Error('Invalid config response');
-  cfg=data;
-  if(typeof cfg.currentPage!=='number') cfg.currentPage=0;
-  // Um erro ao desenhar (ex.: um script da página que não carregou) não apaga a
-  // configuração válida: quem chamou fica sabendo pela etapa 'render'.
+async function loadConfig(carimbo){
+  // Cada pedido leva um número. Se outro GET sair depois, esta resposta não
+  // pisa nos tiles nem grava o carimbo. O carimbo só entra no sucesso do mais novo.
+  const pedido=typeof reservarPedidoConfig==='function'?reservarPedidoConfig(carimbo):0;
+  const liberar=typeof segurarConfigMaisNovo==='function'?segurarConfigMaisNovo():function(){};
+  const velho=function(){ return pedido!==0&&typeof pedidoConfigVelho==='function'&&pedidoConfigVelho(pedido); };
+  // Resposta antiga espera a mais nova. Se essa também falhar e não houver tiles, o erro sobe.
+  const ceder=async function(){
+    if(typeof esperarConfigMaisNovo==='function') await esperarConfigMaisNovo();
+    if(cfg&&Array.isArray(cfg.tiles)) return;
+    throw new Error('Config could not be loaded');
+  };
   try{
-    await loadInterfaceLanguage(cfg.language);
-    if(typeof escolhaAplicarPaginaRetorno==='function') escolhaAplicarPaginaRetorno();
-    renderAll();
+    const response=await fetch('/api/config',{cache:'no-store'});
+    if(velho()){ await ceder(); return; }
+    if(!response.ok) throw new Error('Config could not be loaded');
+    const data=await response.json();
+    if(velho()){ await ceder(); return; }
+    if(!data||typeof data!=='object'||!Array.isArray(data.tiles)) throw new Error('Invalid config response');
+    cfg=data;
+    if(typeof cfg.currentPage!=='number') cfg.currentPage=0;
+    // Um erro ao desenhar (ex.: um script da página que não carregou) não apaga a
+    // configuração válida: quem chamou fica sabendo pela etapa 'render'.
+    try{
+      await loadInterfaceLanguage(cfg.language);
+      if(typeof escolhaAplicarPaginaRetorno==='function') escolhaAplicarPaginaRetorno();
+      renderAll();
+    }catch(e){
+      const erro=e instanceof Error?e:new Error(String(e));
+      erro.etapa='render';
+      if(typeof responderPedidoConfig==='function') responderPedidoConfig(pedido, true);
+      throw erro;
+    }
+    if(velho()){ await ceder(); return; }
+    if(typeof responderPedidoConfig==='function') responderPedidoConfig(pedido, true);
   }catch(e){
-    const erro=e instanceof Error?e:new Error(String(e));
-    erro.etapa='render';
-    throw erro;
+    if(!(e&&e.etapa==='render')&&typeof responderPedidoConfig==='function') responderPedidoConfig(pedido, false);
+    if(velho()&&cfg&&Array.isArray(cfg.tiles)){
+      if(typeof esperarConfigMaisNovo==='function') await esperarConfigMaisNovo();
+      return;
+    }
+    throw e;
+  }finally{
+    liberar();
   }
 }
 async function loadApps(refreshAdmin=false){
@@ -313,6 +340,13 @@ function changePage(dir){
   playLauncherPageTransition(dir);
   playFeedbackSound('navigate');
 }
+// INICIO aviso app faltando
+function avisoAppNaoInstalado(label){
+  const nome=String(label||'').trim();
+  const titulo=nome&&nome.indexOf('img:')<0?nome+' — Ainda não instalado':'Ainda não instalado';
+  return {titulo:'📦 '+titulo, corpo:'Peça para a mamãe ou o papai instalar este app.'};
+}
+// FIM aviso app faltando
 let startFeedbackTimer=null;
 function hideStartFeedback(){
   if(startFeedbackTimer!==null) clearTimeout(startFeedbackTimer);
@@ -343,16 +377,16 @@ function showLaunchSuccess(tile){
   startFeedbackTimer=setTimeout(hideStartFeedback,900);
 }
 function showLaunchWarning(tile,status){
-  const nome=(tile&&tile.label)||'Este app';
+  // O nome passa pelo mesmo aviso do "não instalado": capa ("img:") não vira título.
+  const rotulo=avisoAppNaoInstalado(tile&&tile.label).titulo;
+  const corte=rotulo.indexOf(' — ');
+  const nome=corte>=0?rotulo.slice(2,corte):'Este app';
   const overlay=document.getElementById('startOverlay');
   const emoji=document.getElementById('startEmoji');
   const text=document.getElementById('startText');
   let frase='Não deu para abrir '+nome+'. Tente de novo daqui a pouco.';
   let icone='😕';
-  if(status==='missing'){
-    frase=nome+' ainda não está instalado. Peça para a mamãe ou o papai instalar este app.';
-    icone='📦';
-  }else if(status==='crashed'){
+  if(status==='crashed'){
     frase='Não deu para abrir '+nome+'. Este app fechou sozinho. Peça ajuda para a mamãe ou o papai.';
   }
   if(emoji) emoji.textContent=icone;
@@ -385,6 +419,23 @@ async function launchTile(id){
       await pollAvailability();
       return;
     }
+    if(response.status===404){
+      cancelLauncherFocusReturn();
+      hideStartFeedback();
+      let data={};
+      try{ data=await response.json(); }catch(e){}
+      // "gone": o jogo saiu do menu. Recarrega os tiles, sem aviso.
+      // "missing": ainda não instalado. Um aviso só, com o nome e sem a capa.
+      if(data.status==='missing'){
+        const aviso=avisoAppNaoInstalado(tile.label);
+        if(typeof showUsageMessage==='function') showUsageMessage(aviso.titulo, aviso.corpo);
+        return;
+      }
+      if(typeof loadConfig==='function'){
+        try{ await loadConfig(); }catch(e){}
+      }
+      return;
+    }
     if(!response.ok&&!response.redirected){
       cancelLauncherFocusReturn();
       let status='';
@@ -413,7 +464,7 @@ function hidePin(){ document.getElementById('pin').classList.add('hidden'); }
 function cancelPin(){ hidePin(); document.getElementById('pinInput').value=''; document.getElementById('pinErr').textContent=''; pinCallback=null; if(pinReturnFocus&&pinReturnFocus.isConnected) pinReturnFocus.focus(); pinReturnFocus=null; }
 async function submitPin(){ const val=document.getElementById('pinInput').value; const r=await fetch('/api/verify-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:val})}); const data=await r.json(); if(data.valid){ hidePin(); pinReturnFocus=null; if(pinCallback){ pinCallback(); pinCallback=null; } } else { document.getElementById('pinErr').textContent=uiText.pinWrong; document.getElementById('pinInput').value=''; document.getElementById('pinInput').focus(); } }
 function enterAdmin(){ cancelTileSpeech(); adminPage=cfg.currentPage; adminSection='overview'; adminTileQuery=''; adminTileVisibility='all'; adminSelectedTileIds.clear(); document.getElementById('kids').classList.add('hidden'); const admin=document.getElementById('admin'); admin.classList.remove('hidden'); document.querySelector('.cornerbar').classList.add('hidden'); document.getElementById('parentBtn').textContent=uiText.back||'Back'; renderAdmin(); renderNav(); playScreenTransition(admin); document.getElementById('adminNavOverview').focus(); loadBackups(); loadActivityDashboard(); }
-function closeAdmin(){ document.getElementById('admin').classList.add('hidden'); const kids=document.getElementById('kids'); kids.classList.remove('hidden'); document.querySelector('.cornerbar').classList.remove('hidden'); document.getElementById('parentBtn').textContent=cfg.parentLabel||'Parent'; focusedTileIndex=0; renderAll(); playScreenTransition(kids,true); }
+function closeAdmin(){ document.getElementById('admin').classList.add('hidden'); const kids=document.getElementById('kids'); kids.classList.remove('hidden'); document.querySelector('.cornerbar').classList.remove('hidden'); document.getElementById('parentBtn').textContent=cfg.parentLabel||'Parent'; focusedTileIndex=0; renderAll(); playScreenTransition(kids,true); if(typeof recarregarTilesSeOConfigMudou==='function') recarregarTilesSeOConfigMudou(); }
 function shutdownNow(){ if(cfg.pinConfigured){ requestPin(() => { fetch('/shutdown',{method:'POST'}).catch(()=>{}); }); return; } fetch('/shutdown',{method:'POST'}).catch(()=>{}); }
 function exitKids(){ if(cfg.pinConfigured){ requestPin(() => { fetch('/exit-kids',{method:'POST'}).catch(()=>{}); }); return; } fetch('/exit-kids',{method:'POST'}).catch(()=>{}); }
 

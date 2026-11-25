@@ -2492,18 +2492,17 @@ class FrontendSafetyTests(unittest.TestCase):
         self.assertIn("showLaunchWarning(tile,status)", launch_function)
         aviso = source[source.index("function showLaunchWarning"):source.index("async function launchTile")]
         self.assertIn("tile.label", aviso)
-        self.assertIn("status==='missing'", aviso)
-        self.assertIn("ainda não está instalado", aviso)
+        self.assertIn("status==='crashed'", aviso)
+        self.assertIn("fechou sozinho", aviso)
+        self.assertIn("avisoAppNaoInstalado(tile.label)", launch_function)
 
     def test_menu_web_avisa_com_o_nome_quando_o_app_nao_esta_instalado(self):
         source = frontend_source()
         launch_function = source[source.index("function launchTile"):source.index("// PIN handling")]
         self.assertIn("response.status===404", launch_function)
         self.assertIn("data.status==='missing'", launch_function)
-        self.assertIn(
-            "showUsageMessage('📦 '+tile.label,'Peça para a mamãe ou o papai instalar este app.')",
-            launch_function,
-        )
+        self.assertIn("avisoAppNaoInstalado(tile.label)", launch_function)
+        self.assertIn("showUsageMessage(aviso.titulo, aviso.corpo)", launch_function)
         self.assertIn("hideStartFeedback()", launch_function)
 
     def test_cover_media_library_is_local_bilingual_and_safe_dom_rendered(self):

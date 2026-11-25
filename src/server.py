@@ -1275,13 +1275,30 @@ def aviso_app_travado(agora=None):
         return {"seq": _app_travado_aviso["seq"], "tileId": _app_travado_aviso["tileId"]}
 
 
+def config_stamp():
+    """Marca do config.json para o menu saber que os tiles mudaram.
+
+    Números do arquivo (hora e tamanho), sem caminho: o repositório e a rede
+    local não levam nome de usuário nem pasta da casa.
+    """
+    key = _cfg_cache_key()
+    if not key:
+        return "0"
+    rec = key[5]
+    rec_txt = "0" if not rec else f"{rec[0]}:{rec[1]}"
+    return f"{key[1]}:{key[3]}:{rec_txt}"
+
+
 def usage_status(cfg):
     profile_id = cfg.get("activeProfileId", "")
     profile = stored_profiles_cached().get(profile_id) or cfg
     payload = usage_tracker().status(profile_id, profile)
+    if not isinstance(payload, dict):
+        return payload
+    payload = dict(payload, configStamp=config_stamp())
     aviso = aviso_app_travado()
-    if aviso and isinstance(payload, dict):
-        payload = dict(payload, appTravadoFechado=aviso)
+    if aviso:
+        payload["appTravadoFechado"] = aviso
     return payload
 
 
@@ -2696,8 +2713,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 cfg = load_cfg()
                 tile = next((t for t in cfg.get("tiles", []) if t.get("id") == tile_id and t.get("visible", True)), None)
                 if not tile:
-                    self.send_response(404)
-                    self.end_headers()
+                    # saiu do menu (sincronização): o cliente recarrega os tiles, sem aviso
+                    self.json_response({"status": "gone"}, 404)
                     return
                 availability = tile_availability(cfg, tile_id)
                 if not availability["allowed"]:

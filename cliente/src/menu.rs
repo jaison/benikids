@@ -191,6 +191,293 @@ mod testes_timer {
     }
 }
 
+// ---------------------------------------------------------------- config que muda sozinho
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OrdemConfig {
+    Nada,
+    /// o número é a geração deste pedido; respostas com outro número são ignoradas
+    Pedir(u64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RespostaConfig {
+    /// geração velha: não mexe nos tiles nem no carimbo
+    Ignorar,
+    /// tiles novos aplicados; o carimbo deste pedido pode ser gravado
+    Aplicar,
+    /// GET vazio ou inválido: o carimbo fica o antigo e `pendente` continua
+    Vazia,
+}
+
+/// O carimbo do /api/usage/status só entra em `aplicado` depois que o GET
+/// /api/config daquela geração volta com tiles. Um pedido mais novo invalida
+/// o anterior (o de 60 s e o do carimbo podem sair juntos).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SincroniaConfig {
+    aplicado: Option<String>,
+    alvo: Option<String>,
+    pedido: Option<String>,
+    pendente: bool,
+    geracao: u64,
+    em_voo: Option<u64>,
+}
+
+impl SincroniaConfig {
+    fn nova() -> Self {
+        Self {
+            aplicado: None,
+            alvo: None,
+            pedido: None,
+            pendente: false,
+            geracao: 0,
+            em_voo: None,
+        }
+    }
+
+    /// Carimbo visto na sondagem. Não grava `aplicado`: isso só acontece em `responder`.
+    fn ver(&mut self, carimbo: &str, app_aberto: bool) -> OrdemConfig {
+        if carimbo.is_empty() {
+            return OrdemConfig::Nada;
+        }
+        if self.aplicado.as_deref() != Some(carimbo) {
+            self.alvo = Some(carimbo.to_string());
+            self.pendente = true;
+        } else if !self.pendente {
+            return OrdemConfig::Nada;
+        } else {
+            self.alvo = Some(carimbo.to_string());
+        }
+        if app_aberto {
+            return OrdemConfig::Nada;
+        }
+        if self.em_voo.is_some() && self.pedido.as_deref() == Some(carimbo) {
+            return OrdemConfig::Nada;
+        }
+        self.geracao += 1;
+        self.em_voo = Some(self.geracao);
+        self.pedido = Some(carimbo.to_string());
+        OrdemConfig::Pedir(self.geracao)
+    }
+
+    /// Recarga sem carimbo novo (abertura, ciclo de 60 s, tile que sumiu).
+    /// Sempre gera um número novo, para uma resposta mais antiga não ganhar.
+    fn pedir_cego(&mut self) -> u64 {
+        self.geracao += 1;
+        self.em_voo = Some(self.geracao);
+        self.pedido = self.alvo.clone().or_else(|| self.aplicado.clone());
+        self.geracao
+    }
+
+    /// O app ou a área dos pais fechou: busca o config que ficou pendente.
+    fn retomar(&mut self, app_aberto: bool) -> OrdemConfig {
+        if app_aberto || !self.pendente || self.em_voo.is_some() {
+            return OrdemConfig::Nada;
+        }
+        self.geracao += 1;
+        self.em_voo = Some(self.geracao);
+        self.pedido = self.alvo.clone().or_else(|| self.aplicado.clone());
+        OrdemConfig::Pedir(self.geracao)
+    }
+
+    fn responder(&mut self, geracao: u64, tem_tiles: bool) -> RespostaConfig {
+        if geracao != self.geracao {
+            return RespostaConfig::Ignorar;
+        }
+        self.em_voo = None;
+        if !tem_tiles {
+            self.pendente = true;
+            return RespostaConfig::Vazia;
+        }
+        if let Some(pedido) = self.pedido.clone() {
+            self.aplicado = Some(pedido);
+        }
+        self.pendente = match (&self.pedido, &self.alvo) {
+            (_, None) => false,
+            (Some(pedido), Some(alvo)) => pedido != alvo,
+            (None, Some(_)) => true,
+        };
+        RespostaConfig::Aplicar
+    }
+}
+
+fn carimbo_do_uso(uso: &Value) -> Option<String> {
+    match uso.get("configStamp")? {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// App em uso (o servidor conta o tile) ou navegador aberto pelo menu (pais, site, mídia).
+fn app_esta_aberto(uso: &Value, navegador: bool) -> bool {
+    navegador
+        || uso
+            .get("active")
+            .and_then(|a| a.get("tileId"))
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+}
+
+// ---------------------------------------------------------------- abertura que falhou
+
+enum FalhaAoAbrir {
+    /// o tile saiu do menu: recarrega em silêncio
+    Sumiu,
+    Aviso { icone: &'static str, titulo: String, corpo: &'static str },
+}
+
+/// 404 sem "missing" é tile que não existe mais. Os outros avisos usam o nome
+/// do jogo: o caminho da capa ("img:covers/...") nunca aparece escrito.
+fn falha_ao_abrir(status_http: u16, status_json: &str, label: &str) -> FalhaAoAbrir {
+    if status_http == 404 && status_json != "missing" {
+        return FalhaAoAbrir::Sumiu;
+    }
+    let (icone, titulo, corpo) = match status_json {
+        "missing" => ("📦", "Ainda não instalado", "Peça para a mamãe ou o papai instalar este app."),
+        "crashed" => ("😕", "Não deu para abrir", "Este app fechou sozinho. Peça ajuda para a mamãe ou o papai."),
+        _ => ("😕", "Não deu para abrir", "Tente de novo daqui a pouco."),
+    };
+    FalhaAoAbrir::Aviso { icone, titulo: titulo_do_aviso(label, titulo), corpo }
+}
+
+fn titulo_do_aviso(label: &str, titulo: &str) -> String {
+    let label = label.trim();
+    if label.is_empty() || label.contains("img:") {
+        titulo.to_string()
+    } else {
+        format!("{label} — {titulo}")
+    }
+}
+
+/// A tela "Acabou o tempo!" precisa sair ou o relógio andar mesmo com a vigia
+/// (janela Tk) na frente. Com foco, o redesenho normal já chega.
+fn precisa_repintar_sem_foco(tinha_dialogo: bool, tem_dialogo: bool, janela_ativa: bool) -> bool {
+    (tinha_dialogo || tem_dialogo) && !janela_ativa
+}
+
+/// Caminho da capa ("img:covers/arquivo.png") servido de themes/. `..` não é capa:
+/// senão o texto cru "img:..." aparecia no tile e no "Abrindo…".
+fn caminho_de_capa(emoji: &str) -> Option<&str> {
+    let rel = emoji.strip_prefix("img:")?;
+    if rel.is_empty() || rel.contains("..") { None } else { Some(rel) }
+}
+
+/// O que escrever quando a capa não pode ser imagem. Nunca a string "img:...".
+fn glifo_do_tile(emoji: &str) -> String {
+    let e = dados::emoji_visivel(emoji);
+    if e.is_empty() || e.contains("img:") { "⭐".to_string() } else { e }
+}
+
+#[cfg(test)]
+mod testes_config_e_abertura {
+    use super::*;
+
+    #[test]
+    fn carimbo_novo_recarrega_sem_app_e_espera_com_app() {
+        let mut s = SincroniaConfig::nova();
+        assert_eq!(s.ver("2", true), OrdemConfig::Nada);
+        assert!(s.pendente);
+        assert_eq!(s.aplicado, None);
+        assert_eq!(s.ver("2", false), OrdemConfig::Pedir(1));
+        assert_eq!(s.aplicado, None, "o carimbo só entra depois do GET");
+        assert_eq!(s.responder(1, true), RespostaConfig::Aplicar);
+        assert_eq!(s.aplicado.as_deref(), Some("2"));
+        assert_eq!(s.ver("2", false), OrdemConfig::Nada);
+        assert_eq!(s.ver("", false), OrdemConfig::Nada);
+        let uso = serde_json::json!({"active": {"tileId": "itch-dog-wash"}, "configStamp": "9"});
+        assert!(app_esta_aberto(&uso, false));
+        assert!(!app_esta_aberto(&serde_json::json!({"active": null}), false));
+        assert!(app_esta_aberto(&serde_json::json!({}), true));
+        assert_eq!(carimbo_do_uso(&uso).as_deref(), Some("9"));
+    }
+
+    #[test]
+    fn carimbo_so_grava_a_resposta_mais_nova_e_o_vazio_fica_pendente() {
+        let mut s = SincroniaConfig::nova();
+        assert_eq!(s.ver("2", false), OrdemConfig::Pedir(1));
+        // o ciclo de 60 s sai junto: a resposta do pedido 1 não pode ganhar
+        assert_eq!(s.pedir_cego(), 2);
+        assert_eq!(s.responder(1, true), RespostaConfig::Ignorar);
+        assert_eq!(s.aplicado, None);
+        assert!(s.pendente);
+        // GET vazio: não grava o carimbo novo; a sondagem seguinte tenta de novo
+        assert_eq!(s.responder(2, false), RespostaConfig::Vazia);
+        assert_eq!(s.aplicado, None);
+        assert!(s.pendente);
+        assert_eq!(s.em_voo, None);
+        assert_eq!(s.ver("2", false), OrdemConfig::Pedir(3));
+        assert_eq!(s.ver("2", false), OrdemConfig::Nada, "não cancela o pedido que já voa");
+        // um carimbo mais novo invalida o que está no ar
+        assert_eq!(s.ver("3", false), OrdemConfig::Pedir(4));
+        assert_eq!(s.responder(3, true), RespostaConfig::Ignorar);
+        assert_eq!(s.aplicado, None);
+        assert_eq!(s.responder(4, true), RespostaConfig::Aplicar);
+        assert_eq!(s.aplicado.as_deref(), Some("3"));
+        assert!(!s.pendente);
+        // falhou de novo, com o mesmo carimbo: continua pendente e pede outra vez
+        assert_eq!(s.pedir_cego(), 5);
+        assert_eq!(s.responder(5, false), RespostaConfig::Vazia);
+        assert_eq!(s.aplicado.as_deref(), Some("3"));
+        assert!(s.pendente);
+        assert_eq!(s.ver("3", false), OrdemConfig::Pedir(6));
+        assert_eq!(s.responder(6, true), RespostaConfig::Aplicar);
+        // mudou com um app aberto: não grava e não busca; ao voltar, busca
+        assert_eq!(s.ver("4", true), OrdemConfig::Nada);
+        assert_eq!(s.aplicado.as_deref(), Some("3"));
+        assert!(s.pendente);
+        assert_eq!(s.retomar(true), OrdemConfig::Nada);
+        assert_eq!(s.retomar(false), OrdemConfig::Pedir(7));
+        assert_eq!(s.aplicado.as_deref(), Some("3"));
+        assert_eq!(s.responder(7, false), RespostaConfig::Vazia);
+        assert_eq!(s.aplicado.as_deref(), Some("3"));
+        assert!(s.pendente);
+    }
+
+    #[test]
+    fn tile_que_saiu_nao_abre_aviso_e_o_aviso_usa_o_nome() {
+        assert!(matches!(falha_ao_abrir(404, "", "Dog Wash"), FalhaAoAbrir::Sumiu));
+        assert!(matches!(falha_ao_abrir(404, "gone", "Dog Wash"), FalhaAoAbrir::Sumiu));
+        match falha_ao_abrir(404, "missing", "Dog Wash") {
+            FalhaAoAbrir::Aviso { titulo, .. } => assert_eq!(titulo, "Dog Wash — Ainda não instalado"),
+            FalhaAoAbrir::Sumiu => panic!("app faltando deve avisar"),
+        }
+        match falha_ao_abrir(503, "crashed", "img:covers/dog-wash.png") {
+            FalhaAoAbrir::Aviso { titulo, .. } => {
+                assert!(!titulo.contains("img:"));
+                assert_eq!(titulo, "Não deu para abrir");
+            }
+            FalhaAoAbrir::Sumiu => panic!("queda deve avisar"),
+        }
+        match falha_ao_abrir(503, "", "Dog Wash") {
+            FalhaAoAbrir::Aviso { titulo, .. } => assert_eq!(titulo, "Dog Wash — Não deu para abrir"),
+            FalhaAoAbrir::Sumiu => panic!("erro deve avisar"),
+        }
+    }
+
+    #[test]
+    fn capa_invalida_nao_vira_texto() {
+        assert_eq!(caminho_de_capa("img:covers/dog-wash.png"), Some("covers/dog-wash.png"));
+        assert_eq!(caminho_de_capa("img:covers/../segredo.png"), None);
+        assert_eq!(caminho_de_capa("img:"), None);
+        assert_eq!(caminho_de_capa("🎮"), None);
+        assert_eq!(glifo_do_tile("img:covers/../segredo.png"), "⭐");
+        assert_eq!(glifo_do_tile("img:covers/dog-wash.png"), "⭐");
+        assert_eq!(glifo_do_tile(""), "⭐");
+        assert_eq!(glifo_do_tile("🎮"), "🎮");
+        assert_eq!(glifo_do_tile("🎮img:covers/a.png"), "🎮");
+        assert!(!glifo_do_tile("img:covers/../segredo.png").contains("img:"));
+    }
+
+    #[test]
+    fn dialogo_do_tempo_repinta_sem_foco() {
+        assert!(precisa_repintar_sem_foco(true, false, false));
+        assert!(precisa_repintar_sem_foco(true, true, false));
+        assert!(!precisa_repintar_sem_foco(true, false, true));
+        assert!(!precisa_repintar_sem_foco(false, false, false));
+    }
+}
+
 // ---------------------------------------------------------------- estado
 
 #[derive(Clone, PartialEq)]
@@ -242,6 +529,8 @@ pub struct Menu {
     focus: FocusHandle,
     // dados da API
     cfg: Value,
+    /// carimbo do config: só muda depois de um GET /api/config válido e mais novo
+    sinc: SincroniaConfig,
     uso: Value,
     timer: Value,
     disp: Value,
@@ -298,6 +587,7 @@ impl Menu {
             api,
             focus,
             cfg: Value::Null,
+            sinc: SincroniaConfig::nova(),
             uso: Value::Null,
             timer: Value::Null,
             disp: json!({"profileAllowed": true, "blockedTileIds": []}),
@@ -379,7 +669,9 @@ impl Menu {
             m.atualizar_disp(cx);
         });
         ciclo(cx, Duration::from_secs(60), |m, cx| {
-            if m.web.is_none() {
+            // o carimbo no uso (5 s) é o caminho rápido; isto cobre um servidor
+            // antigo, sem recarregar a grade por cima de um jogo
+            if m.web.is_none() && !app_esta_aberto(&m.uso, false) {
                 m.carregar_config(cx);
             }
             let b = ler_bateria();
@@ -388,55 +680,123 @@ impl Menu {
                 m.redesenhar(cx);
             }
         });
-        // relógio: redesenha quando o minuto vira
+        // relógio: redesenha quando o minuto vira. Com a tela "Acabou o tempo!"
+        // e a janela sem foco (vigia Tk na frente), pede repaint mesmo assim.
         let mut minuto = agora_local().1;
-        ciclo(cx, Duration::from_secs(5), move |menu, cx| {
-            let m = agora_local().1;
-            if m != minuto {
-                minuto = m;
-                menu.redesenhar(cx);
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(Duration::from_secs(5)).await;
+            let agora = agora_local().1;
+            if agora == minuto {
+                continue;
             }
-        });
+            minuto = agora;
+            let ok = this.update_in(cx, |menu, window, cx| {
+                let dialogo = matches!(menu.janela, Some(Janela::TimerEsgotado { .. }));
+                if dialogo && !menu.ativa {
+                    menu.sujo = false;
+                    cx.notify();
+                    window.refresh();
+                } else {
+                    menu.redesenhar(cx);
+                }
+            });
+            if ok.is_err() && this.update(cx, |menu, cx| menu.redesenhar(cx)).is_err() {
+                break;
+            }
+        })
+        .detach();
     }
 
     fn carregar_config(&mut self, cx: &mut Context<Self>) {
-        self.tarefa(cx, |api| api.get_json("/api/config"), |m, r, cx| match r {
-            Some(v) if v.get("tiles").is_some_and(Value::is_array) => {
-                let primeira = m.cfg.is_null();
-                if v != m.cfg {
-                    m.cfg = v;
-                    m.sincronizar_perfil();
-                    m.corrigir_pagina();
-                    m.redesenhar(cx);
-                }
-                m.erro_inicio = false;
-                if primeira {
-                    log::info!("menu: configuração carregada em {:?}", m.iniciado.elapsed());
-                }
-                if !dados::verdade(&m.cfg, "setupCompleted") && m.cfg.get("setupCompleted").is_some() {
-                    // primeira vez: crianças e PIN dos pais (configurar.html, no navegador).
-                    // Enquanto não terminar, reabre (abrir_web ignora se já está aberto).
-                    m.abrir_web("/configurar.html", cx);
-                }
+        self.sinc.pedir_cego();
+        self.disparar_pedido(cx);
+    }
+
+    /// Manda o GET da geração que `ver`, `pedir_cego` ou `retomar` acabou de reservar.
+    fn disparar_pedido(&mut self, cx: &mut Context<Self>) {
+        let geracao = self.sinc.geracao;
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let r = cx.background_executor().spawn(async move { api.get_json("/api/config") }).await;
+            let copia = r.clone();
+            // update_in pede a janela para o refresh; se ela ainda não existe, aplica sem isso
+            if this.update_in(cx, |m, window, cx| m.aplicar_config(r, geracao, Some(window), cx)).is_err() {
+                let _ = this.update(cx, |m, cx| m.aplicar_config(copia, geracao, None, cx));
             }
-            _ => {
-                if m.cfg.is_null() {
-                    m.erro_inicio = true;
-                    m.redesenhar(cx);
+        })
+        .detach();
+    }
+
+    fn aplicar_config(&mut self, r: Option<Value>, geracao: u64, window: Option<&mut Window>, cx: &mut Context<Self>) {
+        let tem_tiles = r.as_ref().is_some_and(|v| v.get("tiles").is_some_and(Value::is_array));
+        match self.sinc.responder(geracao, tem_tiles) {
+            RespostaConfig::Ignorar => return,
+            RespostaConfig::Vazia => {
+                if self.cfg.is_null() {
+                    self.erro_inicio = true;
+                    self.redesenhar(cx);
                     // o servidor pode estar subindo: tenta de novo
                     cx.spawn(async move |this, cx| {
                         cx.background_executor().timer(Duration::from_secs(2)).await;
                         let _ = this.update(cx, |m, cx| m.carregar_config(cx));
                     })
                     .detach();
+                } else {
+                    log::info!("menu: a configuração nova não chegou; os tiles recarregam de novo");
+                }
+                return;
+            }
+            RespostaConfig::Aplicar => {}
+        }
+        let Some(v) = r else { return };
+        let primeira = self.cfg.is_null();
+        if v != self.cfg {
+            self.cfg = v;
+            self.sincronizar_perfil();
+            self.corrigir_pagina();
+            // mesmo sem foco: a grade mudou (sincronização do itch.io) e o
+            // menu pode estar visível atrás de outra janela
+            self.sujo = false;
+            cx.notify();
+            if let Some(window) = window {
+                window.refresh();
+            }
+            if !primeira {
+                log::info!("menu: configuração mudou; tiles recarregados");
+            }
+        }
+        self.erro_inicio = false;
+        if primeira {
+            log::info!("menu: configuração carregada em {:?}", self.iniciado.elapsed());
+        }
+        if !dados::verdade(&self.cfg, "setupCompleted") && self.cfg.get("setupCompleted").is_some() {
+            // primeira vez: crianças e PIN dos pais (configurar.html, no navegador).
+            // Enquanto não terminar, reabre (abrir_web ignora se já está aberto).
+            self.abrir_web("/configurar.html", cx);
+        }
+    }
+
+    fn notar_carimbo(&mut self, uso: &Value, cx: &mut Context<Self>) {
+        let aberto = app_esta_aberto(uso, self.web.is_some());
+        let Some(carimbo) = carimbo_do_uso(uso) else { return };
+        let ja_pendente = self.sinc.pendente;
+        match self.sinc.ver(&carimbo, aberto) {
+            OrdemConfig::Nada => {
+                if self.sinc.pendente && !ja_pendente && aberto {
+                    log::info!("menu: configuração mudou com um app aberto; os tiles recarregam quando ele fechar");
                 }
             }
-        });
+            OrdemConfig::Pedir(_) => {
+                log::info!("menu: configuração mudou; recarregando os tiles");
+                self.disparar_pedido(cx);
+            }
+        }
     }
 
     fn atualizar_uso(&mut self, cx: &mut Context<Self>) {
         self.tarefa(cx, |api| api.get_json("/api/usage/status"), |m, r, cx| {
             let Some(v) = r else { return };
+            m.notar_carimbo(&v, cx);
             if let Some(seq) = aviso_de_travado(&v, m.travado_visto) {
                 m.travado_visto = seq;
                 if m.janela.is_none() {
@@ -468,41 +828,82 @@ impl Menu {
     }
 
     fn atualizar_timer(&mut self, cx: &mut Context<Self>) {
-        self.tarefa(cx, |api| api.get_json("/api/timer/status"), |m, r, cx| {
-            let Some(v) = r else { return };
-            let ativo = dados::verdade(&v, "active");
-            let esgotado = dados::verdade(&v, "expired");
-            let aviso = dados::verdade(&v, "warning");
-            let tela = matches!(m.janela, Some(Janela::TimerEsgotado { .. }));
-            match passo_do_timer(ativo, esgotado, aviso, tela, m.aviso_timer_mostrado) {
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let r = cx.background_executor().spawn(async move { api.get_json("/api/timer/status") }).await;
+            let copia = r.clone();
+            if this.update_in(cx, |m, window, cx| m.aplicar_timer(r, window, cx)).is_err() {
+                let _ = this.update(cx, |m, cx| m.aplicar_timer_sem_janela(copia, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn aplicar_timer(&mut self, r: Option<Value>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(v) = r else { return };
+        let tinha = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+        self.aplicar_estado_do_timer(&v, cx);
+        let tem = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+        if v != self.timer {
+            self.timer = v;
+            self.redesenhar(cx);
+        }
+        if precisa_repintar_sem_foco(tinha, tem, self.ativa) {
+            self.sujo = false;
+            cx.notify();
+            window.refresh();
+        }
+        if tinha && !tem {
+            log::info!(
+                "menu: tempo mudou; a tela Acabou o tempo foi fechada{}",
+                if self.ativa { "" } else { " (sem foco)" }
+            );
+        }
+    }
+
+    fn aplicar_timer_sem_janela(&mut self, r: Option<Value>, cx: &mut Context<Self>) {
+        let Some(v) = r else { return };
+        self.aplicar_estado_do_timer(&v, cx);
+        if v != self.timer {
+            self.timer = v;
+            self.redesenhar(cx);
+        }
+    }
+
+    fn aplicar_estado_do_timer(&mut self, v: &Value, cx: &mut Context<Self>) {
+            let ativo = dados::verdade(v, "active");
+            let esgotado = dados::verdade(v, "expired");
+            let aviso = dados::verdade(v, "warning");
+            let tela = matches!(self.janela, Some(Janela::TimerEsgotado { .. }));
+            match passo_do_timer(ativo, esgotado, aviso, tela, self.aviso_timer_mostrado) {
                 PassoTimer::Esgotado => {
-                    m.aviso_timer = None;
-                    m.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
+                    self.aviso_timer = None;
+                    self.janela = Some(Janela::TimerEsgotado { pin: String::new(), erro: String::new(), foco: 0 });
                 }
                 PassoTimer::FecharEsgotado => {
                     // tempo estendido em outro lugar (tela do watchdog, área dos pais, API)
                     // ou estado velho depois de o menu reabrir
-                    m.janela = None;
-                    m.aviso_timer_mostrado = aviso;
+                    self.janela = None;
+                    self.aviso_timer_mostrado = aviso;
                 }
                 PassoTimer::Aviso => {
-                    m.aviso_timer_mostrado = true;
-                    let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
-                    m.mostrar_aviso_timer(minutos_do_timer(restante), cx);
+                    self.aviso_timer_mostrado = true;
+                    let restante = dados::numero(v, "remainingSeconds").unwrap_or(0.);
+                    self.mostrar_aviso_timer(minutos_do_timer(restante), cx);
                 }
                 PassoTimer::Desligado => {
-                    m.aviso_timer_mostrado = false;
-                    m.aviso_timer = None;
+                    self.aviso_timer_mostrado = false;
+                    self.aviso_timer = None;
                 }
                 PassoTimer::Nada => {}
             }
             // O menu consulta o timer a cada 10 s: perto do fim, marca uma consulta
             // para o instante em que o tempo acaba (roteiro 19: reagia ~6 s depois,
             // e nesse meio tempo as teclas iam para o PIN dos pais).
-            let restante = dados::numero(&v, "remainingSeconds").unwrap_or(0.);
+            let restante = dados::numero(v, "remainingSeconds").unwrap_or(0.);
             if let Some(espera) = consulta_no_fim(ativo, esgotado, restante) {
-                m.fim_do_timer += 1;
-                let g = m.fim_do_timer;
+                self.fim_do_timer += 1;
+                let g = self.fim_do_timer;
                 cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(espera).await;
                     let _ = this.update(cx, |m, cx| {
@@ -513,11 +914,6 @@ impl Menu {
                 })
                 .detach();
             }
-            if v != m.timer {
-                m.timer = v;
-                m.redesenhar(cx);
-            }
-        });
     }
 
     fn atualizar_disp(&mut self, cx: &mut Context<Self>) {
@@ -977,13 +1373,16 @@ impl Menu {
                         log::warn!("abrir {}: o servidor respondeu {}", tile.id, r.status);
                         m.inicio = None;
                         let status = r.json().map(|v| dados::texto(&v, "status")).unwrap_or_default();
-                        let (icone, titulo, texto) = match status.as_str() {
-                            "missing" => ("📦", "Ainda não instalado", "Peça para a mamãe ou o papai instalar este app."),
-                            "crashed" => ("😕", "Não deu para abrir", "Este app fechou sozinho. Peça ajuda para a mamãe ou o papai."),
-                            _ => ("😕", "Não deu para abrir", "Tente de novo daqui a pouco."),
-                        };
-                        m.mostrar_aviso(icone, format!("{} {}", tile.emoji, titulo), texto.into());
-                        m.agendar_fechar_mensagem(cx);
+                        match falha_ao_abrir(r.status, &status, &tile.label) {
+                            FalhaAoAbrir::Sumiu => {
+                                log::info!("abrir {}: o jogo saiu do menu; recarregando os tiles", tile.id);
+                                m.carregar_config(cx);
+                            }
+                            FalhaAoAbrir::Aviso { icone, titulo, corpo } => {
+                                m.mostrar_aviso(icone, titulo, corpo.into());
+                                m.agendar_fechar_mensagem(cx);
+                            }
+                        }
                     }
                     Err(e) => {
                         log::warn!("abrir {}: {e}", tile.id);
@@ -1801,7 +2200,11 @@ impl Menu {
             .px(p.z(20.))
             .gap(p.z(12.))
             .cursor_default()
-            .child(div().text_size(p.f(34.)).child(if tempo.esgotada { "🔒" } else { o.emoji }))
+            .child(div().text_size(p.f(34.)).child(if tempo.esgotada {
+                "🔒".to_string()
+            } else {
+                dados::emoji_visivel(o.emoji)
+            }))
             .child(corpo);
         if !texto.is_empty() {
             chip = chip.child(
@@ -1934,19 +2337,17 @@ impl Menu {
     }
 
     fn visual(&self, p: &Pincel, emoji: &str, tamanho: f32, largura: f32, altura: f32) -> AnyElement {
-        if let Some(rel) = emoji.strip_prefix("img:") {
-            if !rel.contains("..") {
-                let caminho = self.o.app_root.join("themes").join(rel);
-                return img(caminho)
-                    .h(p.z(altura * 0.58))
-                    .max_w(p.z(largura * 0.86))
-                    .rounded(p.z(12.))
-                    .object_fit(ObjectFit::Contain)
-                    .into_any_element();
-            }
+        if let Some(rel) = caminho_de_capa(emoji) {
+            let caminho = self.o.app_root.join("themes").join(rel);
+            return img(caminho)
+                .h(p.z(altura * 0.58))
+                .max_w(p.z(largura * 0.86))
+                .rounded(p.z(12.))
+                .object_fit(ObjectFit::Contain)
+                .into_any_element();
         }
-        let e = if emoji.is_empty() { "⭐" } else { emoji };
-        div().text_size(p.f(tamanho)).line_height(p.f(tamanho * 1.15)).child(e.to_string()).into_any_element()
+        let e = glifo_do_tile(emoji);
+        div().text_size(p.f(tamanho)).line_height(p.f(tamanho * 1.15)).child(e).into_any_element()
     }
 
     fn escolha_el(&self, p: &Pincel, cx: &mut Context<Self>) -> AnyElement {
@@ -2266,7 +2667,11 @@ impl Menu {
         p.pequeno(("medidor", i))
             .cursor_default()
             .gap(p.z(10.))
-            .child(div().text_size(p.f(25.)).child(if item.esgotado { "🔒".to_string() } else { item.emoji.clone() }))
+            .child(div().text_size(p.f(25.)).child(if item.esgotado {
+                "🔒".to_string()
+            } else {
+                dados::emoji_visivel(&item.emoji)
+            }))
             .child(texto)
             .child(
                 div()
@@ -2585,6 +2990,10 @@ impl Menu {
         log::info!("janela do menu {}", if ativa { "ativa" } else { "inativa" });
         self.sujo = false;
         if ativa {
+            if let OrdemConfig::Pedir(_) = self.sinc.retomar(app_esta_aberto(&self.uso, self.web.is_some())) {
+                log::info!("menu: configuração mudou; recarregando os tiles ao voltar");
+                self.disparar_pedido(cx);
+            }
             self.atualizar_uso(cx);
             self.atualizar_disp(cx);
             self.atualizar_timer(cx);

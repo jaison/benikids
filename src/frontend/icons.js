@@ -101,15 +101,28 @@ function localTileIconName(value){
   return LEGACY_TILE_ICONS[normalized]||'';
 }
 
+function emojiComoTexto(emoji){
+  // Capa ("img:covers/...") não é texto: no aviso e na lista aparece o nome.
+  if(typeof emoji!=='string'||!emoji||emoji.includes('img:')) return '';
+  return emoji;
+}
+
 function createTileVisual(value,className='emoji'){
-  // Capa de jogo (ex.: itch.io): "img:covers/arquivo.png" servido de /themes/
-  if(typeof value==='string'&&/^img:[A-Za-z0-9_\-\/.]+$/.test(value)&&!value.includes('..')){
-    const img=document.createElement('img');
-    img.className=className+' tile-cover';
-    img.src='/themes/'+value.slice(4);
-    img.alt='';
-    img.draggable=false;
-    return img;
+  // Capa de jogo (ex.: itch.io): "img:covers/arquivo.png" servido de /themes/.
+  // Caminho inválido vira estrela, nunca o texto "img:...".
+  if(typeof value==='string'&&value.startsWith('img:')){
+    if(/^img:[A-Za-z0-9_\-\/.]+$/.test(value)&&!value.includes('..')){
+      const img=document.createElement('img');
+      img.className=className+' tile-cover';
+      img.src='/themes/'+value.slice(4);
+      img.alt='';
+      img.draggable=false;
+      return img;
+    }
+    const estrela=document.createElement('span');
+    estrela.className=className;
+    estrela.textContent='✨';
+    return estrela;
   }
   const iconName=localTileIconName(value||'✨');
   if(iconName){

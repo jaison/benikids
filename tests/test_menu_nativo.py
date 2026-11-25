@@ -113,6 +113,26 @@ class ClienteNativoServidorTests(unittest.TestCase):
             recs = server_module.load_recommendations()
         self.assertEqual([r["installed"] for r in recs], [False, True])
 
+    def test_uso_traz_o_carimbo_do_config_sem_caminho(self):
+        status, corpo, _ = self.request("/api/usage/status")
+        self.assertEqual(status, 200)
+        self.assertIsInstance(corpo["configStamp"], str)
+        self.assertNotRegex(corpo["configStamp"], r"[\\/]")
+        antes = corpo["configStamp"]
+        cfg = server_module.load_cfg()
+        cfg["title"] = "Título novo do teste"
+        server_module.save_cfg(cfg)
+        _, depois, _ = self.request("/api/usage/status")
+        self.assertNotEqual(depois["configStamp"], antes)
+        self.assertNotIn("configStamp", server_module.usage_tracker().status("default", cfg))
+
+    def test_abrir_tile_que_saiu_responde_gone(self):
+        status, corpo, _ = self.request(
+            "/launch/nao-existe", method="POST", body={}, origin=self.base_url
+        )
+        self.assertEqual(status, 404)
+        self.assertEqual(corpo["status"], "gone")
+
 
 class ClienteNativoWebTests(unittest.TestCase):
     def test_index_carrega_o_script_do_menu_nativo_por_ultimo(self):
@@ -213,6 +233,63 @@ class ClienteNativoWebTests(unittest.TestCase):
         self.assertIn("if(!cfg||!e||e.etapa!=='render'){", js)
         # uma carga por vez
         self.assertIn("if(bootstrapPromise) return bootstrapPromise;", js)
+
+    def test_carimbo_so_depois_do_config_mais_novo_e_app_faltando_avisa_o_nome(self):
+        import shutil
+        import subprocess
+
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("node não está no PATH")
+        uso = (ROOT / "src" / "frontend" / "usage-limits.js").read_text(encoding="utf-8")
+        launcher = (ROOT / "src" / "frontend" / "launcher-ui.js").read_text(encoding="utf-8")
+        sincronia = uso.split("// INICIO sincronia pura\n", 1)[1].split("// FIM sincronia pura", 1)[0]
+        aviso = launcher.split("// INICIO aviso app faltando\n", 1)[1].split("// FIM aviso app faltando", 1)[0]
+        abertura = launcher[launcher.index("if(response.status===404)"):launcher.index("// PIN handling")]
+        self.assertIn("avisoAppNaoInstalado(tile.label)", abertura)
+        self.assertIn("showUsageMessage(aviso.titulo, aviso.corpo)", abertura)
+        self.assertLess(abertura.index("status==='missing'"), abertura.index("showUsageMessage"))
+        self.assertLess(abertura.index("return;"), abertura.index("await loadConfig()"))
+        self.assertIn("await loadConfig(stamp)", uso)
+        self.assertIn("reservarPedidoConfig(carimbo)", launcher)
+        self.assertIn("responderPedidoConfig(pedido, false)", launcher)
+        fonte = sincronia + aviso + r"""
+const assert = require('assert');
+function novo(){ return {aplicado:null,alvo:null,pedido:null,pendente:false,geracao:0,emVoo:null}; }
+const s = novo();
+assert.strictEqual(decidirCarimbo(s, '2', false), 'nada');
+assert.strictEqual(s.aplicado, null);
+assert.strictEqual(s.pendente, true);
+assert.strictEqual(decidirCarimbo(s, '2', true), 'buscar');
+assert.strictEqual(s.aplicado, null, 'não grava o carimbo antes do GET');
+const g1 = reservarPedido(s, '2');
+const g2 = reservarPedido(s, null);
+assert.strictEqual(responderPedido(s, g1, true), 'ignorar');
+assert.strictEqual(s.aplicado, null);
+assert.strictEqual(responderPedido(s, g2, false), 'vazia');
+assert.strictEqual(s.aplicado, null);
+assert.strictEqual(s.pendente, true);
+assert.strictEqual(s.emVoo, null);
+assert.strictEqual(decidirCarimbo(s, '2', true), 'buscar');
+const g3 = reservarPedido(s, '2');
+assert.strictEqual(decidirCarimbo(s, '2', true), 'nada');
+assert.strictEqual(decidirCarimbo(s, '3', true), 'buscar');
+const g4 = reservarPedido(s, '3');
+assert.strictEqual(responderPedido(s, g3, true), 'ignorar');
+assert.strictEqual(s.aplicado, null);
+assert.strictEqual(responderPedido(s, g4, true), 'aplicar');
+assert.strictEqual(s.aplicado, '3');
+assert.strictEqual(s.pendente, false);
+const instalado = avisoAppNaoInstalado('Dog Wash');
+assert.strictEqual(instalado.titulo, '📦 Dog Wash — Ainda não instalado');
+assert.ok(instalado.corpo.length > 0);
+const capa = avisoAppNaoInstalado('img:covers/dog-wash.png');
+assert.strictEqual(capa.titulo, '📦 Ainda não instalado');
+assert.ok(!capa.titulo.includes('img:'));
+assert.ok(!capa.corpo.includes('img:'));
+"""
+        proc = subprocess.run([node, "-e", fonte], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
 
     def test_pin_fica_acima_do_aviso_de_tempo_esgotado(self):
         import re

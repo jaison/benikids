@@ -192,7 +192,8 @@ function renderControleJogos(){
     caixa.checked=tile.gamepad===true;
     caixa.onchange=()=>{ if(caixa.checked) tile.gamepad=true; else delete tile.gamepad; };
     const nome=document.createElement('span');
-    nome.textContent=(tile.emoji&&tile.emoji.length<=4?tile.emoji+' ':'')+(tile.label||tile.id);
+    const emoji=typeof emojiComoTexto==='function'?emojiComoTexto(tile.emoji):'';
+    nome.textContent=(emoji?emoji+' ':'')+(tile.label||tile.id);
     item.append(caixa,nome);
     lista.appendChild(item);
   }
