@@ -219,6 +219,33 @@ class SemChamadaQuePrendeTests(unittest.TestCase):
         self.assertIn('self.pedir_janela("maximizar", self.passo_maximizar', codigo)
         self.assertIn('self.pedir_janela("quiosque", self.passo_do_quiosque', codigo)
         self.assertNotRegex(codigo, r"\bSendMessageW\(")
+        # o cursor preso se alarga com ClipCursor, sem mensagem para o outro processo
+        # e sem soltar no sistema inteiro (ClipCursor NULL)
+        self.assertIn("soltar_cursor_se_preso", codigo)
+        corpo = (RAIZ / "src" / "plataforma_windows.py").read_text(encoding="utf-8").split("def soltar_cursor_se_preso")[1].split("def ")[0]
+        self.assertNotIn("SendMessage", corpo)
+        self.assertNotIn("ClipCursor(None)", corpo)
+
+
+class CursorPresoTests(unittest.TestCase):
+    def test_widens_only_up_to_the_close_button_on_the_game_monitor(self):
+        monitor = (0, 0, 1920, 1080)
+        jogo = (0, 0, 1920, 1040)  # acima da barra de tarefas
+        botao = (1800, 8, 1860, 68)
+        recorte = (0, 40, 1700, 1000)  # o ✕ fica de fora
+        self.assertEqual(js.recorte_do_cursor(recorte, jogo, botao, monitor, True), jogo)
+        # o ✕ já está no recorte: não mexe
+        self.assertIsNone(js.recorte_do_cursor((0, 0, 1900, 1040), jogo, botao, monitor, True))
+        # monitor inteiro, ou a tela virtual: não solta e não encolhe
+        self.assertIsNone(js.recorte_do_cursor(monitor, jogo, botao, monitor, True))
+        self.assertIsNone(js.recorte_do_cursor((0, 0, 3840, 1080), jogo, botao, monitor, True))
+        self.assertIsNone(js.recorte_do_cursor(recorte, jogo, botao, monitor, False))
+        self.assertIsNone(js.recorte_do_cursor(recorte, jogo, None, monitor, True))
+        # ✕ no segundo monitor: o recorte não atravessa
+        self.assertEqual(
+            js.recorte_do_cursor((0, 0, 800, 600), (0, 0, 1920, 1080), (2000, 20, 2060, 80), monitor, True),
+            monitor,
+        )
 
 
 if __name__ == "__main__":

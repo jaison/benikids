@@ -332,7 +332,19 @@ def external_browser_command(
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
         profile = external_chromium_profile(cache_root, profile_id)
-        ensure_chromium_preferences(profile)
+        prefs = dict(CHROMIUM_PREFERENCES)
+        if os.name == "nt":
+            # Kleki e os outros sites: Imagens\Desenhos, sem perguntar a pasta e
+            # sem abrir o painel. A política do HKCU vale para o Edge desta conta;
+            # a preferência cobre o perfil que o Benikids abre. O import fica
+            # aqui: no Linux o servidor não precisa deste módulo na subida.
+            # download_restrictions=3 continua no mesmo perfil (quiosque): o
+            # navegador da criança não baixa arquivo.
+            import politicas_edge
+            pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
+            politicas_edge.gravar_politica_de_desenhos(pasta)
+            prefs.update(politicas_edge.preferencias_downloads(pasta))
+        ensure_chromium_preferences(profile, prefs)
         command = [
             browser,
             f"--user-data-dir={profile}",

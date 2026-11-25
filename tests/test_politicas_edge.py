@@ -64,7 +64,7 @@ def registro_completo(**extra):
         UBOL: {"defaultFiltering": "complete", "disableFirstRunPage": 1},
         UBOL + r"\rulesets": {"1": "+annoyances-cookies"},
         RAIZ: {"OutraPolitica": 1, "TranslateEnabled": 0, "PasswordManagerEnabled": 0,
-               "DnsOverHttpsMode": "off"},
+               "DnsOverHttpsMode": "off", "PromptForDownloadLocation": 0},
     }
     chaves.update(extra)
     return chaves
@@ -125,6 +125,50 @@ class PoliticasTest(unittest.TestCase):
         sem_valor = registro_completo(**{RAIZ: {"OutraPolitica": 1}})
         self.assertTrue(pe.faltam(sem_filtro=False, winreg=WinregFalso(sem_valor)))
 
+    def test_downloads_do_kleki_nao_perguntam_a_pasta(self):
+        texto = "\n".join(pe.script_aplicar())
+        self.assertIn(
+            r"New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name 'PromptForDownloadLocation' "
+            "-Value 0 -PropertyType DWord -Force",
+            texto,
+        )
+        pasta = pe.pasta_desenhos(os.path.join("C:\\Users\\cria", "Pictures"))
+        self.assertEqual(pasta, os.path.join("C:\\Users\\cria", "Pictures", "Desenhos"))
+        prefs = pe.preferencias_downloads(pasta)
+        self.assertIs(prefs["download"]["prompt_for_download"], False)
+        self.assertEqual(prefs["download"]["default_directory"], pasta)
+        self.assertIs(prefs["download_bubble"]["partial_view_enabled"], False)
+
+        class Registro:
+            HKEY_CURRENT_USER = "HKCU"
+            REG_SZ = 1
+            REG_DWORD = 4
+
+            def __init__(self):
+                self.valores = {}
+
+            def CreateKey(self, raiz, caminho):
+                self.raiz, self.caminho = raiz, caminho
+                return self
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def SetValueEx(self, _chave, nome, _reservado, tipo, valor):
+                self.valores[nome] = (tipo, valor)
+
+        registro = Registro()
+        with tempfile.TemporaryDirectory() as raiz:
+            destino = os.path.join(raiz, "Desenhos")
+            self.assertTrue(pe.gravar_politica_de_desenhos(destino, winreg=registro))
+            self.assertTrue(os.path.isdir(destino))
+        self.assertEqual(registro.valores["DownloadDirectory"], (registro.REG_SZ, destino))
+        self.assertEqual(registro.valores["PromptForDownloadLocation"], (registro.REG_DWORD, 0))
+        self.assertEqual(registro.raiz, "HKCU")
+
     def test_gerenciador_de_senhas_desligado(self):
         texto = "\n".join(pe.script_aplicar())
         self.assertIn(
@@ -157,7 +201,8 @@ class PoliticasTest(unittest.TestCase):
         self.assertEqual(valores, [
             rf"Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' -Name '{nome}' "
             "-ErrorAction SilentlyContinue"
-            for nome in ("TranslateEnabled", "PasswordManagerEnabled", "DnsOverHttpsMode")
+            for nome in ("TranslateEnabled", "PasswordManagerEnabled", "DnsOverHttpsMode",
+                         "PromptForDownloadLocation")
         ])
         # a chave da lista só some se ficou vazia e sem subchaves
         self.assertIn("$outros.Count -eq 0 -and $chave.SubKeyCount -eq 0", texto)

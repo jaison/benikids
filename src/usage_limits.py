@@ -65,11 +65,11 @@ DEFAULT_CATEGORY_LIMITS = {
 }
 
 _EDUCATIVO_IDS = {
-    "scratch", "blockly", "klavaro", "codeorg", "khan",
+    "scratch", "pista-turbo", "blockly", "klavaro", "codeorg", "khan",
     "phet", "stellarium", "browser", "tuxmath",
 }
 _PASSATEMPO_IDS = {
-    "paint", "autodraw", "colorir", "games", "musiclab", "klotski", "hexahop", "pingus",
+    "paint", "autodraw", "colorir", "games", "gcompris", "musiclab", "klotski", "hexahop", "pingus",
 }
 _JOGOS_IDS = {
     "luanti", "supertux", "supertuxkart", "snes", "ps1", "frogatto",

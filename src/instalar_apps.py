@@ -7,6 +7,7 @@ Benikids e pela área dos pais. Uso: pythonw instalar_apps.py [id ...]
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -82,6 +83,8 @@ def instalar(item, ao_pedir_senha=None):
         winget(), "install", "--id", item["winget"], "--exact", "--silent",
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
     ]
+    if versao_fixa(item):
+        argv += ["--version", versao_fixa(item)]
     if item.get("escopo"):
         argv += ["--scope", item["escopo"]]
     env = dict(os.environ, __COMPAT_LAYER="RunAsInvoker")
@@ -128,6 +131,14 @@ def pacote(item):
     return item.get("winget") or item.get("pagina") or item["id"]
 
 
+def versao_fixa(item):
+    """Versão presa no catálogo (ex.: o RetroArch 1.22.2, a mesma dos núcleos)."""
+    versao = item.get("versao")
+    if isinstance(versao, str) and re.fullmatch(r"\d+(?:\.\d+){1,3}", versao):
+        return versao
+    return ""
+
+
 def mais_novo_da_pagina(html, padrao):
     """Na listagem de uma pasta (ex.: cdn.kde.org/ci-builds), o instalador de número de
     build maior. padrao: regex com um grupo para o número."""
@@ -168,16 +179,24 @@ def baixar_da_pagina(item, destino, abrir=None):
     return arquivo
 
 
-def baixar(item, pasta):
-    """winget download (não precisa de administrador). Devolve o arquivo do instalador."""
+def baixar(item, pasta, abrir=None):
+    """winget download (não precisa de administrador). Devolve o arquivo do instalador.
+
+    Sem winget, um "url" + "sha256" no catálogo é o instalador do site do autor
+    (ex.: o TuxMath, que não está no winget). O hash é conferido antes de instalar.
+    """
     destino = os.path.join(pasta, item["id"])
     os.makedirs(destino, exist_ok=True)
+    if item.get("url") and not item.get("winget"):
+        return baixar_instalador(item, destino, abrir)
     if not item.get("winget"):
         return baixar_da_pagina(item, destino)
     base = [
         winget(), "download", "--id", item["winget"], "--exact", "--download-directory", destino,
         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity",
     ]
+    if versao_fixa(item):
+        base += ["--version", versao_fixa(item)]
     tipo = ["--installer-type", item["instalador"]] if item.get("instalador") else []
     # primeiro o instalador "por máquina" do tipo que o script de administrador vai rodar;
     # manifestos sem "Scope" (ex.: Enigma) não passam no filtro --scope machine e o winget
@@ -197,20 +216,193 @@ def baixar(item, pasta):
 
 
 PASTA_DIRETOS = "Benikids Apps"  # em %LOCALAPPDATA%\\Programs: não precisa de administrador
+TETO_DOWNLOAD = 100 * 1024 * 1024  # o Neverball 1.6.0 cabe; um zip maior que isto é recusado
+TETO_DESCOMPACTADO = 250 * 1024 * 1024
+
+
+def _sha256_hex(caminho):
+    import hashlib
+
+    soma = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(1024 * 1024), b""):
+            soma.update(bloco)
+    return soma.hexdigest()
+
+
+def _abrir_https(url):
+    import urllib.request
+
+    # o SourceForge devolve uma página no lugar do arquivo se o cliente não se identifica
+    pedido = urllib.request.Request(url, headers={"User-Agent": "Benikids"})
+    return urllib.request.urlopen(pedido, timeout=180)
+
+
+def _nome_simples(nome):
+    if not isinstance(nome, str) or not nome or os.sep in nome or "/" in nome or "\\" in nome or nome.startswith("."):
+        return ""
+    return nome
+
+
+def _hash_ok(texto):
+    return isinstance(texto, str) and len(texto) == 64 and all(c in "0123456789abcdefABCDEF" for c in texto)
+
+
+def _baixar_para(url, destino, sha256, teto, abrir):
+    """Grava `destino` só se o sha256 bater. Devolve False e apaga o parcial se não bater."""
+    import hmac
+
+    if not isinstance(url, str) or not url.startswith("https://") or not _hash_ok(sha256):
+        return False
+    if os.path.isfile(destino):
+        try:
+            if hmac.compare_digest(_sha256_hex(destino), sha256.lower()):
+                return True
+        except OSError:
+            return False
+    abrir = abrir or _abrir_https
+    temporario = destino + ".baixando"
+    try:
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        with abrir(url) as resposta, open(temporario, "wb") as f:
+            tamanho = 0
+            while True:
+                bloco = resposta.read(1024 * 1024)
+                if not bloco:
+                    break
+                tamanho += len(bloco)
+                if tamanho > teto:
+                    return False
+                f.write(bloco)
+        if not hmac.compare_digest(_sha256_hex(temporario), sha256.lower()):
+            return False
+        os.replace(temporario, destino)
+        return True
+    except (OSError, ValueError):
+        return False
+    finally:
+        if os.path.isfile(temporario):
+            try:
+                os.remove(temporario)
+            except OSError:
+                pass
+
+
+def _dentro_da_pasta(pasta, destino):
+    pasta_abs, dest_abs = os.path.abspath(pasta), os.path.abspath(destino)
+    try:
+        return os.path.commonpath([pasta_abs, dest_abs]) == pasta_abs
+    except ValueError:
+        return False
+
+
+def extrair_zip(origem, pasta, exe):
+    """Extrai o zip do autor para `pasta`, recusando caminho absoluto ou com "..".
+
+    O jogo fica com a mesma árvore do zip (o .exe precisa das DLLs ao lado). Devolve
+    (ok, texto)."""
+    import shutil
+    import zipfile
+
+    exe = _nome_simples(exe)
+    if not exe or not zipfile.is_zipfile(origem):
+        return False, "o arquivo baixado não é um pacote"
+    with zipfile.ZipFile(origem) as z:
+        planos = []
+        total = 0
+        for info in z.infolist():
+            nome = info.filename.replace("\\", "/")
+            if not nome or nome.startswith("/") or (len(nome) >= 2 and nome[1] == ":"):
+                return False, "pacote recusado"
+            partes = [p for p in nome.split("/") if p not in ("", ".")]
+            if not partes or any(p == ".." for p in partes):
+                return False, "pacote recusado"
+            total += info.file_size
+            if total > TETO_DESCOMPACTADO or len(planos) > 4000:
+                return False, "pacote grande demais"
+            planos.append((info, partes))
+        if os.path.isdir(pasta):
+            shutil.rmtree(pasta)
+        os.makedirs(pasta, exist_ok=True)
+        for info, partes in planos:
+            destino = os.path.join(pasta, *partes)
+            if not _dentro_da_pasta(pasta, destino):
+                return False, "pacote recusado"
+            if info.is_dir() or info.filename.endswith("/"):
+                os.makedirs(destino, exist_ok=True)
+                continue
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            with z.open(info) as src, open(destino, "wb") as saida:
+                while True:
+                    bloco = src.read(1024 * 1024)
+                    if not bloco:
+                        break
+                    saida.write(bloco)
+    for raiz, _pastas, arquivos in os.walk(pasta):
+        for nome in arquivos:
+            if nome.lower() == exe.lower():
+                return True, "instalado"
+    return False, "baixou, mas não achei o programa"
+
+
+def baixar_instalador(item, destino, abrir=None):
+    """Instalador .exe do site do autor, com o sha256 do catálogo. Devolve o caminho."""
+    import urllib.parse
+
+    url, sha = item.get("url", ""), item.get("sha256", "")
+    nome = _nome_simples(os.path.basename(urllib.parse.unquote(urllib.parse.urlparse(url).path)))
+    if not nome or not nome.lower().endswith(".exe"):
+        return None
+    caminho = os.path.join(destino, nome)
+    if not _baixar_para(url, caminho, sha, TETO_DOWNLOAD, abrir):
+        return None
+    try:
+        with open(caminho, "rb") as f:
+            if f.read(2) != b"MZ":
+                os.remove(caminho)
+                return None
+    except OSError:
+        return None
+    return caminho
 
 
 def baixar_direto(item, raiz=None, abrir=None):
-    """Apps de um .exe só, baixados do site do autor quando o winget não serve (ex.: os
-    Quebra-cabeças de Simon Tatham, cujo pacote no winget ficou com o hash velho).
+    """Apps baixados do site do autor quando o winget não serve (ex.: os Quebra-cabeças
+    de Simon Tatham, cujo pacote no winget ficou com o hash velho; ou um zip com o
+    .exe e as DLLs, como o Neverball). Com "sha256" no catálogo, o arquivo é conferido.
     Devolve (ok, texto)."""
     import urllib.request
 
     info = item.get("baixar") or {}
     url, arquivo = info.get("url", ""), info.get("arquivo", "")
-    if not url.startswith("https://") or not arquivo or os.sep in arquivo or "/" in arquivo:
+    if not url.startswith("https://") or not _nome_simples(arquivo):
         return False, "sem endereço para baixar"
     raiz = raiz or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")
     pasta = os.path.join(raiz, PASTA_DIRETOS)
+    if info.get("zip") or info.get("sha256"):
+        if not _hash_ok(info.get("sha256", "")):
+            return False, "sem hash do arquivo"
+        pacote = os.path.join(pasta, item.get("id", "app") + (".zip" if info.get("zip") else ".exe"))
+        if not _nome_simples(os.path.basename(pacote)):
+            return False, "sem endereço para baixar"
+        if not _baixar_para(url, pacote, info["sha256"], TETO_DOWNLOAD, abrir):
+            return False, "o arquivo baixado não confere"
+        if info.get("zip"):
+            ok, texto = extrair_zip(pacote, os.path.join(pasta, _nome_simples(item.get("id", "")) or "app"), arquivo)
+            try:
+                os.remove(pacote)
+            except OSError:
+                pass
+            return ok, texto
+        destino = os.path.join(pasta, arquivo)
+        try:
+            with open(pacote, "rb") as f:
+                if f.read(2) != b"MZ":
+                    return False, "o arquivo baixado não é um programa"
+            os.replace(pacote, destino)
+        except OSError:
+            return False, "não deu para gravar o programa"
+        return True, "instalado"
     destino = os.path.join(pasta, arquivo)
     abrir = abrir or (lambda u: urllib.request.urlopen(u, timeout=120))
     try:

@@ -61,6 +61,72 @@ def trazer(api, h):
     return "alt" if ok else "falhou"
 
 
+def _retangulo_util(valor):
+    """Retângulo com área, em inteiros. Vazio ou incompleto vira None."""
+    bruto = _retangulo_de_cursor(valor)
+    if not bruto:
+        return None
+    ret = tuple(int(n) for n in valor)
+    if ret[0] >= ret[2] or ret[1] >= ret[3]:
+        return None
+    return ret
+
+
+def _cobre(externo, interno):
+    """O retângulo interno está inteiro dentro do externo (direita e baixo exclusivos)."""
+    return (externo[0] <= interno[0] and externo[1] <= interno[1]
+            and externo[2] >= interno[2] and externo[3] >= interno[3])
+
+
+def _unir(a, b):
+    if not a:
+        return b
+    if not b:
+        return a
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
+def _cortar(ret, limite):
+    if not ret or not limite:
+        return None
+    esq, topo = max(ret[0], limite[0]), max(ret[1], limite[1])
+    direita, baixo = min(ret[2], limite[2]), min(ret[3], limite[3])
+    if esq >= direita or topo >= baixo:
+        return None
+    return (esq, topo, direita, baixo)
+
+
+def recorte_do_cursor(recorte, jogo, botao, monitor, app_na_frente):
+    """Novo ClipCursor, ou None para não mexer.
+
+    O jogo prende o cursor na janela dele e o ✕ da pílula fica de fora. O recorte
+    novo é a janela do jogo unida ao ✕, cortada no monitor do jogo: a barra de
+    tarefas e o outro monitor continuam fora. Um recorte que já cobre o ✕, ou que
+    já cobre o monitor inteiro (tela virtual), não é trocado — não solta no
+    sistema e não encolhe o que o jogo não prendeu.
+    ClipCursor aplica na hora, sem mensagem para o outro processo.
+    """
+    if not app_na_frente:
+        return None
+    recorte = _retangulo_util(recorte)
+    jogo = _retangulo_util(jogo)
+    botao = _retangulo_util(botao)
+    monitor = _retangulo_util(monitor)
+    if not jogo or not botao or not monitor:
+        return None
+    if recorte and (_cobre(recorte, monitor) or _cobre(recorte, botao)):
+        return None
+    desejado = _cortar(_unir(jogo, botao), monitor)
+    if not desejado or desejado == recorte:
+        return None
+    return desejado
+
+
+def _retangulo_de_cursor(valor):
+    return (isinstance(valor, tuple) and len(valor) == 4
+            and all(isinstance(n, (int, float)) and not isinstance(n, bool) for n in valor))
+
+
 def pode_mexer(api, h, ms=300):
     """Antes de uma chamada que espera o app (SetWindowLongPtr): ele não está travado e
     respondeu a um WM_NULL em até `ms` (SendMessageTimeout com SMTO_ABORTIFHUNG)."""

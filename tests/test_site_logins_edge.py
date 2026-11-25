@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import politicas_edge  # noqa: E402
 import site_logins  # noqa: E402
 from application_launcher import (  # noqa: E402
     ensure_chromium_preferences,
@@ -95,7 +96,15 @@ class EdgeCommandTest(unittest.TestCase):
                 self.assertIn("FileSystemAccessAPI", CHROMIUM_RECURSOS_DESLIGADOS)
                 self.assertIn("--lang=pt-BR", command)
                 prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
-                self.assertEqual(json.loads(prefs.read_text()), MINIMO)
+                dados = json.loads(prefs.read_text())
+                if os.name == "nt":
+                    # no Windows o comando também grava a pasta Imagens\Desenhos
+                    pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
+                    esperado = dict(MINIMO)
+                    esperado.update(politicas_edge.preferencias_downloads(pasta))
+                    self.assertEqual(dados, esperado)
+                else:
+                    self.assertEqual(dados, MINIMO)
             # o Firefox não ganha nada disso
             firefox = external_browser_command("firefox", "https://x.org/", root)
             self.assertFalse(any("disable-features" in arg for arg in firefox))

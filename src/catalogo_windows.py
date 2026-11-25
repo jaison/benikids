@@ -9,18 +9,29 @@ tipo de instalação (por usuário ou para todos).
 import glob
 import json
 import os
+import sys
 
 ARQUIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogo", "windows.json")
 PREFIXO = "catalogo:"
 
 
-def carregar(arquivo=ARQUIVO):
+def _ler(arquivo):
     try:
         with open(arquivo, encoding="utf-8") as f:
             dados = json.load(f)
     except (OSError, ValueError):
-        return []
-    return [item for item in dados.get("apps", []) if isinstance(item, dict) and item.get("id")]
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def carregar(arquivo=ARQUIVO):
+    return [item for item in _ler(arquivo).get("apps", []) if isinstance(item, dict) and item.get("id")]
+
+
+def nucleos_retroarch(arquivo=ARQUIVO):
+    """Pacote estável dos núcleos do RetroArch: url, sha256, snes, ps1 e o extrator."""
+    info = _ler(arquivo).get("retroarch_nucleos")
+    return info if isinstance(info, dict) else {}
 
 
 def raizes():
@@ -137,8 +148,14 @@ def comando(cmd, catalogo=None, bases=None):
     exe = localizar(item, bases)
     if not exe:
         return None
-    argv = [exe, *(preencher(arg, item) for arg in item.get("args", []))]
+    argv = [exe]
+    for arg in item.get("args", []):
+        preenchido = preencher(arg, item)
+        if preenchido:
+            argv.append(preenchido)
     gravar_config_inicial(item, exe)
+    if "LANGUAGE" in (item.get("env") or {}):
+        garantir_idioma_kde()
     preparar = item.get("preparar")
     if preparar == "xmoto":
         preparar_xmoto()
@@ -148,6 +165,17 @@ def comando(cmd, catalogo=None, bases=None):
         preparar_luanti(exe)
     elif preparar == "supertuxkart":
         preparar_supertuxkart(tamanho_da_tela())
+    elif preparar == "kturtle":
+        preparar_kturtle()
+    elif preparar == "pista":
+        preparar_pista()
+    elif preparar == "neverball":
+        preparar_neverball(tamanho_da_tela())
+    elif preparar == "cozy":
+        import cozy_jogos
+
+        cozy_jogos.preparar_pastas(item["id"])
+        return [sys.executable, os.path.abspath(cozy_jogos.__file__), item["id"], exe]
     return argv
 
 
@@ -156,7 +184,33 @@ def comando(cmd, catalogo=None, bases=None):
 # disponível" (com o botão "Visitar site", que abriria o navegador fora do Benikids),
 # em português e em tela cheia. Só grava a chave que falta: o que os pais mudarem no
 # próprio jogo fica. Valor vazio, como o printf do Linux: sem endereço, sem consulta.
-LUANTI_CONFIG = (("update_information_url", ""), ("language", "pt_BR"), ("fullscreen", "true"))
+# As chaves de beni/emuladores/luanti-minetest.conf (notebook fraco), mais o aviso
+# de versão nova desligado. garantir_chaves só grava a que ainda não existe.
+LUANTI_CONFIG = (
+    ("update_information_url", ""),
+    ("fullscreen", "true"),
+    ("language", "pt_BR"),
+    ("viewing_range", "40"),
+    ("smooth_lighting", "false"),
+    ("enable_shaders", "false"),
+    ("enable_clouds", "false"),
+    ("enable_3d_clouds", "false"),
+    ("enable_particles", "false"),
+    ("enable_waving_leaves", "false"),
+    ("enable_waving_plants", "false"),
+    ("enable_waving_water", "false"),
+    ("enable_minimap", "false"),
+    ("fps_max", "30"),
+    ("fps_max_unfocused", "10"),
+    ("client_mapblock_limit", "3000"),
+    ("mip_map", "false"),
+    ("anisotropic_filter", "false"),
+    ("bilinear_filter", "false"),
+    ("trilinear_filter", "false"),
+    ("antialiasing", "none"),
+    ("undersampling", "2"),
+    ("menu_last_game", "mineclonia"),
+)
 
 
 def garantir_chaves(texto, pares):
@@ -234,8 +288,10 @@ def preparar_luanti(exe, appdata=None, pacotes=None):
 # - sem a tela "Criar usuário", que vem com o nome do usuário do Windows (dado
 #   pessoal) no campo: sem players.xml, um com o jogador "Benikids" como atual. O
 #   jogo cria o que falta nele (modo história, conquistas, ícone) — conferido no
-#   PlayerManager/PlayerProfile do código do SuperTuxKart. Um players.xml que já
-#   existe fica como está.
+#   PlayerManager/PlayerProfile do código do SuperTuxKart. Se o único jogador ainda
+#   se chama como a conta do Windows (o jogo criou sozinho numa abertura anterior),
+#   o nome vira "Benikids" e o resto do arquivo fica: o progresso não se perde.
+#   Um nome que a criança escolheu no jogo não é trocado.
 STK_CONFIG_VERSAO = 8
 STK_CONFIG_MINIMO = ('<?xml version="1.0"?>\n<stkconfig version="%d" >\n'
                      '    <enable_internet value="2" />\n</stkconfig>\n') % STK_CONFIG_VERSAO
@@ -285,11 +341,33 @@ def _gravar_se_mudou(arquivo, texto, novo):
     return True
 
 
-def preparar_supertuxkart(tela, pasta=None):
+def renomear_conta_do_windows(texto, usuario):
+    """Troca o jogador que ainda tem o nome da conta do Windows por "Benikids".
+
+    O SuperTuxKart, sem players.xml, cria o jogador com USERNAME (no Linux, com
+    USER). Num PC de família essa conta costuma ser de um adulto. "Benikids" não
+    é dado pessoal e vale para qualquer criança que use o mesmo usuário do
+    Windows. O nome que alguém escolheu dentro do jogo fica. O progresso (o
+    resto do arquivo) fica."""
+    import re
+
+    if not usuario or usuario == "Benikids" or any(c in usuario for c in '"<>&\r\n'):
+        return texto
+    if re.search(r'\bname="Benikids"', texto or ""):
+        return texto
+    if not re.search(r'\bname="' + re.escape(usuario) + r'"', texto or ""):
+        return texto
+    texto = re.sub(r'(\bname=")' + re.escape(usuario) + r'(")', r"\g<1>Benikids\g<2>", texto)
+    return re.sub(r'(\bplayer=")' + re.escape(usuario) + r'(")', r"\g<1>Benikids\g<2>", texto)
+
+
+def preparar_supertuxkart(tela, pasta=None, usuario=None):
     """Devolve o que gravou: subconjunto de {"config.xml", "players.xml"}."""
     pasta = pasta or pasta_supertuxkart()
     if not pasta:
         return set()
+    if usuario is None:
+        usuario = os.environ.get("USERNAME") or ""
     gravados = set()
     largura = altura = None
     try:
@@ -309,8 +387,14 @@ def preparar_supertuxkart(tela, pasta=None):
         pass
     players = os.path.join(pasta, "players.xml")
     try:
-        if not os.path.exists(players) and _gravar_se_mudou(players, "", STK_PLAYERS_MINIMO):
-            gravados.add("players.xml")
+        if not os.path.exists(players):
+            if _gravar_se_mudou(players, "", STK_PLAYERS_MINIMO):
+                gravados.add("players.xml")
+        else:
+            with open(players, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                texto = f.read()
+            if _gravar_se_mudou(players, texto, renomear_conta_do_windows(texto, usuario)):
+                gravados.add("players.xml")
     except OSError:
         pass
     return gravados
@@ -367,6 +451,147 @@ def preparar_xmoto(bancos=None, perfil="Benikids"):
     return preparados
 
 
+def texto_kdeglobals(texto):
+    """kdeglobals com Language=pt_BR se essa chave ainda não existe.
+
+    O Qt no Windows nem sempre lê LANG. O KDE lê [Locale] Language neste arquivo
+    (%LOCALAPPDATA%\\kdeglobals e %APPDATA%\\kdeglobals). O que os pais mudarem fica.
+    """
+    import re
+
+    if re.search(r"(?mi)^[ \t]*Language[ \t]*=", texto or ""):
+        return texto
+    if re.search(r"(?mi)^\[Locale\][ \t]*$", texto or ""):
+        return re.sub(r"(?mi)^\[Locale\][ \t]*$", "[Locale]\nLanguage=pt_BR", texto, count=1)
+    if texto and not texto.endswith("\n"):
+        texto += "\n"
+    return (texto or "") + "[Locale]\nLanguage=pt_BR\n"
+
+
+def _tem_chave_kde(texto, chave):
+    import re
+
+    return re.search(r"(?mi)^[ \t]*" + re.escape(chave) + r"(?:\[[^\]]*\])?[ \t]*=", texto or "") is not None
+
+
+def garantir_no_grupo(texto, grupo, chave, valor, so_se_faltar=False):
+    """Acrescenta chave=valor no grupo de um .rc do KDE, ou troca o valor.
+
+    Com so_se_faltar, uma chave que já existe (em qualquer grupo) fica: é escolha
+    de quem usa o programa. O arquivo pode estar com quebra do Windows."""
+    import re
+
+    texto = texto or ""
+    if so_se_faltar and _tem_chave_kde(texto, chave):
+        return texto
+    padrao = re.compile(r"(?mi)^([ \t]*" + re.escape(chave) + r"(?:\[[^\]]*\])?[ \t]*=[ \t]*)[^\r\n]*")
+    if padrao.search(texto):
+        return padrao.sub(lambda m: m.group(1) + valor, texto, count=1)
+    linha = f"{chave}={valor}\n"
+    cabecalho = re.search(r"(?mi)^(\[" + re.escape(grupo) + r"\][ \t]*\r?\n)", texto)
+    if cabecalho:
+        fim = cabecalho.end()
+        return texto[:fim] + linha + texto[fim:]
+    if texto and not texto.endswith("\n"):
+        texto += "\n"
+    return texto + f"[{grupo}]\n{linha}"
+
+
+def texto_kturtlerc(texto):
+    """kturtlerc com os comandos em pt_BR e a janela maximizada.
+
+    O idioma da interface o KDE lê do kdeglobals. O idioma dos COMANDOS (parafrente,
+    paraesquerda) é outra chave, [General Options] currentLanguageCode: sem ela o
+    KTurtle grava en_US, mesmo com o sistema em português (MainWindow::readConfig).
+    Window-Maximized é o que o KMainWindow restaura ao abrir; sem isso a janela
+    volta ao tamanho salvo (no PC de teste, 994x495) depois que o overlay maximiza.
+    """
+    texto = garantir_no_grupo(texto, "General Options", "currentLanguageCode", "pt_BR", so_se_faltar=True)
+    return garantir_no_grupo(texto, "MainWindow", "Window-Maximized", "true")
+
+
+def preparar_kturtle(arquivos=None):
+    """Grava o kturtlerc onde o KDE no Windows procura (%LOCALAPPDATA% e %APPDATA%)."""
+    if arquivos is None:
+        arquivos = []
+        for variavel in ("LOCALAPPDATA", "APPDATA"):
+            raiz = os.environ.get(variavel)
+            if raiz:
+                arquivos.append(os.path.join(raiz, "kturtlerc"))
+    gravados = []
+    for caminho in arquivos:
+        try:
+            texto = ""
+            if os.path.isfile(caminho):
+                with open(caminho, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    texto = f.read()
+            novo = texto_kturtlerc(texto)
+            if novo != texto:
+                os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
+                with open(caminho, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    f.write(novo)
+                gravados.append(caminho)
+        except OSError:
+            continue
+    return gravados
+
+
+def garantir_idioma_kde(arquivos=None):
+    """Grava Language=pt_BR nos kdeglobals que ainda não escolhem idioma."""
+    if arquivos is None:
+        arquivos = []
+        for variavel in ("LOCALAPPDATA", "APPDATA"):
+            raiz = os.environ.get(variavel)
+            if raiz:
+                arquivos.append(os.path.join(raiz, "kdeglobals"))
+    gravados = []
+    for caminho in arquivos:
+        try:
+            texto = ""
+            if os.path.isfile(caminho):
+                with open(caminho, encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    texto = f.read()
+            novo = texto_kdeglobals(texto)
+            if novo != texto:
+                os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
+                with open(caminho, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    f.write(novo)
+            gravados.append(caminho)
+        except OSError:
+            continue
+    return gravados
+
+
+def preparar_pista(destino=None, origem=None):
+    """Copia Pista Turbo.sb3 para Imagens/Scratch se a criança ainda não tem a sua.
+
+    Igual ao Linux (beni/bin/pista-turbo): a cópia que ela editar não é sobrescrita.
+    Devolve o caminho do .sb3, ou "" se a original não está no pacote."""
+    import shutil
+
+    origem = origem or os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch", "Pista Turbo.sb3")
+    if destino is None:
+        try:
+            import politicas_edge
+
+            imagens = politicas_edge.pasta_imagens()
+        except OSError:
+            imagens = ""
+        if not imagens:
+            return ""
+        destino = os.path.join(imagens, "Scratch", "Pista Turbo.sb3")
+    if os.path.isfile(destino):
+        return destino
+    if not os.path.isfile(origem):
+        return ""
+    try:
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        shutil.copyfile(origem, destino)
+    except OSError:
+        return ""
+    return destino
+
+
 def preparar_scratch(arquivo=None):
     """Scratch 3 sem a pergunta "ajudar a melhorar o Scratch?": a resposta fica em
     %APPDATA%\\Scratch\\telemetry.json ("optIn"); enquanto falta, o diálogo aparece.
@@ -416,6 +641,69 @@ def ambiente(cmd):
         return {}
     return {str(k): str(v) for k, v in env.items()
             if isinstance(k, str) and k and "=" not in k and isinstance(v, (str, int))}
+
+
+def documentos_do_usuario():
+    """Pasta Documentos, a mesma que o Neverball usa (CSIDL_PERSONAL), ou ~/Documents."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            buf = ctypes.create_unicode_buffer(32768)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
+                return buf.value
+        except (AttributeError, OSError):
+            pass
+        return os.path.join(os.environ.get("USERPROFILE", ""), "Documents")
+    return os.path.join(os.path.expanduser("~"), "Documents")
+
+
+def pasta_do_neverball(raiz=None):
+    """O 1.6.0 grava neverballrc em Documentos\\My Games\\Neverball (manual do autor)."""
+    base = raiz if raiz is not None else documentos_do_usuario()
+    return os.path.join(base, "My Games", "Neverball")
+
+
+def preparar_neverball(tela=None, pasta=None):
+    """Tela cheia na resolução da tela e textos em português, toda vez que abre.
+
+    O binário do Windows não tem opção de linha de comando para isso: lê o
+    neverballrc e, ao sair, grava de novo o que estava na tela. Reescrever as
+    chaves aqui (e só elas) impede a criança de voltar para a janela pequena em
+    inglês, sem apagar o nome do jogador nem o resto das opções."""
+    pasta = pasta or pasta_do_neverball()
+    caminho = os.path.join(pasta, "neverballrc")
+    chaves = {"fullscreen": "1", "language": "pt_BR"}
+    if isinstance(tela, str) and "x" in tela:
+        largura, _, altura = tela.partition("x")
+        if largura.isdigit() and altura.isdigit() and int(largura) > 0 and int(altura) > 0:
+            chaves["width"] = largura
+            chaves["height"] = altura
+    linhas = []
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            linhas = f.read().splitlines()
+    except OSError:
+        linhas = []
+    vistas = set()
+    saida = []
+    for linha in linhas:
+        partes = linha.split()
+        if partes and partes[0] in chaves:
+            saida.append(partes[0] + " " + chaves[partes[0]])
+            vistas.add(partes[0])
+        else:
+            saida.append(linha)
+    for chave in ("fullscreen", "width", "height", "language"):
+        if chave in chaves and chave not in vistas:
+            saida.append(chave + " " + chaves[chave])
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write("\n".join(saida).rstrip("\n") + "\n")
+    except OSError:
+        pass
+    return caminho
 
 
 def gravar_config_inicial(item, exe=None):
@@ -485,6 +773,8 @@ def preencher(arg, item):
         arg = arg.replace("{dados_ascii}", pasta_de_dados_ascii(item))
     if "{tela}" in arg:
         arg = arg.replace("{tela}", tamanho_da_tela() or "1280x720")
+    if "{pista}" in arg:
+        arg = arg.replace("{pista}", preparar_pista())
     return arg
 
 
@@ -508,6 +798,29 @@ def tiles(catalogo=None):
     return resultado
 
 
+# Uma vez no catalogSeen: o GCompris saiu de Aprender (educativo) para Passatempo.
+# Não é um id de app. O padrão de catalogSeen aceita letras, números e hífen.
+MARCA_GCOMPRIS = "migracao-gcompris-passatempo"
+
+
+def _migrar_gcompris(tile, categoria):
+    """Move o GCompris que ainda está em Aprender. Não mexe em mais nenhum tile.
+
+    A categoria de um tile que já existe é dos pais (usage-limits.js). Esta função
+    só existe para a mudança antiga do catálogo, e o chamador só a usa enquanto
+    a marca não está em catalogSeen. Outra categoria — ou a volta para Aprender
+    depois da marca — fica como os pais deixaram.
+    """
+    if not isinstance(tile, dict):
+        return False
+    if tile.get("id") != "gcompris" or tile.get("cmd") != [PREFIXO + "gcompris"]:
+        return False
+    if tile.get("category") != "educativo" or categoria == "educativo":
+        return False
+    tile["category"] = categoria
+    return True
+
+
 def sincronizar_tiles(stored, catalogo=None):
     """Põe nos perfis os apps do catálogo que este computador ainda não viu.
 
@@ -515,6 +828,8 @@ def sincronizar_tiles(stored, catalogo=None):
     cada perfil (ligado, como todo o catálogo); um app que os pais removeram não volta.
     Um app que saiu do catálogo (ex.: Neverputt, que fecha sozinho no Windows) sai dos
     perfis, para não sobrar um botão que não abre.
+    A marca do GCompris entra junto: a categoria dele muda uma vez, e a de um tile
+    que já existe não é mais escrita.
     Devolve (config, mudou).
     """
     import copy
@@ -532,15 +847,23 @@ def sincronizar_tiles(stored, catalogo=None):
 
     orfaos = any(fora_do_catalogo(t) for p in stored.get("profiles", [])
                  for t in p.get("tiles", []))
-    if vistos >= set(ids_catalogo) and not orfaos:
+    ja_migrou = MARCA_GCOMPRIS in vistos
+    if vistos >= set(ids_catalogo) and not orfaos and ja_migrou:
         return stored, False
     resultado = copy.deepcopy(stored)
+    categoria_gcompris = next(
+        (t.get("category", "passatempo") for t in novos if t["id"] == "gcompris"),
+        "passatempo",
+    )
     for perfil in resultado.get("profiles", []):
         if "tiles" in perfil:
             perfil["tiles"] = [t for t in perfil["tiles"] if not fora_do_catalogo(t)]
+            if not ja_migrou:
+                for tile in perfil["tiles"]:
+                    _migrar_gcompris(tile, categoria_gcompris)
         existentes = {t.get("id") for t in perfil.get("tiles", []) if isinstance(t, dict)}
         for tile in novos:
             if tile["id"] not in vistos and tile["id"] not in existentes:
                 perfil.setdefault("tiles", []).append(copy.deepcopy(tile))
-    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo))
+    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo) | {MARCA_GCOMPRIS})
     return resultado, True

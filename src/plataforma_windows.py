@@ -700,6 +700,34 @@ def segundos_sem_uso():
     return ((agora - info.dwTime) & 0xFFFFFFFF) / 1000.0
 
 
+user32.GetClipCursor.argtypes = [ctypes.POINTER(wintypes.RECT)]
+user32.GetClipCursor.restype = wintypes.BOOL
+user32.ClipCursor.argtypes = [ctypes.POINTER(wintypes.RECT)]
+user32.ClipCursor.restype = wintypes.BOOL
+
+
+def soltar_cursor_se_preso(pids, botao=None):
+    """Se a janela da frente é de um destes pids e o recorte não alcança o ✕,
+    alarga até a janela do jogo unida ao ✕, sem passar do monitor do jogo.
+    ClipCursor não espera o outro processo e não solta no sistema inteiro."""
+    if not pids:
+        return False
+    h = user32.GetForegroundWindow()
+    if not h or pid_da_janela(h) not in pids:
+        return False
+    recorte = wintypes.RECT()
+    if not user32.GetClipCursor(ctypes.byref(recorte)):
+        return False
+    jogo = retangulo(h)
+    _trabalho, monitor = areas_do_monitor(h)
+    area = (recorte.left, recorte.top, recorte.right, recorte.bottom)
+    novo = janelas_seguras.recorte_do_cursor(area, jogo, botao, monitor, True)
+    if not novo:
+        return False
+    destino = wintypes.RECT(*novo)
+    return bool(user32.ClipCursor(ctypes.byref(destino)))
+
+
 def pid_da_janela_ativa():
     h = user32.GetForegroundWindow()
     if not h:

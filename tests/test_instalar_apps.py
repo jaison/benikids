@@ -1,5 +1,6 @@
 import os
 import queue
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -39,6 +40,26 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertTrue(instalar_apps.precisa_de_senha({"id": "a", "escopo": "machine"}))
         self.assertFalse(instalar_apps.precisa_de_senha({"id": "b", "escopo": "user"}))
         self.assertTrue(instalar_apps.precisa_de_senha({"id": "b", "escopo": "user"}, {"b"}))
+
+    def test_baixa_a_versao_presa_no_catalogo(self):
+        self.assertEqual(instalar_apps.versao_fixa({"versao": "1.22.2"}), "1.22.2")
+        self.assertEqual(instalar_apps.versao_fixa({"versao": "latest"}), "")
+        item = {"id": "snes", "winget": "Libretro.RetroArch", "versao": "1.22.2",
+                "instalador": "nullsoft", "escopo": "machine"}
+        with tempfile.TemporaryDirectory() as pasta:
+            destino = os.path.join(pasta, "snes")
+
+            def run(argv, **kwargs):
+                os.makedirs(destino, exist_ok=True)
+                open(os.path.join(destino, "RetroArch-Win64-setup.exe"), "wb").close()
+                return subprocess.CompletedProcess(argv, 0, "", "")
+
+            with mock.patch.object(instalar_apps, "winget", return_value="winget"), \
+                    mock.patch("subprocess.run", side_effect=run) as rodou:
+                arquivo = instalar_apps.baixar(item, pasta)
+            argv = rodou.call_args_list[0].args[0]
+            self.assertEqual(argv[argv.index("--version") + 1], "1.22.2")
+            self.assertTrue(arquivo.endswith("RetroArch-Win64-setup.exe"))
 
     def test_le_o_tipo_do_instalador_do_winget_show(self):
         saida = "Found Tux Paint [NewBreedSoftware.TuxPaint]\nInstaller:\n  Installer Type: inno\n  Installer Url: x\n"
@@ -187,6 +208,84 @@ class InstalarAppsTest(unittest.TestCase):
         self.assertEqual(instalar_apps.pedem_senha(), {"eleva"})
         textos = [t for i, _e, t in avisos_de(fila) if i == "eleva"]
         self.assertIn("o Windows pediu a senha de um adulto", textos)
+
+
+class BaixarZipTests(unittest.TestCase):
+    def zip_de(self, arquivos):
+        import hashlib
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for nome, dados in arquivos:
+                z.writestr(nome, dados)
+        pacote = buf.getvalue()
+        return pacote, hashlib.sha256(pacote).hexdigest()
+
+    def resposta(self, dados):
+        import io
+        return lambda _url: io.BytesIO(dados)
+
+    def test_zip_with_the_right_hash_lands_next_to_its_dlls(self):
+        import tempfile
+        pacote, sha = self.zip_de([
+            ("neverball-1.6.0/neverball.exe", b"MZ" + b"x" * 30000),
+            ("neverball-1.6.0/SDL2.dll", b"MZ" + b"d" * 100),
+        ])
+        item = {"id": "neverball", "baixar": {
+            "url": "https://neverball.org/neverball-1.6.0.zip", "arquivo": "neverball.exe",
+            "zip": True, "sha256": sha,
+        }}
+        with tempfile.TemporaryDirectory() as raiz:
+            ok, texto = instalar_apps.baixar_direto(item, raiz, self.resposta(pacote))
+            self.assertTrue(ok, texto)
+            self.assertTrue(os.path.isfile(os.path.join(
+                raiz, "Benikids Apps", "neverball", "neverball-1.6.0", "neverball.exe")))
+            self.assertTrue(os.path.isfile(os.path.join(
+                raiz, "Benikids Apps", "neverball", "neverball-1.6.0", "SDL2.dll")))
+
+    def test_wrong_hash_is_not_extracted(self):
+        import tempfile
+        pacote, _sha = self.zip_de([("jogo/hex-a-hop.exe", b"MZ" + b"x" * 30000)])
+        item = {"id": "hexahop", "baixar": {
+            "url": "https://exemplo.org/hex.zip", "arquivo": "hex-a-hop.exe",
+            "zip": True, "sha256": "0" * 64,
+        }}
+        with tempfile.TemporaryDirectory() as raiz:
+            ok, texto = instalar_apps.baixar_direto(item, raiz, self.resposta(pacote))
+            self.assertFalse(ok)
+            self.assertIn("não confere", texto)
+            self.assertFalse(os.path.exists(os.path.join(raiz, "Benikids Apps", "hexahop")))
+
+    def test_zip_with_a_path_escape_is_refused(self):
+        import tempfile
+        pacote, sha = self.zip_de([("../fora.exe", b"MZ" + b"x" * 30000)])
+        with tempfile.TemporaryDirectory() as raiz:
+            caminho = os.path.join(raiz, "pacote.zip")
+            with open(caminho, "wb") as f:
+                f.write(pacote)
+            ok, _texto = instalar_apps.extrair_zip(caminho, os.path.join(raiz, "saida"), "fora.exe")
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(os.path.join(raiz, "fora.exe")))
+            self.assertEqual(len(sha), 64)
+
+    def test_installer_from_the_author_site_checks_the_hash(self):
+        import hashlib
+        import io
+        import tempfile
+        dados = b"MZ" + b"y" * 30000
+        sha = hashlib.sha256(dados).hexdigest()
+        item = {"id": "tuxmath", "url": "https://downloads.sourceforge.net/project/tuxmath/t.exe",
+                "sha256": sha}
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = instalar_apps.baixar(item, pasta, lambda _u: io.BytesIO(dados))
+            self.assertTrue(caminho.endswith("t.exe"))
+            with open(caminho, "rb") as f:
+                self.assertEqual(f.read(), dados)
+            self.assertIsNone(instalar_apps.baixar(
+                {"id": "tuxmath", "url": item["url"], "sha256": "ab" * 32},
+                pasta, lambda _u: io.BytesIO(dados)))
 
 
 class BaixarDiretoTests(unittest.TestCase):

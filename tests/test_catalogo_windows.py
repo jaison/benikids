@@ -19,7 +19,12 @@ class CatalogoWindowsTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         for item in itens:
             self.assertRegex(item["id"], r"^[a-z0-9-]+$")
-            self.assertTrue(item.get("winget") or item.get("baixar", {}).get("url", "").startswith("https://") or item.get("pagina", "").startswith("https://"), item["id"])
+            direto = item.get("baixar") if isinstance(item.get("baixar"), dict) else {}
+            instalador_com_hash = (isinstance(item.get("url"), str) and item["url"].startswith("https://")
+                                    and len(item.get("sha256") or "") == 64)
+            self.assertTrue(item.get("winget") or direto.get("url", "").startswith("https://") or item.get("pagina", "").startswith("https://") or instalador_com_hash, item["id"])
+            if direto.get("zip"):
+                self.assertEqual(len(direto.get("sha256") or ""), 64, item["id"])
             self.assertIn(item.get("escopo", ""), ("", "user", "machine"), item["id"])
             self.assertTrue(item.get("exe"), item["id"])
             if item.get("escopo") == "machine":
@@ -51,6 +56,27 @@ class CatalogoWindowsTests(unittest.TestCase):
             self.assertIsNone(catalogo_windows.comando(["catalogo:gcompris"], bases=[raiz]))
             self.assertIsNone(catalogo_windows.comando(["catalogo:nao-existe"], bases=[raiz]))
             self.assertEqual(catalogo_windows.comando(["tuxpaint"], bases=[raiz]), ["tuxpaint"])
+
+    def test_neverball_forces_fullscreen_and_portuguese_without_wiping_options(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "Benikids Apps", "neverball", "neverball-1.6.0", "neverball.exe")
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"MZ")
+            pasta = Path(raiz, "My Games", "Neverball")
+            pasta.mkdir(parents=True)
+            (pasta / "neverballrc").write_text("player Jogador\nfullscreen 0\nmouse_sense 200\n", encoding="utf-8")
+            with mock.patch.object(catalogo_windows, "tamanho_da_tela", return_value="1366x768"), \
+                 mock.patch.object(catalogo_windows, "pasta_do_neverball", return_value=str(pasta)):
+                cmd = catalogo_windows.comando(["catalogo:neverball"], bases=[raiz])
+            self.assertEqual(cmd[0], str(exe))
+            texto = (pasta / "neverballrc").read_text(encoding="utf-8")
+            self.assertIn("player Jogador\n", texto)
+            self.assertIn("fullscreen 1\n", texto)
+            self.assertIn("mouse_sense 200\n", texto)
+            self.assertIn("language pt_BR\n", texto)
+            self.assertIn("width 1366\n", texto)
+            self.assertIn("height 768\n", texto)
+            self.assertNotIn("fullscreen 0", texto)
 
 
 class CatalogoWindowsExtrasTests(unittest.TestCase):
@@ -105,13 +131,13 @@ class SincronizarCatalogoTests(unittest.TestCase):
         self.assertTrue(mudou)
         self.assertEqual([t["id"] for t in cfg["profiles"][0]["tiles"]], ["gcompris", "kapman"])
         self.assertEqual([t["id"] for t in cfg["profiles"][1]["tiles"]], ["gcompris", "kapman"])
-        self.assertEqual(cfg["catalogSeen"], ["gcompris", "kapman"])
+        self.assertEqual(cfg["catalogSeen"], ["gcompris", "kapman", "migracao-gcompris-passatempo"])
         validate_stored_config(cfg, existing_pin_hash="", allow_pin_hash=True)
         _, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
         self.assertFalse(mudou)
 
     def test_apps_removed_by_parents_do_not_come_back(self):
-        cfg = self.config(catalogSeen=["gcompris", "kapman"])
+        cfg = self.config(catalogSeen=["gcompris", "kapman", catalogo_windows.MARCA_GCOMPRIS])
         novo, mudou = catalogo_windows.sincronizar_tiles(cfg, self.CATALOGO)
         self.assertFalse(mudou)
         self.assertEqual(novo["profiles"][1]["tiles"], [])
@@ -127,6 +153,43 @@ class SincronizarCatalogoTests(unittest.TestCase):
         self.assertEqual([t["id"] for t in novo["profiles"][0]["tiles"]], ["gcompris", "site"])
         _, mudou = catalogo_windows.sincronizar_tiles(novo, self.CATALOGO)
         self.assertFalse(mudou)
+
+    def test_existing_gcompris_moves_to_the_linux_category(self):
+        catalogo = [
+            {"id": "gcompris", "label": "GCompris", "emoji": "🧩", "category": "passatempo"},
+        ]
+        cfg = self.config(catalogSeen=["gcompris"])
+        cfg["profiles"][0]["tiles"][0]["category"] = "educativo"
+        novo, mudou = catalogo_windows.sincronizar_tiles(cfg, catalogo)
+        self.assertTrue(mudou)
+        self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "passatempo")
+        self.assertIn(catalogo_windows.MARCA_GCOMPRIS, novo["catalogSeen"])
+        _, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
+        self.assertFalse(mudou)
+        # os pais devolvem para Aprender: a subida do servidor não desfaz
+        novo["profiles"][0]["tiles"][0]["category"] = "educativo"
+        de_novo, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
+        self.assertFalse(mudou)
+        self.assertEqual(de_novo["profiles"][0]["tiles"][0]["category"], "educativo")
+
+    def test_parent_category_survives_and_is_not_rewritten_for_other_tiles(self):
+        catalogo = [
+            {"id": "gcompris", "label": "GCompris", "emoji": "🧩", "category": "passatempo"},
+            {"id": "kapman", "label": "Come-Come", "emoji": "🟡", "category": "jogos"},
+        ]
+        cfg = self.config(catalogSeen=["gcompris"])
+        cfg["profiles"][0]["tiles"][0]["category"] = "jogos"
+        cfg["profiles"][0]["tiles"].append(
+            {"id": "kapman", "label": "Come-Come", "cmd": ["catalogo:kapman"], "category": "educativo"},
+        )
+        novo, mudou = catalogo_windows.sincronizar_tiles(cfg, catalogo)
+        self.assertTrue(mudou)  # só a marca; a categoria que os pais escolheram fica
+        self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "jogos")
+        self.assertEqual(novo["profiles"][0]["tiles"][1]["category"], "educativo")
+        _, mudou = catalogo_windows.sincronizar_tiles(novo, catalogo)
+        self.assertFalse(mudou)
+        self.assertEqual(novo["profiles"][0]["tiles"][0]["category"], "jogos")
+        self.assertEqual(novo["profiles"][0]["tiles"][1]["category"], "educativo")
 
 
 class ConfigsAntesDeAbrirTests(unittest.TestCase):
@@ -222,7 +285,7 @@ class PrepararLuantiTests(unittest.TestCase):
             conf = exe.parent.parent / "minetest.conf"
             self.assertEqual(gravados, [str(conf)])
             self.assertEqual(conf.read_text(encoding="utf-8"),
-                             "update_information_url = \nlanguage = pt_BR\nfullscreen = true\n")
+                             "".join(f"{k} = {v}\n" for k, v in catalogo_windows.LUANTI_CONFIG))
             self.assertFalse((Path(raiz) / "Luanti").exists())
 
     def test_keys_the_parents_changed_are_kept(self):
@@ -231,8 +294,9 @@ class PrepararLuantiTests(unittest.TestCase):
             conf = exe.parent.parent / "minetest.conf"
             conf.write_text("fullscreen = false\r\nname = Bia", encoding="utf-8")
             catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
+            faltam = "".join(f"{k} = {v}\n" for k, v in catalogo_windows.LUANTI_CONFIG if k != "fullscreen")
             self.assertEqual(conf.read_bytes().decode("utf-8"),
-                             "fullscreen = false\r\nname = Bia\nupdate_information_url = \nlanguage = pt_BR\n")
+                             "fullscreen = false\r\nname = Bia\n" + faltam)
             antes = conf.read_text(encoding="utf-8")
             catalogo_windows.preparar_luanti(str(exe), appdata=raiz, pacotes=[])
             self.assertEqual(conf.read_text(encoding="utf-8"), antes)
@@ -254,6 +318,20 @@ class PrepararLuantiTests(unittest.TestCase):
 
     def test_catalog_asks_for_the_luanti_preparation(self):
         self.assertEqual(catalogo_windows.por_id("luanti")["preparar"], "luanti")
+
+    def test_lightweight_keys_match_the_linux_conf(self):
+        texto = Path(__file__).resolve().parents[1].joinpath(
+            "beni", "emuladores", "luanti-minetest.conf").read_text(encoding="utf-8")
+        chaves = {}
+        for linha in texto.splitlines():
+            if not linha.strip() or linha.strip().startswith("#") or "=" not in linha:
+                continue
+            chave, _, valor = linha.partition("=")
+            chaves[chave.strip()] = valor.strip()
+        atual = dict(catalogo_windows.LUANTI_CONFIG)
+        for chave, valor in chaves.items():
+            self.assertEqual(atual[chave], valor, chave)
+        self.assertEqual(atual["update_information_url"], "")
 
 
 class PrepararSuperTuxKartTests(unittest.TestCase):
@@ -315,6 +393,154 @@ class PrepararSuperTuxKartTests(unittest.TestCase):
     def test_files_live_in_appdata(self):
         self.assertEqual(catalogo_windows.config_supertuxkart(appdata="A"),
                          os.path.join("A", "supertuxkart", "config-0.10", "config.xml"))
+
+    def test_windows_account_name_becomes_benikids_and_keeps_progress(self):
+        texto = ('<players version="1" >\n    <current player="Conta"/>\n'
+                 '    <player name="Conta" guest="false" use-frequency="3">\n'
+                 '        <story-mode><sandtrack solved="easy"/></story-mode>\n'
+                 '    </player>\n</players>\n')
+        novo = catalogo_windows.renomear_conta_do_windows(texto, "Conta")
+        self.assertIn('player="Benikids"', novo)
+        self.assertIn('name="Benikids"', novo)
+        self.assertIn('solved="easy"', novo)
+        self.assertNotIn("Conta", novo)
+        self.assertEqual(catalogo_windows.renomear_conta_do_windows(texto, "Outra"), texto)
+        self.assertEqual(catalogo_windows.renomear_conta_do_windows(novo, "Conta"), novo)
+        self.assertEqual(catalogo_windows.renomear_conta_do_windows(texto, 'a"b'), texto)
+        with tempfile.TemporaryDirectory() as pasta:
+            (Path(pasta) / "players.xml").write_text(texto, encoding="utf-8")
+            (Path(pasta) / "config.xml").write_text("<stkconfig/>", encoding="utf-8")
+            self.assertEqual(catalogo_windows.preparar_supertuxkart("800x600", pasta, usuario="Conta"),
+                             {"players.xml"})
+            self.assertIn('name="Benikids"', (Path(pasta) / "players.xml").read_text(encoding="utf-8"))
+
+
+class AjustesDosAppsTests(unittest.TestCase):
+    def test_gcompris_matches_the_linux_wrapper(self):
+        item = catalogo_windows.por_id("gcompris")
+        self.assertEqual(item["category"], "passatempo")
+        self.assertEqual(item["args"], ["-f", "--difficulty", "3-6", "--locale", "pt_BR"])
+        self.assertEqual(item["env"]["LANGUAGE"], "pt_BR")
+
+    def test_stellarium_starts_fullscreen(self):
+        self.assertEqual(catalogo_windows.por_id("stellarium")["args"], ["--full-screen", "yes"])
+
+    def test_tux_racer_keeps_pt_pt_because_the_game_has_no_pt_br(self):
+        texto = catalogo_windows.por_id("extremetuxracer")["config_inicial"]["texto"]
+        self.assertIn("[language] pt_PT", texto)
+        self.assertNotIn("pt_BR", texto)
+
+    def test_kturtle_commands_are_portuguese_and_the_window_starts_maximized(self):
+        self.assertEqual(catalogo_windows.texto_kturtlerc(""),
+                         "[General Options]\ncurrentLanguageCode=pt_BR\n"
+                         "[MainWindow]\nWindow-Maximized=true\n")
+        ja = "[General Options]\ncurrentLanguageCode=en_US\n[MainWindow]\nWindow-Maximized=false\nWidth=994\n"
+        novo = catalogo_windows.texto_kturtlerc(ja)
+        self.assertIn("currentLanguageCode=en_US", novo)
+        self.assertNotIn("pt_BR", novo)
+        self.assertIn("Window-Maximized=true", novo)
+        self.assertIn("Width=994", novo)
+        item = catalogo_windows.por_id("kturtle")
+        self.assertEqual(item["preparar"], "kturtle")
+        self.assertTrue(item["maximizar"])
+        with tempfile.TemporaryDirectory() as raiz:
+            caminho = os.path.join(raiz, "kturtlerc")
+            self.assertEqual(catalogo_windows.preparar_kturtle([caminho]), [caminho])
+            self.assertIn("currentLanguageCode=pt_BR", Path(caminho).read_text(encoding="utf-8"))
+            self.assertEqual(catalogo_windows.preparar_kturtle([caminho]), [])
+
+    def test_planetblupi_asks_for_portuguese_and_the_windowed_apps_maximize(self):
+        blupi = catalogo_windows.por_id("planetblupi")
+        self.assertEqual(blupi["env"], {"LANGUAGE": "pt"})
+        for item_id in ("klavaro", "minuet", "enigma"):
+            self.assertTrue(catalogo_windows.por_id(item_id)["maximizar"], item_id)
+
+    def test_simon_tatham_puzzles_stay_small_because_maximize_goes_black(self):
+        for item_id in ("puzzles-quinze", "puzzles-desembaracar"):
+            item = catalogo_windows.por_id(item_id)
+            self.assertNotIn("maximizar", item)
+            self.assertNotIn("env", item)
+
+    def test_kdeglobals_gains_portuguese_without_replacing_a_choice(self):
+        self.assertEqual(catalogo_windows.texto_kdeglobals(""), "[Locale]\nLanguage=pt_BR\n")
+        self.assertEqual(catalogo_windows.texto_kdeglobals("[Locale]\nCountry=BR\n"),
+                         "[Locale]\nLanguage=pt_BR\nCountry=BR\n")
+        escolhido = "[Locale]\nLanguage=en_US\n"
+        self.assertEqual(catalogo_windows.texto_kdeglobals(escolhido), escolhido)
+        with tempfile.TemporaryDirectory() as raiz:
+            caminho = os.path.join(raiz, "kdeglobals")
+            catalogo_windows.garantir_idioma_kde([caminho])
+            self.assertEqual(Path(caminho).read_text(encoding="utf-8"), "[Locale]\nLanguage=pt_BR\n")
+            Path(caminho).write_text("Language=de\n", encoding="utf-8")
+            catalogo_windows.garantir_idioma_kde([caminho])
+            self.assertEqual(Path(caminho).read_text(encoding="utf-8"), "Language=de\n")
+
+    def test_pista_turbo_copies_the_project_once(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            origem = os.path.join(raiz, "Pista Turbo.sb3")
+            destino = os.path.join(raiz, "Scratch", "Pista Turbo.sb3")
+            with open(origem, "wb") as f:
+                f.write(b"PK pista")
+            self.assertEqual(catalogo_windows.preparar_pista(destino, origem), destino)
+            self.assertEqual(Path(destino).read_bytes(), b"PK pista")
+            with open(destino, "wb") as f:
+                f.write(b"da crianca")
+            catalogo_windows.preparar_pista(destino, origem)
+            self.assertEqual(Path(destino).read_bytes(), b"da crianca")
+
+    def test_scratch_tile_is_turbowarp_and_pista_opens_the_sb3(self):
+        scratch = catalogo_windows.por_id("scratch")
+        pista = catalogo_windows.por_id("pista-turbo")
+        self.assertEqual(scratch["winget"], "GarboMuffin.TurboWarp")
+        self.assertEqual(pista["winget"], scratch["winget"])
+        self.assertEqual(pista["category"], "educativo")
+        self.assertEqual(pista["args"], ["{pista}"])
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "TurboWarp", "TurboWarp.exe")
+            exe.parent.mkdir()
+            exe.write_bytes(b"")
+            destino = os.path.join(raiz, "Scratch", "Pista Turbo.sb3")
+            with mock.patch.object(catalogo_windows, "preparar_pista", return_value=destino):
+                cmd = catalogo_windows.comando(["catalogo:pista-turbo"], bases=[raiz])
+            self.assertEqual(cmd, [str(exe), destino])
+
+    def test_snes_opens_the_game_list(self):
+        with tempfile.TemporaryDirectory() as raiz:
+            exe = Path(raiz, "RetroArch", "retroarch.exe")
+            exe.parent.mkdir()
+            exe.write_bytes(b"MZ")
+            with mock.patch("cozy_jogos.baixar_core", return_value=os.path.join(raiz, "core.dll")), \
+                    mock.patch("cozy_jogos.pasta_jogos", return_value=os.path.join(raiz, "Jogos")), \
+                    mock.patch("cozy_jogos.pasta_config", return_value=os.path.join(raiz, "cfg")):
+                cmd = catalogo_windows.comando(["catalogo:snes"], bases=[raiz])
+            self.assertEqual(cmd[0], sys.executable)
+            self.assertTrue(cmd[1].endswith("cozy_jogos.py"))
+            self.assertEqual(cmd[2:], ["snes", str(exe)])
+            cfg = Path(raiz, "cfg", "retroarch.cfg").read_text(encoding="utf-8")
+            self.assertIn('video_driver = "gl"', cfg)
+            self.assertIn('audio_driver = "wasapi"', cfg)
+            self.assertIn('joypad_driver = "sdl2"', cfg)
+            self.assertNotIn("joypad_autoconfig_dir", cfg)
+            self.assertIn('kiosk_mode_enable = "true"', cfg)
+            self.assertIn('input_exit_emulator = "escape"', cfg)
+            self.assertIn('menu_show_online_updater = "false"', cfg)
+            self.assertTrue((Path(raiz, "Jogos") / "LEIA-ME.txt").is_file())
+            self.assertIn("SNES", (Path(raiz, "Jogos") / "LEIA-ME.txt").read_text(encoding="utf-8"))
+            item = catalogo_windows.por_id("ps1")
+            self.assertEqual(item["winget"], "Libretro.RetroArch")
+            self.assertIs(item["sem_moldura"], False)
+            nucleos = catalogo_windows.nucleos_retroarch()
+            self.assertEqual(catalogo_windows.por_id("snes")["versao"], nucleos["versao"])
+            self.assertEqual(item["versao"], nucleos["versao"])
+            self.assertTrue(nucleos["url"].startswith(
+                "https://buildbot.libretro.com/stable/" + nucleos["versao"] + "/"))
+            for chave in ("sha256",):
+                self.assertEqual(len(nucleos[chave]), 64)
+            for sis in ("snes", "ps1"):
+                self.assertEqual(len(nucleos[sis]["sha256"]), 64)
+                self.assertTrue(nucleos[sis]["arquivo"].endswith("_libretro.dll"))
+            self.assertEqual(len(nucleos["extrator"]["sha256"]), 64)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,8 @@ class CatalogoTests(unittest.TestCase):
         item = catalogo_windows.por_id("tuxpaint")
         self.assertEqual(item["args"], ["--windowsize", "{tela}", "--nolockfile"])
         self.assertEqual(catalogo_windows.ambiente(["catalogo:tuxpaint"]), {"SDL_RENDER_DRIVER": "opengl"})
-        self.assertEqual(catalogo_windows.ambiente(["catalogo:gcompris"]), {})
+        self.assertEqual(catalogo_windows.ambiente(["catalogo:gcompris"]),
+                         {"LANG": "pt_BR", "LC_ALL": "pt_BR", "LANGUAGE": "pt_BR"})
         self.assertEqual(catalogo_windows.ambiente(["tuxpaint"]), {})  # fora do catálogo
         self.assertEqual(catalogo_windows.ambiente([]), {})
 
