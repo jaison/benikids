@@ -160,8 +160,54 @@ function maybeShowAppTravado(data){
 // O servidor manda configStamp no mesmo /api/usage/status (a cada 5 s). Se o
 // config mudou, os tiles recarregam sozinhos. Com app aberto, página escondida
 // ou a área dos pais aberta, espera voltar para não atropelar quem está usando.
-let configStampVisto=null;
-let configMudouFora=false;
+// O carimbo só é gravado depois do GET mais novo; se o GET falha, pendente fica.
+// INICIO sincronia pura
+function decidirCarimbo(s, stamp, podeRecarregar){
+  if(stamp===undefined||stamp===null||stamp==='') return 'nada';
+  stamp=String(stamp);
+  if(s.aplicado!==stamp){
+    s.alvo=stamp;
+    s.pendente=true;
+  }else if(!s.pendente){
+    return 'nada';
+  }else{
+    s.alvo=stamp;
+  }
+  if(!podeRecarregar) return 'nada';
+  if(s.emVoo!=null&&s.pedido===stamp) return 'nada';
+  return 'buscar';
+}
+function reservarPedido(s, carimbo){
+  s.geracao+=1;
+  s.emVoo=s.geracao;
+  if(carimbo!=null&&carimbo!=='') s.pedido=String(carimbo);
+  else s.pedido=s.alvo||s.aplicado||null;
+  return s.geracao;
+}
+function responderPedido(s, geracao, temTiles){
+  if(geracao!==s.geracao) return 'ignorar';
+  s.emVoo=null;
+  if(!temTiles){
+    s.pendente=true;
+    return 'vazia';
+  }
+  if(s.pedido) s.aplicado=s.pedido;
+  s.pendente=s.alvo!=null&&s.pedido!==s.alvo;
+  return 'aplicar';
+}
+// FIM sincronia pura
+let sincroniaConfig={aplicado:null,alvo:null,pedido:null,pendente:false,geracao:0,emVoo:null};
+let filaConfig=Promise.resolve();
+function reservarPedidoConfig(carimbo){ return reservarPedido(sincroniaConfig, carimbo); }
+function responderPedidoConfig(geracao, temTiles){ return responderPedido(sincroniaConfig, geracao, temTiles); }
+function pedidoConfigVelho(geracao){ return geracao!==sincroniaConfig.geracao; }
+function segurarConfigMaisNovo(){
+  let liberar=function(){};
+  const meu=new Promise(function(resolve){ liberar=resolve; });
+  filaConfig=meu;
+  return liberar;
+}
+function esperarConfigMaisNovo(){ return filaConfig; }
 function menuPodeRecarregarTiles(){
   if(typeof loadConfig!=='function') return false;
   if(document.hidden) return false;
@@ -171,16 +217,10 @@ function menuPodeRecarregarTiles(){
   return true;
 }
 async function aplicarCarimboDoConfig(data){
-  if(!data||data.configStamp===undefined||data.configStamp===null) return;
+  if(!data||data.configStamp===undefined||data.configStamp===null||data.configStamp==='') return;
   const stamp=String(data.configStamp);
-  if(configStampVisto===null){ configStampVisto=stamp; return; }
-  if(stamp!==configStampVisto){
-    configStampVisto=stamp;
-    configMudouFora=true;
-  }
-  if(!configMudouFora||!menuPodeRecarregarTiles()) return;
-  configMudouFora=false;
-  try{ await loadConfig(); }catch(e){ configMudouFora=true; }
+  if(decidirCarimbo(sincroniaConfig, stamp, menuPodeRecarregarTiles())!=='buscar') return;
+  try{ await loadConfig(stamp); }catch(e){}
 }
 function recarregarTilesSeOConfigMudou(){ aplicarCarimboDoConfig(usageStatus); }
 

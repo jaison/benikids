@@ -7,23 +7,50 @@ function isMediaLibraryTile(tile){
 function kidsTiles(){ return visibleTiles().filter(t=>typeof escolhaTileNaLista!=='function'||escolhaTileNaLista(t)); }
 function pageCount(){ return Math.max(1, Math.ceil(kidsTiles().length / pageSize())); }
 function tilesForPage(page){ const all=kidsTiles(); const size=pageSize(); return all.slice(page*size, page*size + size); }
-async function loadConfig(){
-  const response=await fetch('/api/config',{cache:'no-store'});
-  if(!response.ok) throw new Error('Config could not be loaded');
-  const data=await response.json();
-  if(!data||typeof data!=='object'||!Array.isArray(data.tiles)) throw new Error('Invalid config response');
-  cfg=data;
-  if(typeof cfg.currentPage!=='number') cfg.currentPage=0;
-  // Um erro ao desenhar (ex.: um script da página que não carregou) não apaga a
-  // configuração válida: quem chamou fica sabendo pela etapa 'render'.
+async function loadConfig(carimbo){
+  // Cada pedido leva um número. Se outro GET sair depois, esta resposta não
+  // pisa nos tiles nem grava o carimbo. O carimbo só entra no sucesso do mais novo.
+  const pedido=typeof reservarPedidoConfig==='function'?reservarPedidoConfig(carimbo):0;
+  const liberar=typeof segurarConfigMaisNovo==='function'?segurarConfigMaisNovo():function(){};
+  const velho=function(){ return pedido!==0&&typeof pedidoConfigVelho==='function'&&pedidoConfigVelho(pedido); };
+  // Resposta antiga espera a mais nova. Se essa também falhar e não houver tiles, o erro sobe.
+  const ceder=async function(){
+    if(typeof esperarConfigMaisNovo==='function') await esperarConfigMaisNovo();
+    if(cfg&&Array.isArray(cfg.tiles)) return;
+    throw new Error('Config could not be loaded');
+  };
   try{
-    await loadInterfaceLanguage(cfg.language);
-    if(typeof escolhaAplicarPaginaRetorno==='function') escolhaAplicarPaginaRetorno();
-    renderAll();
+    const response=await fetch('/api/config',{cache:'no-store'});
+    if(velho()){ await ceder(); return; }
+    if(!response.ok) throw new Error('Config could not be loaded');
+    const data=await response.json();
+    if(velho()){ await ceder(); return; }
+    if(!data||typeof data!=='object'||!Array.isArray(data.tiles)) throw new Error('Invalid config response');
+    cfg=data;
+    if(typeof cfg.currentPage!=='number') cfg.currentPage=0;
+    // Um erro ao desenhar (ex.: um script da página que não carregou) não apaga a
+    // configuração válida: quem chamou fica sabendo pela etapa 'render'.
+    try{
+      await loadInterfaceLanguage(cfg.language);
+      if(typeof escolhaAplicarPaginaRetorno==='function') escolhaAplicarPaginaRetorno();
+      renderAll();
+    }catch(e){
+      const erro=e instanceof Error?e:new Error(String(e));
+      erro.etapa='render';
+      if(typeof responderPedidoConfig==='function') responderPedidoConfig(pedido, true);
+      throw erro;
+    }
+    if(velho()){ await ceder(); return; }
+    if(typeof responderPedidoConfig==='function') responderPedidoConfig(pedido, true);
   }catch(e){
-    const erro=e instanceof Error?e:new Error(String(e));
-    erro.etapa='render';
-    throw erro;
+    if(!(e&&e.etapa==='render')&&typeof responderPedidoConfig==='function') responderPedidoConfig(pedido, false);
+    if(velho()&&cfg&&Array.isArray(cfg.tiles)){
+      if(typeof esperarConfigMaisNovo==='function') await esperarConfigMaisNovo();
+      return;
+    }
+    throw e;
+  }finally{
+    liberar();
   }
 }
 async function loadApps(refreshAdmin=false){
@@ -313,6 +340,13 @@ function changePage(dir){
   playLauncherPageTransition(dir);
   playFeedbackSound('navigate');
 }
+// INICIO aviso app faltando
+function avisoAppNaoInstalado(label){
+  const nome=String(label||'').trim();
+  const titulo=nome&&nome.indexOf('img:')<0?nome+' — Ainda não instalado':'Ainda não instalado';
+  return {titulo:'📦 '+titulo, corpo:'Peça para a mamãe ou o papai instalar este app.'};
+}
+// FIM aviso app faltando
 let startFeedbackTimer=null;
 function hideStartFeedback(){
   if(startFeedbackTimer!==null) clearTimeout(startFeedbackTimer);
@@ -372,8 +406,13 @@ async function launchTile(id){
       let data={};
       try{ data=await response.json(); }catch(e){}
       // "gone": o jogo saiu do menu. Recarrega os tiles, sem aviso.
-      // "missing": ainda não instalado — também sem mostrar o caminho da capa.
-      if(data.status!=='missing'&&typeof loadConfig==='function'){
+      // "missing": ainda não instalado. Avisa com o nome do jogo, nunca com a capa.
+      if(data.status==='missing'){
+        const aviso=avisoAppNaoInstalado(tile.label);
+        if(typeof showUsageMessage==='function') showUsageMessage(aviso.titulo, aviso.corpo);
+        return;
+      }
+      if(typeof loadConfig==='function'){
         try{ await loadConfig(); }catch(e){}
       }
       return;
