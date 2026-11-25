@@ -2,7 +2,9 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -76,11 +78,93 @@ class TelemetriaTest(unittest.TestCase):
         with open(self.estado, encoding="utf-8") as f:
             self.assertEqual(json.load(f)["id"], previa["id"])
 
-    def test_estado_estragado_gera_um_id_novo(self):
+    def test_estado_estragado_grava_um_id_e_repete_o_mesmo(self):
         os.makedirs(os.path.dirname(self.estado))
         with open(self.estado, "w") as f:
             f.write("{nada")
-        self.assertRegex(telemetria.ler_estado(self.estado)["id"], r"^[0-9a-f]{32}$")
+        primeiro = telemetria.ler_estado(self.estado)
+        self.assertRegex(primeiro["id"], r"^[0-9a-f]{32}$")
+        with open(self.estado, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["id"], primeiro["id"])
+        telemetria._memoria.clear()
+        self.assertEqual(telemetria.ler_estado(self.estado)["id"], primeiro["id"])
+        self.assertFalse(any(nome.endswith(".tmp") and ".tmp." not in nome
+                             for nome in os.listdir(os.path.dirname(self.estado))))
+
+    def test_dois_fios_gravam_o_mesmo_id(self):
+        ids = []
+
+        def pega():
+            ids.append(telemetria.ler_estado(self.estado)["id"])
+
+        fios = [threading.Thread(target=pega) for _ in range(8)]
+        for fio in fios:
+            fio.start()
+        for fio in fios:
+            fio.join()
+        self.assertEqual(len(set(ids)), 1)
+        with open(self.estado, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["id"], ids[0])
+
+    def test_tmp_do_estado_leva_o_pid(self):
+        vistos = []
+        real = os.replace
+
+        def guarda(origem, destino):
+            vistos.append(origem)
+            return real(origem, destino)
+
+        with mock.patch("telemetria.os.replace", side_effect=guarda):
+            telemetria.ler_estado(self.estado)
+        self.assertTrue(vistos)
+        self.assertTrue(all(str(os.getpid()) in caminho for caminho in vistos))
+        self.assertFalse(any(caminho == self.estado + ".tmp" for caminho in vistos))
+
+    def test_leitura_negada_nao_troca_o_id_nem_envia(self):
+        self.assertTrue(self.t.talvez_enviar())
+        original = self.enviados[0]["id"]
+        self.enviados.clear()
+        telemetria._memoria.clear()
+        real = open
+
+        def bloqueia(caminho, *args, **kwargs):
+            if os.path.abspath(caminho) == os.path.abspath(self.estado):
+                raise PermissionError("negado")
+            return real(caminho, *args, **kwargs)
+
+        self.relogio[0] += 24 * 3600
+        with mock.patch("builtins.open", side_effect=bloqueia):
+            self.assertIsNone(telemetria.ler_estado(self.estado))
+            self.assertFalse(self.t.talvez_enviar())
+        self.assertEqual(self.enviados, [])
+        with open(self.estado, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["id"], original)
+
+    def test_leitura_negada_reusa_o_id_deste_processo(self):
+        primeiro = telemetria.ler_estado(self.estado)["id"]
+        real = open
+
+        def bloqueia(caminho, *args, **kwargs):
+            if os.path.abspath(caminho) == os.path.abspath(self.estado):
+                raise PermissionError("negado")
+            return real(caminho, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=bloqueia):
+            self.assertEqual(telemetria.ler_estado(self.estado)["id"], primeiro)
+
+    def test_se_nao_grava_o_id_nao_envia(self):
+        with mock.patch("telemetria.os.replace", side_effect=OSError("disco")):
+            self.assertFalse(self.t.talvez_enviar())
+        self.assertEqual(self.enviados, [])
+        self.assertFalse(os.path.exists(self.estado))
+
+    def test_problema_e_ping_usam_o_id_gravado(self):
+        telemetria.relatar_problema("instalar", "x", fila=self.fila)
+        self.assertTrue(self.t.talvez_enviar())
+        ids = {corpo["id"] for corpo in self.enviados}
+        self.assertEqual(len(ids), 1)
+        with open(self.estado, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["id"], self.enviados[0]["id"])
 
 
 class UsoTest(TelemetriaTest):

@@ -57,8 +57,14 @@ CREATE TABLE IF NOT EXISTS issues (
   chave       TEXT PRIMARY KEY,  -- assinatura limpa
   numero      INTEGER NOT NULL   -- número da Issue
 );
--- até que problemas.n o cron já olhou
+-- até que problemas.n o cron já olhou (só do que foi publicado ou descartado de propósito)
 CREATE TABLE IF NOT EXISTS issues_estado (
   um          INTEGER PRIMARY KEY CHECK (um = 1),
   ate_n       INTEGER NOT NULL
+);
+-- Assinatura que ainda não virou Issue (passou do teto do dia, ou o GitHub falhou).
+-- O cron recria a tabela se ela não existir; isto cobre uma instalação nova.
+CREATE TABLE IF NOT EXISTS issues_fila (
+  assinatura  TEXT PRIMARY KEY,  -- texto cru, como está em problemas
+  numero      INTEGER            -- Issue já aberta no GitHub, se o banco não gravou o número
 );
