@@ -2735,6 +2735,14 @@ def main():
                         log_runtime_event("sites.sincronizados")
                 except Exception:  # noqa: BLE001
                     pass
+                try:  # jogos de navegador do Rabisco: uma vez; oculto ou renomeado fica
+                    import rabisco_windows
+                    atual, mudou = rabisco_windows.sincronizar(load_stored_cfg())
+                    if mudou:
+                        save_stored_cfg(atual)
+                        log_runtime_event("rabisco.sincronizado")
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 telemetria_service().iniciar()
             except Exception:  # noqa: BLE001 — telemetria nunca derruba o servidor
