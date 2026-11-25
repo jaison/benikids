@@ -11,11 +11,14 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class StableMainReleaseContractTests(unittest.TestCase):
-    def test_ci_runs_for_the_development_branch(self):
+    def test_ci_roda_a_suite_em_todo_push_de_ramo(self):
         workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("branches: [main, develop]", workflow)
+        cabecalho = workflow.split("jobs:", 1)[0]
+        self.assertIn('- "**"', cabecalho)
+        self.assertNotIn("branches: [main, develop]", cabecalho)
+        self.assertIn("python -m unittest discover -s tests -v", workflow)
         self.assertIn("src/schedule_rules.py", workflow)
 
     def test_release_workflow_checks_tag_against_version(self):
