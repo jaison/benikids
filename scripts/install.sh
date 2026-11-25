@@ -1660,6 +1660,10 @@ install -m 0644 "$SRC_DIR/itch_sync.py" "$APP_ROOT/itch_sync.py"
 install -m 0644 "$SRC_DIR/jogos_genero.py" "$APP_ROOT/jogos_genero.py"
 install -m 0644 "$SRC_DIR/jogos_por_genero.json" "$APP_ROOT/jogos_por_genero.json"
 install -m 0644 "$SRC_DIR/navegacao_sites.py" "$APP_ROOT/navegacao_sites.py"
+# A pílula (overlay.py) importa estes no topo. Sem o arquivo, o Linux não abre a pílula.
+install -m 0644 "$SRC_DIR/marca_tk.py" "$APP_ROOT/marca_tk.py"
+install -m 0644 "$SRC_DIR/janelas_seguras.py" "$APP_ROOT/janelas_seguras.py"
+install -m 0644 "$SRC_DIR/quiosque_edge.py" "$APP_ROOT/quiosque_edge.py"
 install -m 0644 "$SRC_DIR/jogo.html" "$APP_ROOT/jogo.html"
 install -m 0644 "$SRC_DIR/configurar.html" "$APP_ROOT/configurar.html"
 # Benikids: páginas abertas pelo menu nativo (área dos pais, sites, mídia)
