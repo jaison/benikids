@@ -39,7 +39,9 @@ UA = {"User-Agent": "benikids-atualizador-windows", "Accept": "application/vnd.g
 INTERVALO = 6 * 3600
 MINIMO_ENTRE_VERIFICACOES = 60
 REPETIR_SEM_REDE = 30 * 60  # sem internet: tenta de novo em meia hora, não em 6 h
-AGORA_SEGUNDOS = 2 * 60  # "verificado agora" se a procura tem menos de 2 minutos
+AGORA_SEGUNDOS = 2 * 60  # "verificado agora" se a procura acabou de acontecer
+# O botão, dentro de 1 minuto, não procura de novo. Aí a frase não pode
+# dizer "agora": é o resultado de antes.
 SEM_CONSOLE = 0x08000000
 _trava = threading.Lock()
 
@@ -272,10 +274,24 @@ def _procurar(app_root, base, abrir, agora, repo):
     return versao
 
 
-def _frase_quando(epoch, agora):
-    """'agora', 'às HH:MM' (no mesmo dia) ou 'em DD/MM/AAAA às HH:MM'."""
+def _frase_relogio(epoch, agora):
+    """'Às HH:MM' (no mesmo dia) ou 'Em DD/MM/AAAA às HH:MM'. Nunca 'agora'."""
+    try:
+        momento = time.localtime(float(epoch))
+        hoje = time.localtime(agora)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+    if momento[:3] == hoje[:3]:
+        return time.strftime("Às %H:%M", momento)
+    return time.strftime("Em %d/%m/%Y às %H:%M", momento)
+
+
+def _frase_quando(epoch, agora, resultado_antigo=False):
+    """'agora', 'há poucos segundos', 'às HH:MM' ou 'em DD/MM/AAAA às HH:MM'."""
     delta = agora - float(epoch)
     if 0 <= delta < AGORA_SEGUNDOS:
+        if resultado_antigo:
+            return "há poucos segundos"
         return "agora"
     hora = time.strftime("%H:%M", time.localtime(epoch))
     if time.localtime(epoch)[:3] == time.localtime(agora)[:3]:
@@ -283,10 +299,32 @@ def _frase_quando(epoch, agora):
     return time.strftime("em %d/%m/%Y às %H:%M", time.localtime(epoch))
 
 
-def mensagem_para_os_pais(app_root, base=None, agora=None):
+def procura_nao_rodou(base, tentado_antes):
+    """True se o botão pediu e o mínimo de 1 minuto segurou a procura.
+
+    tentado_antes é o valor lido antes da chamada. Se o arquivo não mudou,
+    esta tentativa não falou com o GitHub.
+    """
+    if tentado_antes is None:
+        return False
+    return _estado(base).get("tentado_em") == tentado_antes
+
+
+def _texto_sem_rede(estado, agora):
+    """A falha fica com a hora da tentativa, para não parecer que é agora."""
+    frase = "Não deu para verificar (sem internet?)."
+    quando = _frase_relogio(estado.get("tentado_em"), agora)
+    if not quando:
+        return frase
+    return f"{quando} não deu para verificar (sem internet?)."
+
+
+def mensagem_para_os_pais(app_root, base=None, agora=None, resultado_antigo=False):
     """(texto, tipo) honesto para a área dos pais. tipo: success, error ou empty.
 
     Não diz que está em dia se a última procura deu erro ou já passou do intervalo.
+    resultado_antigo: o botão não procurou de novo (mínimo de 1 minuto). A frase
+    conta o resultado de antes, sem dizer que esta tentativa verificou agora.
     """
     base = base or pasta()
     agora = agora if agora is not None else time.time()
@@ -306,13 +344,13 @@ def mensagem_para_os_pais(app_root, base=None, agora=None):
                  "ficar parado no menu.")
         return texto + aviso, "error" if aviso else "success"
     if estado.get("sem_rede") or (_procura_incompleta(estado) and not estado.get("erro_download")):
-        return "Não deu para verificar (sem internet?).", "error"
+        return _texto_sem_rede(estado, agora), "error"
     if estado.get("erro_download") or _procura_incompleta(estado):
         return "Não deu para baixar a atualização.", "error"
     ultima = _segundos_desde(estado, "verificado_em", agora)
     if ultima is None:
         return "Ainda não procurei se há uma versão nova. Toque em Ver atualizações." + aviso, "empty"
-    quando = _frase_quando(agora - ultima, agora)
+    quando = _frase_quando(agora - ultima, agora, resultado_antigo=resultado_antigo)
     if ultima < 0 or ultima >= INTERVALO:
         texto = f"A última verificação foi {quando}. Toque em Ver atualizações para procurar de novo."
         return texto + aviso, "empty"
@@ -372,7 +410,7 @@ def aplicar_e_sair(raiz_pacote, log=print):
     return True
 
 
-def estado_para_os_pais(app_root, base=None, agora=None):
+def estado_para_os_pais(app_root, base=None, agora=None, resultado_antigo=False):
     """O que mostrar na área dos pais: versão já baixada esperando instalar, a última
     procura, se alguma versão falhou ao instalar, e o texto honesto da tela."""
     base = base or pasta()
@@ -387,7 +425,7 @@ def estado_para_os_pais(app_root, base=None, agora=None):
     except (TypeError, ValueError, OverflowError, OSError):
         ultima = None
     falhou = estado.get("falhou")
-    texto, tipo = mensagem_para_os_pais(app_root, base, agora)
+    texto, tipo = mensagem_para_os_pais(app_root, base, agora, resultado_antigo=resultado_antigo)
     return {
         "baixada": baixada,
         "ultimaVerificacao": ultima,

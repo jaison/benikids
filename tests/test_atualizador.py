@@ -239,8 +239,14 @@ class AutoUpdateStatusTest(unittest.TestCase):
                     "ultimaVerificacao": quando.isoformat(),
                 }))
                 sem_rede = server_module.auto_update_status(str(state), str(timer), agora=quando)
-                self.assertEqual(sem_rede["message"], "Não deu para verificar (sem internet?).")
+                self.assertEqual(
+                    sem_rede["message"],
+                    "Às 19:21 não deu para verificar (sem internet?).",
+                )
                 self.assertEqual(sem_rede["messageKind"], "error")
+                tarde = server_module.auto_update_status(
+                    str(state), str(timer), agora=quando + datetime.timedelta(hours=3))
+                self.assertEqual(tarde["message"], sem_rede["message"])
                 state.write_text(json.dumps({
                     "disponivel": "1.0.8",
                     "ultimaVerificacao": quando.isoformat(),
@@ -289,6 +295,7 @@ class AutoUpdateStatusTest(unittest.TestCase):
         self.assertIn("idade<60*1000", trecho)
         self.assertIn("inicio>=5000", trecho)
         self.assertIn("inicio>15000", trecho)
+        self.assertIn("marcarResultadoAntigo", trecho)
         self.assertNotIn("3*60*1000", trecho)
 
 
