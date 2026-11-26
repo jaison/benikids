@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 import zipfile
@@ -209,9 +210,18 @@ class AtualizarWindowsTests(unittest.TestCase):
         with self.assertRaises(aw.FalhaDeRede):
             aw.verificar(self.app, self.base, abrir, agora=1000, forcar=True)
         texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
-        self.assertEqual(texto, "Não deu para verificar (sem internet?).")
+        self.assertTrue(texto.startswith("Às ") or texto.startswith("Em "))
+        self.assertIn("não deu para verificar (sem internet?)", texto)
+        self.assertNotEqual(texto, "Não deu para verificar (sem internet?).")
         self.assertEqual(tipo, "error")
         self.assertNotIn("versão mais nova", texto)
+        # 3 h depois a frase ainda é a hora daquela tentativa, não a de agora
+        hora = time.strftime("%H:%M", time.localtime(1000))
+        self.assertIn(hora, texto)
+        tarde, _tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + 3 * 3600)
+        self.assertIn(hora, tarde)
+        self.assertNotIn(time.strftime("%H:%M", time.localtime(1000 + 3 * 3600)), tarde)
+        self.assertIn("não deu para verificar (sem internet?)", tarde)
 
         self.pedidos.clear()
         self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1030, forcar=True))
@@ -222,6 +232,52 @@ class AtualizarWindowsTests(unittest.TestCase):
         with self.assertRaises(aw.FalhaDeRede):
             aw.verificar(self.app, self.base, abrir, agora=1000 + aw.REPETIR_SEM_REDE)
         self.assertTrue(self.pedidos)
+
+    def test_a_click_inside_the_minute_does_not_pretend_it_checked_again(self):
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000, forcar=True))
+        antes = aw._estado(self.base).get("tentado_em")
+
+        def sem_rede(url, timeout=30):
+            self.pedidos.append(url)
+            raise urllib.error.URLError("offline")
+
+        self.pedidos = []
+        self.assertIsNone(aw.verificar(self.app, self.base, sem_rede, agora=1030, forcar=True))
+        self.assertEqual(self.pedidos, [])
+        self.assertTrue(aw.procura_nao_rodou(self.base, antes))
+        texto, tipo = aw.mensagem_para_os_pais(
+            self.app, self.base, agora=1030, resultado_antigo=True)
+        self.assertEqual(texto, "Você tem a versão mais nova (1.0.4). Verificado há poucos segundos.")
+        self.assertEqual(tipo, "success")
+        self.assertNotIn("Verificado agora", texto)
+        # a tela aberta, sem um clique novo, ainda pode dizer que foi agora
+        fresco, _tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000)
+        self.assertIn("Verificado agora", fresco)
+
+    def test_a_later_check_clears_the_offline_sentence(self):
+        def sem_rede(url, timeout=30):
+            raise urllib.error.URLError("offline")
+
+        with self.assertRaises(aw.FalhaDeRede):
+            aw.verificar(self.app, self.base, sem_rede, agora=1000, forcar=True)
+        abrir = self.servidor(release("1.0.4"), pacote_zip("1.0.4"))
+        self.assertIsNone(aw.verificar(self.app, self.base, abrir, agora=1000 + aw.REPETIR_SEM_REDE))
+        texto, tipo = aw.mensagem_para_os_pais(self.app, self.base, agora=1000 + aw.REPETIR_SEM_REDE)
+        self.assertNotIn("sem internet", texto)
+        self.assertIn("versão mais nova", texto)
+        self.assertEqual(tipo, "success")
+        self.assertFalse(aw._estado(self.base).get("sem_rede"))
+
+    def test_the_launcher_wakes_often_enough_to_clear_an_offline_sentence(self):
+        caminho = os.path.join(os.path.dirname(__file__), "..", "src", "beni_windows.py")
+        with open(caminho, encoding="utf-8") as arquivo:
+            texto = arquivo.read()
+        trecho = texto[texto.index("def procurar_atualizacao_depois"):texto.index("def limpar_queda")]
+        self.assertIn("REPETIR_SEM_REDE", trecho)
+        self.assertIn("time.sleep(pausa)", trecho)
+        self.assertNotIn("INTERVALO", trecho)
+        self.assertIn("a rede voltou", trecho)
 
     def test_a_check_that_breaks_midway_is_not_the_newest_version(self):
         def abrir_zip(erro):

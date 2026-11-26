@@ -658,6 +658,20 @@ def _ler_estado_atualizador(state_file):
         return {}
 
 
+def _relogio_iso(texto, agora):
+    """'Às HH:MM' ou 'Em DD/MM/AAAA às HH:MM'. Nunca 'agora': a falha fica datada."""
+    try:
+        quando = datetime.datetime.fromisoformat(texto)
+    except (TypeError, ValueError):
+        return None
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=agora.tzinfo)
+    local = quando.astimezone(agora.tzinfo)
+    if local.date() == agora.date():
+        return local.strftime("Às %H:%M")
+    return local.strftime("Em %d/%m/%Y às %H:%M")
+
+
 def _frase_quando_iso(texto, agora):
     """'agora', 'às HH:MM' ou 'em DD/MM/AAAA às HH:MM' a partir de um ISO do atualizador."""
     try:
@@ -713,6 +727,12 @@ def mensagem_atualizacao_linux(state, installed, auto, agora=None):
         return "Procurando atualizações…", "empty"
     staged = state.get("baixada") if isinstance(state.get("baixada"), str) else None
     erro = _erro_linux_para_os_pais(state.get("erro"))
+    if erro == "Não deu para verificar (sem internet?).":
+        # A hora da tentativa: 3 h depois a frase não parece que acabou de falhar.
+        ultima_iso = state.get("ultimaVerificacao")
+        relogio = _relogio_iso(ultima_iso, agora) if isinstance(ultima_iso, str) else None
+        if relogio:
+            erro = f"{relogio} não deu para verificar (sem internet?)."
     if staged:
         if state.get("forcada"):
             extra = "Vai ser instalada assim que nenhum app estiver aberto."
@@ -796,11 +816,14 @@ def auto_update_status(state_file=AUTO_UPDATE_STATE, timer_file=AUTO_UPDATE_TIME
     }
 
 
-def windows_update_status():
-    """No Windows o atualizador é o atualizar_windows.py (estado em %LOCALAPPDATA%)."""
+def windows_update_status(resultado_antigo=False):
+    """No Windows o atualizador é o atualizar_windows.py (estado em %LOCALAPPDATA%).
+
+    resultado_antigo: o botão não procurou de novo. A frase é a da tentativa anterior.
+    """
     import atualizar_windows
 
-    estado = atualizar_windows.estado_para_os_pais(APP_ROOT)
+    estado = atualizar_windows.estado_para_os_pais(APP_ROOT, resultado_antigo=resultado_antigo)
     installed = get_version()
     return {
         "installedVersion": installed,
@@ -833,6 +856,8 @@ def verificar_atualizacao_agora():
     if os.name == "nt":
         import atualizar_windows
 
+        base = atualizar_windows.pasta()
+        tentado_antes = atualizar_windows._estado(base).get("tentado_em")
         try:
             atualizar_windows.verificar(APP_ROOT, forcar=True)
         except Exception as exc:  # noqa: BLE001 — o texto sai do estado gravado
@@ -841,7 +866,11 @@ def verificar_atualizacao_agora():
                 level="warning",
                 exceptionType=type(exc).__name__,
             )
-        return windows_update_status()
+        # Dentro de 1 minuto a procura nem começa. Sem este aviso a tela
+        # repetia "Verificado agora", como se este clique tivesse olhado.
+        return windows_update_status(
+            resultado_antigo=atualizar_windows.procura_nao_rodou(base, tentado_antes)
+        )
     status = auto_update_status()
     if not status.get("autoUpdate"):
         return status

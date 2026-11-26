@@ -47,6 +47,35 @@ async function mostrarAtualizacao(){
     if(btn) btn.disabled=false;
   }
 }
+function marcarResultadoAntigo(st){
+  // O serviço ignorou o clique (menos de 1 minuto). Não diga que verificou agora.
+  if(!st||typeof st.message!=='string'||st.message.indexOf('Verificado agora.')===-1) return st;
+  return Object.assign({},st,{
+    message:st.message.replace('Verificado agora.','Verificado há poucos segundos.')
+  });
+}
+let atualizacaoRelogio=null;
+function pararRelogioDaAtualizacao(){
+  if(atualizacaoRelogio){ clearInterval(atualizacaoRelogio); atualizacaoRelogio=null; }
+}
+async function refrescarAtualizacaoNaTela(){
+  // A verificação automática grava o estado sem avisar a tela. Enquanto a
+  // seção está aberta, relê: uma falha antiga some quando a procura dá certo.
+  if(typeof adminSection==='undefined'||adminSection!=='system') return;
+  const btn=document.getElementById('checkUpdateBtn');
+  if(btn&&btn.disabled) return;
+  const msg=document.getElementById('updateMsg');
+  try{
+    const st=await lerAtualizacao();
+    const atual=msg&&msg.querySelector('.ui-state-message');
+    if(atual&&atual.textContent===st.message) return;
+    aplicarEstadoAtualizacao(st);
+  }catch(e){}
+}
+function ligarRelogioDaAtualizacao(){
+  pararRelogioDaAtualizacao();
+  atualizacaoRelogio=setInterval(refrescarAtualizacaoNaTela,60*1000);
+}
 function procuraTemMenosDeUmMinuto(lastCheck,agora){
   if(!lastCheck) return false;
   const idade=(agora||Date.now())-new Date(lastCheck).getTime();
@@ -93,6 +122,8 @@ async function checkUpdate(){
           message:'Pedi a verificação. Se esta frase não mudar, as atualizações automáticas seguem de hora em hora.',
           messageKind:'empty'
         });
+      }else if(!viu&&(st.lastCheck||'')===antes&&recente){
+        st=marcarResultadoAntigo(st);
       }
       aplicarEstadoAtualizacao(st);
     }else{
@@ -144,6 +175,8 @@ function activateAdminSection(section,focusHeading=false){
   });
   // ao abrir a seção, mostra o que já se sabe; o botão é que procura de novo
   if(changed&&section==='system'&&typeof mostrarAtualizacao==='function') mostrarAtualizacao();
+  if(section==='system'&&typeof ligarRelogioDaAtualizacao==='function') ligarRelogioDaAtualizacao();
+  else if(typeof pararRelogioDaAtualizacao==='function') pararRelogioDaAtualizacao();
   if(section==='children'&&typeof loadSiteLogins==='function') loadSiteLogins();
   if(section==='system'&&typeof loadControles==='function') loadControles();
   if(section!=='system'&&typeof pararAssistenteControle==='function'&&controleAssistente) pararAssistenteControle();
