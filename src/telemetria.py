@@ -1,11 +1,15 @@
 """Telemetria anônima do Benikids: em que computadores ele está instalado.
 
 Um envio por dia, em segundo plano, se os pais não desligarem ("telemetryEnabled"
-na configuração; Pais → Sistema). O que vai é exatamente o que dados() devolve:
-um número aleatório desta instalação, a versão, o sistema, a CPU, a memória, a
-placa de vídeo, o tipo de menu, a resolução da tela e o idioma. Nada sobre as
-crianças nem sobre o uso. O destino é um Cloudflare Worker (telemetria/) que
-não grava o IP. Sem internet, tenta de novo no dia seguinte.
+na configuração; Pais → Sistema). Nada sai — ping, problema ou uso — enquanto a
+configuração inicial não foi salva (setupCompleted ainda é false). O que aconteceu
+antes dessa escolha não fica na fila para ir depois. Instalação antiga, já
+concluída e sem o campo telemetryEnabled, continua ligada: é o padrão.
+O que vai no ping é exatamente o que dados() devolve: um número aleatório desta
+instalação, a versão, o sistema, a CPU, a memória, a placa de vídeo, o tipo de
+menu, a resolução da tela e o idioma. Nada sobre as crianças nem sobre o uso.
+O destino é um Cloudflare Worker (telemetria/) que não grava o IP. Sem internet,
+tenta de novo no dia seguinte.
 """
 
 import json
@@ -27,7 +31,12 @@ ENDERECO_USO = BASE + "/v1/uso"
 ENDERECO_PROBLEMA = BASE + "/v1/problema"
 ENDERECO_APAGAR = BASE + "/v1/apagar"
 FILA_PROBLEMAS = os.path.join(os.path.expanduser("~"), ".config", "cozy-kids-launcher", "problemas-pendentes.jsonl")
+CONFIG_JSON = os.path.join(os.path.expanduser("~"), ".config", "cozy-kids-launcher", "config.json")
 INTERVALO = 24 * 3600
+# Enquanto a configuração inicial está aberta, o fio olha de novo em 30 s.
+# Sem isso, quem clica em Começar depois dos primeiros 2 min só seria ouvido
+# na tentativa da hora seguinte.
+ESPERA_COM_SETUP_PENDENTE = 30
 SEM_CONSOLE = 0x08000000 if os.name == "nt" else 0
 # O Benikids só é instalado em Windows e Linux. Fora deles (o Mac de quem desenvolve,
 # rodando o servidor para testar) nada é enviado: antes isso entrava no banco como
@@ -35,13 +44,49 @@ SEM_CONSOLE = 0x08000000 if os.name == "nt" else 0
 SISTEMA_SUPORTADO = sys.platform == "win32" or sys.platform.startswith("linux")
 
 
+def configuracao_concluida(cfg):
+    """A configuração inicial já foi salva.
+
+    O resto do Benikids trata como pendente só setupCompleted false
+    (configurar.html, até o POST /api/setup). Ausente ou true = já concluída:
+    instalação de antes dessa tela continua valendo.
+    """
+    return isinstance(cfg, dict) and cfg.get("setupCompleted") is not False
+
+
 def ligada(cfg):
+    """Ping e problemas. Desligada até a configuração inicial ser salva.
+
+    Depois disso, telemetryEnabled ausente conta como ligada (instalação antiga;
+    a decisão do mantenedor é o padrão ligado). False desliga.
+    """
+    if not configuracao_concluida(cfg):
+        return False
     return cfg.get("telemetryEnabled", True) is not False
 
 
 def uso_ligado(cfg):
     """Relatório de uso por criança: só com a caixinha marcada pelos pais (padrão desligado)."""
+    if not configuracao_concluida(cfg):
+        return False
     return cfg.get("usageTelemetryEnabled", False) is True
+
+
+def espera_da_proxima_tentativa(cfg, entre_tentativas):
+    """30 s enquanto a configuração inicial não foi salva; senão, o intervalo normal."""
+    if isinstance(cfg, dict) and not configuracao_concluida(cfg):
+        return min(entre_tentativas, ESPERA_COM_SETUP_PENDENTE)
+    return entre_tentativas
+
+
+def _cfg_do_disco(caminho=None):
+    """O config.json do usuário, ou None se não der para ler. Não grava nada."""
+    try:
+        with open(caminho if caminho is not None else CONFIG_JSON, encoding="utf-8") as f:
+            dados = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return dados if isinstance(dados, dict) else None
 
 
 # ------------------------------------------------------------------ relatório de uso
@@ -151,14 +196,21 @@ def ja_relatado_hoje(assinatura, marcas=None, hoje=None, marcar=True):
     return False
 
 
-def relatar_problema(etapa, detalhe, assinatura=None, fila=None, por_dia=False, marcas=None):
+def relatar_problema(etapa, detalhe, assinatura=None, fila=None, por_dia=False, marcas=None, *, cfg=None):
     """Guarda um problema para o servidor enviar (se a telemetria estiver ligada).
     Pode ser chamado de qualquer processo: instalador, iniciador, servidor.
     por_dia: no máximo 1 por assinatura por dia (o resto é descartado aqui). A marca do
     dia só é gravada DEPOIS de o problema entrar na fila (roteiro 33: marcar antes e
-    falhar ao gravar perdia o problema do dia inteiro)."""
+    falhar ao gravar perdia o problema do dia inteiro).
+    cfg: config já lido (os testes). None lê o config.json. Sem arquivo, guarda —
+    o envio é que olha a escolha. Com a configuração inicial ainda aberta, não
+    guarda e não marca o dia: o que aconteceu antes da escolha não vai depois."""
     chave = str(assinatura or etapa)[:120]
     if por_dia and ja_relatado_hoje(chave, marcas, marcar=False):
+        return False
+    if cfg is None:
+        cfg = _cfg_do_disco()
+    if cfg is not None and not configuracao_concluida(cfg):
         return False
     item = {
         "etapa": str(etapa)[:60],
@@ -631,6 +683,29 @@ class Telemetria:
         self.ler_historico = ler_historico
         self.fila = fila
         self._parar = threading.Event()
+        self._avisos = set()
+
+    def _log(self, evento):
+        """Uma linha no log do servidor (runtime.jsonl). Nunca derruba o envio."""
+        try:
+            import runtime_diagnostics
+
+            runtime_diagnostics.log_runtime_event(evento)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _anotar_uma_vez(self, chave, evento):
+        if chave in self._avisos:
+            return
+        self._avisos.add(chave)
+        self._log(evento)
+
+    def _descartar_fila(self):
+        """Tira os problemas da fila e não devolve. O de antes da escolha não vai depois."""
+        try:
+            tirar_da_fila(self.fila)
+        except Exception:  # noqa: BLE001
+            pass
 
     def id(self):
         estado = ler_estado(self.caminho)
@@ -662,7 +737,8 @@ class Telemetria:
         estado = ler_estado(self.caminho)
         if not estado:
             for item in itens:
-                relatar_problema(item.get("etapa"), item.get("detalhe"), item.get("assinatura"), self.fila)
+                relatar_problema(item.get("etapa"), item.get("detalhe"), item.get("assinatura"),
+                                 self.fila, cfg=cfg)
             return 0
         base = {"id": estado["id"], "versao": self.versao() or None,
                 "plataforma": "windows" if os.name == "nt" else "linux", "sistema": sistema()}
@@ -671,7 +747,10 @@ class Telemetria:
             if self._enviar(dict(base, **item), ENDERECO_PROBLEMA):
                 enviados += 1
             else:
-                relatar_problema(item.get("etapa"), item.get("detalhe"), item.get("assinatura"), self.fila)
+                # devolve com a mesma config que autorizou o envio: uma falha de
+                # rede não pode sumir com o problema se o disco estiver no meio do setup
+                relatar_problema(item.get("etapa"), item.get("detalhe"), item.get("assinatura"),
+                                 self.fila, cfg=cfg)
         return enviados
 
     def enviar_uso(self):
@@ -717,17 +796,34 @@ class Telemetria:
         return self._enviar({"id": estado["id"], "criancas": criancas}, ENDERECO_APAGAR)
 
     def talvez_enviar(self):
-        """Envia se a config deixa e já passou um dia. Devolve True se enviou."""
+        """Envia se a config deixa e já passou um dia. Devolve True se enviou o ping.
+
+        Com a configuração inicial ainda aberta, não envia nada e descarta a fila:
+        o que foi coletado antes da escolha dos pais não sai depois.
+        """
         try:
-            self.enviar_problemas()
+            cfg = self.ler_config()
+        except Exception:  # noqa: BLE001
+            cfg = None
+        if isinstance(cfg, dict) and not configuracao_concluida(cfg):
+            self._descartar_fila()
+            self._anotar_uma_vez("aguardando", "telemetria.aguardando")
+            return False
+        try:
+            if self.enviar_problemas():
+                self._log("telemetria.problema")
         except Exception:  # noqa: BLE001
             pass
         try:
-            self.enviar_uso()
+            if self.enviar_uso():
+                self._log("telemetria.uso")
         except Exception:  # noqa: BLE001
             pass
         try:
-            if not ligada(self.ler_config()):
+            cfg = self.ler_config()
+            if not ligada(cfg):
+                if configuracao_concluida(cfg):
+                    self._anotar_uma_vez("desligada", "telemetria.desligada")
                 return False
         except Exception:  # noqa: BLE001
             return False
@@ -743,18 +839,32 @@ class Telemetria:
             gravar_estado(self.caminho, estado)
         except OSError:
             pass
+        self._log("telemetria.ping")
         return True
 
     def iniciar(self, primeira_espera=120, entre_tentativas=3600):
         if not SISTEMA_SUPORTADO:
             return
+        try:
+            cfg = self.ler_config()
+        except Exception:  # noqa: BLE001
+            cfg = None
+        if isinstance(cfg, dict) and not configuracao_concluida(cfg):
+            # antes dos 120 s: o que o instalador guardou não espera a escolha
+            self._descartar_fila()
+            self._anotar_uma_vez("aguardando", "telemetria.aguardando")
 
         def laco():
             if self._parar.wait(primeira_espera):
                 return
             while True:
                 self.talvez_enviar()
-                if self._parar.wait(entre_tentativas):
+                espera = entre_tentativas
+                try:
+                    espera = espera_da_proxima_tentativa(self.ler_config(), entre_tentativas)
+                except Exception:  # noqa: BLE001
+                    pass
+                if self._parar.wait(espera):
                     return
 
         threading.Thread(target=laco, name="telemetria", daemon=True).start()

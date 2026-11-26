@@ -6,9 +6,12 @@ This project is intended for private family computers.
 
 Benikids adds one network request that the original project did not have: **once a
 day**, it sends a small anonymous description of the computer, so the project knows
-which hardware it runs on and where to test. Parents can turn it off in the first-run
+which hardware it runs on and where to test. Nothing is sent — device ping, problem
+report, or usage report — until the first-run setup has been saved. Anything collected
+before that choice is discarded, not queued for later. Parents can turn it off in that
 setup and in Parents → System, where "Ver exatamente o que é enviado" shows the exact
-JSON (`GET /api/telemetria/previa`).
+JSON (`GET /api/telemetria/previa`). A computer that already finished setup and has no
+`telemetryEnabled` field keeps the previous default (on).
 
 What is sent (`src/telemetria.py`, `dados()`):
 
