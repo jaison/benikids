@@ -798,29 +798,6 @@ def tiles(catalogo=None):
     return resultado
 
 
-# Uma vez no catalogSeen: o GCompris saiu de Aprender (educativo) para Passatempo.
-# Não é um id de app. O padrão de catalogSeen aceita letras, números e hífen.
-MARCA_GCOMPRIS = "migracao-gcompris-passatempo"
-
-
-def _migrar_gcompris(tile, categoria):
-    """Move o GCompris que ainda está em Aprender. Não mexe em mais nenhum tile.
-
-    A categoria de um tile que já existe é dos pais (usage-limits.js). Esta função
-    só existe para a mudança antiga do catálogo, e o chamador só a usa enquanto
-    a marca não está em catalogSeen. Outra categoria — ou a volta para Aprender
-    depois da marca — fica como os pais deixaram.
-    """
-    if not isinstance(tile, dict):
-        return False
-    if tile.get("id") != "gcompris" or tile.get("cmd") != [PREFIXO + "gcompris"]:
-        return False
-    if tile.get("category") != "educativo" or categoria == "educativo":
-        return False
-    tile["category"] = categoria
-    return True
-
-
 def sincronizar_tiles(stored, catalogo=None):
     """Põe nos perfis os apps do catálogo que este computador ainda não viu.
 
@@ -828,8 +805,8 @@ def sincronizar_tiles(stored, catalogo=None):
     cada perfil (ligado, como todo o catálogo); um app que os pais removeram não volta.
     Um app que saiu do catálogo (ex.: Neverputt, que fecha sozinho no Windows) sai dos
     perfis, para não sobrar um botão que não abre.
-    A marca do GCompris entra junto: a categoria dele muda uma vez, e a de um tile
-    que já existe não é mais escrita.
+    A categoria de um tile que já existe é dos pais: não é reescrita. Um app novo
+    entra com a categoria do catálogo (o GCompris entra em Aprender).
     Devolve (config, mudou).
     """
     import copy
@@ -847,23 +824,15 @@ def sincronizar_tiles(stored, catalogo=None):
 
     orfaos = any(fora_do_catalogo(t) for p in stored.get("profiles", [])
                  for t in p.get("tiles", []))
-    ja_migrou = MARCA_GCOMPRIS in vistos
-    if vistos >= set(ids_catalogo) and not orfaos and ja_migrou:
+    if vistos >= set(ids_catalogo) and not orfaos:
         return stored, False
     resultado = copy.deepcopy(stored)
-    categoria_gcompris = next(
-        (t.get("category", "passatempo") for t in novos if t["id"] == "gcompris"),
-        "passatempo",
-    )
     for perfil in resultado.get("profiles", []):
         if "tiles" in perfil:
             perfil["tiles"] = [t for t in perfil["tiles"] if not fora_do_catalogo(t)]
-            if not ja_migrou:
-                for tile in perfil["tiles"]:
-                    _migrar_gcompris(tile, categoria_gcompris)
         existentes = {t.get("id") for t in perfil.get("tiles", []) if isinstance(t, dict)}
         for tile in novos:
             if tile["id"] not in vistos and tile["id"] not in existentes:
                 perfil.setdefault("tiles", []).append(copy.deepcopy(tile))
-    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo) | {MARCA_GCOMPRIS})
+    resultado["catalogSeen"] = sorted(vistos | set(ids_catalogo))
     return resultado, True
