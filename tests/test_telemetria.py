@@ -64,6 +64,69 @@ class TelemetriaTest(unittest.TestCase):
         self.assertFalse(self.t.talvez_enviar())
         self.assertEqual(self.enviados, [])
 
+    def test_sem_setup_nada_envia_e_o_que_ja_estava_na_fila_nao_vai_depois(self):
+        self.cfg = {"setupCompleted": False, "usageTelemetryEnabled": True,
+                    "profiles": [{"id": "default", "telemetryId": "c" * 32, "birthMonth": "2018-05",
+                                  "tiles": []}]}
+        self.historico = {"default": {"2026-11-12": {"totalSeconds": 600, "categories": {}, "tiles": {}}}}
+        self.assertFalse(telemetria.relatar_problema(
+            "instalar", "antes da escolha", fila=self.fila, por_dia=True,
+            marcas=os.path.join(self.tmp.name, "marcas.json"), cfg=self.cfg))
+        self.assertFalse(os.path.exists(self.fila))
+        with open(self.fila, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"etapa": "instalar", "detalhe": "x", "assinatura": "instalar"}) + "\n")
+        self.assertFalse(self.t.talvez_enviar())
+        self.assertFalse(self.t.enviar_uso())
+        self.assertEqual(self.enviados, [])
+        self.assertFalse(os.path.exists(self.fila))
+        self.assertFalse(os.path.exists(self.estado))
+        self.cfg = {"setupCompleted": True, "telemetryEnabled": True}
+        self.assertTrue(self.t.talvez_enviar())
+        self.assertEqual(self.para, [telemetria.ENDERECO])
+
+    def test_setup_concluido_com_telemetria_desligada_nada_envia(self):
+        self.cfg = {"setupCompleted": True, "telemetryEnabled": False}
+        telemetria.relatar_problema("instalar", "x", fila=self.fila, cfg=self.cfg)
+        self.assertFalse(self.t.talvez_enviar())
+        self.assertEqual(self.enviados, [])
+        self.assertFalse(os.path.exists(self.fila))
+
+    def test_setup_concluido_com_telemetria_ligada_envia(self):
+        self.cfg = {"setupCompleted": True, "telemetryEnabled": True}
+        self.assertTrue(self.t.talvez_enviar())
+        self.assertEqual(self.para, [telemetria.ENDERECO])
+        self.assertEqual(set(self.enviados[0]), CAMPOS)
+
+    def test_config_antigo_sem_telemetry_enabled_envia(self):
+        # instalação que já concluiu o setup antes deste campo: padrão continua ligado
+        self.cfg = {"setupCompleted": True}
+        self.assertTrue(telemetria.ligada(self.cfg))
+        self.assertTrue(self.t.talvez_enviar())
+        self.assertEqual(self.para, [telemetria.ENDERECO])
+
+    def test_config_pendente_no_disco_nao_enfileira(self):
+        caminho = os.path.join(self.tmp.name, "config.json")
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump({"setupCompleted": False}, f)
+        with mock.patch.object(telemetria, "CONFIG_JSON", caminho):
+            self.assertFalse(telemetria.relatar_problema("instalar", "x", fila=self.fila))
+        self.assertFalse(os.path.exists(self.fila))
+        with mock.patch.object(telemetria, "CONFIG_JSON", os.path.join(self.tmp.name, "nao-existe.json")):
+            self.assertTrue(telemetria.relatar_problema("instalar", "x", fila=self.fila))
+        self.assertTrue(os.path.exists(self.fila))
+
+    def test_ao_subir_com_setup_pendente_descarta_a_fila_e_olha_de_novo_cedo(self):
+        self.cfg = {"setupCompleted": False}
+        with open(self.fila, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        with mock.patch.object(telemetria, "SISTEMA_SUPORTADO", True), \
+             mock.patch.object(telemetria.threading, "Thread"):
+            self.t.iniciar()
+        self.assertFalse(os.path.exists(self.fila))
+        self.assertEqual(telemetria.espera_da_proxima_tentativa(self.cfg, 3600), 30)
+        self.assertEqual(telemetria.espera_da_proxima_tentativa(
+            {"setupCompleted": True}, 3600), 3600)
+
     def test_sem_internet_tenta_de_novo_depois(self):
         self.resposta = False
         self.assertFalse(self.t.talvez_enviar())
