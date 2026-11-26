@@ -518,6 +518,54 @@ def direct_app_command(command):
     return command
 
 
+def pasta_de_atalhos():
+    """Onde o instalador copia os atalhos (gcompris, klotski, tuxpaint…)."""
+    return os.path.join(os.path.expanduser("~"), ".local", "bin")
+
+
+def _path_contem(env, pasta):
+    return pasta in [parte for parte in env.get("PATH", "").split(os.pathsep) if parte]
+
+
+def acrescentar_atalhos_ao_path(env=None):
+    """Põe ~/.local/bin no começo do PATH deste processo (ou do dicionário env).
+
+    No Ubuntu o LightDM monta o PATH da sessão gráfica a partir do
+    /etc/environment e não lê o ~/.profile, onde essa pasta entraria. Sem ela,
+    o menu acha o tile e o subprocesso morre com "could not be started".
+    """
+    alvo = os.environ if env is None else env
+    pasta = pasta_de_atalhos()
+    if not os.path.isdir(pasta) or _path_contem(alvo, pasta):
+        return alvo
+    atual = alvo.get("PATH", "")
+    alvo["PATH"] = pasta + (os.pathsep + atual if atual else "")
+    return alvo
+
+
+def resolver_atalho_local(command):
+    """Troca o nome solto pelo caminho absoluto em ~/.local/bin, se o arquivo existir.
+
+    O supervisor então abre o atalho mesmo que o PATH do filho seja outro.
+    Os atalhos ainda chamam vizinhos pelo nome (cozy-fullscreen): por isso o
+    PATH também precisa da pasta.
+    """
+    if not command:
+        return command
+    nome = str(command[0])
+    if (
+        not nome
+        or os.path.isabs(nome)
+        or os.sep in nome
+        or (os.altsep and os.altsep in nome)
+    ):
+        return list(command)
+    caminho = os.path.join(pasta_de_atalhos(), nome)
+    if os.path.isfile(caminho) and os.access(caminho, os.X_OK):
+        return [caminho, *list(command)[1:]]
+    return list(command)
+
+
 def _log_windows(texto):
     try:
         caminho = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher", "beni-windows.log")
@@ -703,11 +751,14 @@ class ApplicationLauncher:
                     "--activity-tile",
                     tile_id,
                 ])
+            command = resolver_atalho_local(command)
             wrapped.extend(["--", *command])
             env = dict(os.environ)
             # Ubuntu vem em inglês: jogos e o Firefox dos sites falam português
             # se o locale estiver instalado. Quem passou env_extra manda por último.
             env.update(ambiente_pt_br())
+            # Atalhos em ~/.local/bin, mesmo quando a sessão gráfica não tem essa pasta.
+            acrescentar_atalhos_ao_path(env)
             if path_extra:
                 # Só para este app e seus filhos (ex.: o Quatro em Linha acha o motor de IA
                 # pelo PATH); o PATH do servidor não muda.

@@ -7,6 +7,14 @@ esac
 [ -r "$_COZY_LOCALE" ] || _COZY_LOCALE="$HOME/.local/bin/cozy-locale"
 [ -r "$_COZY_LOCALE" ] && . "$_COZY_LOCALE"
 unset _COZY_LOCALE
+# LightDM no Ubuntu não lê o ~/.profile. Os caminhos abaixo já são absolutos;
+# isto cobre o que este script abrir pelo nome (e o launcher que recebe o exec).
+if [ -d "$HOME/.local/bin" ]; then
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH"; export PATH ;;
+  esac
+fi
 # Cozy Kids Launcher no login: abre o menu logo e sincroniza os jogos das
 # coleções do itch.io em segundo plano (os jogos novos aparecem quando a página
 # do menu recarregar, por exemplo ao voltar de um jogo). Enquanto o menu abre,

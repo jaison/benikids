@@ -27,6 +27,7 @@ from app_detection import (
 from application_launcher import (
     ApplicationLauncher,
     PortaoDeAbertura,
+    acrescentar_atalhos_ao_path,
     direct_app_command,
     external_browser_command as build_external_browser_command,
     resolve_tile_action,
@@ -2701,6 +2702,8 @@ def create_server(host="127.0.0.1", port=PORT):
 
 
 def main():
+    # Antes de qualquer jogo: a sessão do LightDM não traz ~/.local/bin.
+    acrescentar_atalhos_ao_path()
     try:
         configure_runtime_logging(LOG_FILE)
     except OSError:

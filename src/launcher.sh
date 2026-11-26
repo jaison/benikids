@@ -14,6 +14,10 @@ unset _COZY_LOCALE
 if [[ -d /snap/bin ]] && [[ ":$PATH:" != *":/snap/bin:"* ]]; then
   export PATH="$PATH:/snap/bin"
 fi
+# LightDM no Ubuntu não lê o ~/.profile: a sessão gráfica não tem ~/.local/bin.
+if [[ -d "$HOME/.local/bin" && ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
 APP_ROOT="$HOME/.local/share/{{APP_ID}}"
 PORT="${COZY_KIDS_PORT:-{{DEFAULT_PORT}}}"
 CACHE_ROOT="$HOME/.cache/{{APP_ID}}"

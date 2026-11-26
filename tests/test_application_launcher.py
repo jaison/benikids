@@ -380,3 +380,62 @@ class ApplicationLauncherTests(unittest.TestCase):
             self.assertFalse(self.overlay_record.exists())
         finally:
             self.launcher.reset_active_tile()
+
+
+class AtalhosLocaisTest(unittest.TestCase):
+    def test_nome_vira_caminho_absoluto_e_a_pasta_entra_no_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pasta = os.path.join(tmp, "bin")
+            os.makedirs(pasta)
+            atalho = os.path.join(pasta, "pingus")
+            Path(atalho).write_text("#!/bin/sh\n", encoding="utf-8")
+            os.chmod(atalho, 0o755)
+            with mock.patch.object(application_launcher, "pasta_de_atalhos", return_value=pasta):
+                self.assertEqual(
+                    application_launcher.resolver_atalho_local(["pingus", "--tela"]),
+                    [atalho, "--tela"],
+                )
+                self.assertEqual(
+                    application_launcher.resolver_atalho_local(["/usr/games/supertux2"]),
+                    ["/usr/games/supertux2"],
+                )
+                self.assertEqual(
+                    application_launcher.resolver_atalho_local(["nao-existe"]),
+                    ["nao-existe"],
+                )
+                env = {"PATH": "/usr/bin"}
+                application_launcher.acrescentar_atalhos_ao_path(env)
+                self.assertEqual(env["PATH"], pasta + os.pathsep + "/usr/bin")
+                application_launcher.acrescentar_atalhos_ao_path(env)
+                self.assertEqual(env["PATH"].count(pasta), 1)
+
+    def test_abertura_usa_o_atalho_absoluto_sem_mexer_no_path_do_servidor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pasta = os.path.join(tmp, "bin")
+            os.makedirs(pasta)
+            atalho = os.path.join(pasta, "gcompris")
+            Path(atalho).write_text("#!/bin/sh\n", encoding="utf-8")
+            os.chmod(atalho, 0o755)
+            supervisor = Path(tmp) / "process_supervisor.py"
+            supervisor.write_text("x", encoding="utf-8")
+            overlay = Path(tmp) / "overlay.py"
+            overlay.write_text("x", encoding="utf-8")
+            launcher = application_launcher.ApplicationLauncher(
+                Path(tmp) / "tile.pid",
+                Path(tmp) / "overlay.pid",
+                supervisor,
+                overlay,
+                python_executable="/usr/bin/python3",
+            )
+            antes = os.environ.get("PATH", "")
+            with mock.patch.object(application_launcher, "pasta_de_atalhos", return_value=pasta), \
+                    mock.patch.object(application_launcher, "terminate_owned_process"), \
+                    mock.patch.object(application_launcher, "owned_process_alive", side_effect=[True, True]), \
+                    mock.patch.object(application_launcher.subprocess, "Popen") as popen:
+                popen.side_effect = [mock.Mock(), mock.Mock()]
+                launcher.launch_owned_tile(["gcompris"], "local", tile_id="games")
+            argv = popen.call_args_list[0].args[0]
+            self.assertEqual(argv[-1], atalho)
+            self.assertTrue(popen.call_args_list[0].kwargs["env"]["PATH"].startswith(pasta + os.pathsep))
+            self.assertEqual(os.environ.get("PATH", ""), antes)
+            self.assertNotIn(pasta, os.environ.get("PATH", ""))

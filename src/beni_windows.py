@@ -282,6 +282,9 @@ def limpar_queda():
 
 
 def main():
+    # Mesma pasta de atalhos do Linux, se existir nesta conta.
+    from application_launcher import acrescentar_atalhos_ao_path
+    acrescentar_atalhos_ao_path()
     os.makedirs(CACHE, exist_ok=True)
     telemetria.instalar_excepthook("iniciador")
     if "--autostart" in sys.argv[1:]:
