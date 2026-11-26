@@ -755,7 +755,8 @@ class AppOverlay:
         if WINDOWS and maximizar_no_inicio(tile_id):
             self.root.after(500, lambda: self.maximize_app(120))
         # special:external-browser no Windows: a 2ª janela do Edge (pop-up, diálogo
-        # de arquivo, Ctrl+N) não vira o app. O vigia fecha na thread de trabalho.
+        # de arquivo, Ctrl+N) não vira o app. A bolha de download do desenho fica;
+        # o resto fecha na thread de trabalho.
         self.quiosque = None
         self.quiosque_logados = set()
         if WINDOWS:
@@ -1049,6 +1050,15 @@ class AppOverlay:
                     "quiosque: fechei janela extra do Edge ("
                     f"{janela.get('classe')}, {quiosque_edge.titulo_curto(janela.get('titulo'))})"
                 )
+            for janela in self.quiosque.preservadas:
+                hwnd = janela["hwnd"]
+                if hwnd in self.quiosque_logados:
+                    continue
+                self.quiosque_logados.add(hwnd)
+                log_windows(
+                    "quiosque: deixei a bolha de download do Edge ("
+                    f"{janela.get('classe')}, {quiosque_edge.titulo_curto(janela.get('titulo'))})"
+                )
         except Exception as erro:  # noqa: BLE001 — a volta seguinte tenta de novo
             self.log_uma_vez(f"overlay: erro no quiosque: {type(erro).__name__}: {erro}")
 
@@ -1296,7 +1306,7 @@ class AppOverlay:
 
     def _hwnds_do_app(self, pid):
         """Janelas em que o overlay pode mexer. No Edge em quiosque, só a primeira:
-        a segunda (pop-up, diálogo) não é adotada."""
+        a segunda (pop-up, diálogo) não é adotada. A bolha de download também não."""
         if getattr(self, "quiosque", None) is not None:
             return self.quiosque.para_cuidar(win.descrever_janelas(win.arvore(pid)))
         return win.janelas_de(win.arvore(pid))

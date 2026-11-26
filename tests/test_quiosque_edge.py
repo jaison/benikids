@@ -1,4 +1,4 @@
-"""Quiosque do Edge: a moldura não abre outra janela, e o vigia não adota a segunda."""
+"""Quiosque do Edge: a moldura não abre outra janela, a segunda fecha e a bolha fica."""
 import re
 import sys
 import unittest
@@ -19,6 +19,7 @@ def janela(hwnd, classe, titulo="", dono=False, area=0, visivel=True):
 
 QUIOSQUE = janela("quiosque", "Chrome_WidgetWin_1", "Jogo", area=1920 * 1080)
 POPUP = janela("popup", "Chrome_WidgetWin_1", "Powered by Ren'Py", area=800 * 600)
+BOLHA = janela("bolha", "Chrome_WidgetWin_1", "", dono=True, area=400 * 200)
 
 
 class MolduraTests(unittest.TestCase):
@@ -97,6 +98,23 @@ class DecisaoTests(unittest.TestCase):
         self.assertEqual(q.mensagens_para_fechar("Chrome_WidgetWin_1"), [(q.WM_CLOSE, 0)])
         self.assertEqual(q.mensagens_para_fechar("#32768"), [(q.WM_CLOSE, 0)])
 
+    def test_a_bolha_de_download_fica_e_janela_sem_titulo_fecha(self):
+        estado = q.Estado()
+        estado.observar([QUIOSQUE])
+        sem_titulo = janela("nova", "Chrome_WidgetWin_1", "", area=1920 * 1080)
+        grande_com_dono = janela("grande", "Chrome_WidgetWin_1", "", dono=True, area=800 * 600)
+        com_titulo = janela("titulo", "Chrome_WidgetWin_1", "Downloads", dono=True, area=400 * 200)
+        fechadas = [j["hwnd"] for j in estado.observar([sem_titulo, grande_com_dono, com_titulo, BOLHA, QUIOSQUE])]
+        self.assertEqual(set(fechadas), {"nova", "grande", "titulo"})
+        self.assertEqual([j["hwnd"] for j in estado.preservadas], ["bolha"])
+        # a bolha não vira o app
+        self.assertEqual(estado.para_cuidar([BOLHA, QUIOSQUE]), ["quiosque"])
+        self.assertFalse(q.e_bolha_de_download(sem_titulo))
+        self.assertFalse(q.e_bolha_de_download(grande_com_dono))
+        self.assertFalse(q.e_bolha_de_download(com_titulo))
+        self.assertTrue(q.e_bolha_de_download(BOLHA))
+        self.assertTrue(q.e_bolha_de_download(janela("vazia", "Chrome_WidgetWin_1", "  ", dono=True, area=0)))
+
     def test_sumiu_a_do_quiosque_nao_adota_a_que_sobrou(self):
         estado = q.Estado()
         estado.observar([QUIOSQUE])
@@ -106,6 +124,9 @@ class DecisaoTests(unittest.TestCase):
         self.assertEqual(fechadas, ["popup"])
         # na volta seguinte a que sobrou continua não sendo o app
         self.assertEqual(estado.para_cuidar([POPUP]), [])
+        # a bolha que sobrou também não é adotada
+        self.assertEqual(estado.para_cuidar([BOLHA]), [])
+        self.assertEqual(estado.observar([BOLHA]), [])
 
     def test_firefox_nao_entra_no_vigia(self):
         estado = q.Estado()

@@ -37,6 +37,8 @@ class EdgeCommandTest(unittest.TestCase):
             # o id vira nome de pasta: nada de "..", barras ou espaços
             self.assertEqual(external_chromium_profile(root, "../a b/c"), base + "-abc")
             self.assertEqual(external_chromium_profile(root, "/"), base)
+            self.assertEqual(external_chromium_profile(root, "child-1", desenhos=True), base + "-child-1-desenhos")
+            self.assertEqual(external_chromium_profile(root, "", desenhos=True), base + "-desenhos")
 
     def test_edge_command_per_child_without_remote_control(self):
         with tempfile.TemporaryDirectory() as root:
@@ -105,10 +107,65 @@ class EdgeCommandTest(unittest.TestCase):
                     self.assertEqual(dados, esperado)
                 else:
                     self.assertEqual(dados, MINIMO)
+                    self.assertNotIn("download", dados)
             # o Firefox não ganha nada disso
             firefox = external_browser_command("firefox", "https://x.org/", root)
             self.assertFalse(any("disable-features" in arg for arg in firefox))
             self.assertNotIn("--lang=pt-BR", firefox)
+
+    def test_drawing_sites_save_and_the_others_cannot_download(self):
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(politicas_edge, "pasta_imagens", return_value=os.path.join(root, "Imagens")), \
+                mock.patch.object(politicas_edge, "gravar_politica_de_desenhos", return_value=False) as politica:
+            pasta = politicas_edge.pasta_desenhos(os.path.join(root, "Imagens"))
+            for url in ("https://kleki.com/", "https://www.autodraw.com/", "https://colorir-online.com/desenhos"):
+                command = external_browser_command("msedge.exe", url, root, profile_id="child-1")
+                profile = os.path.join(root, "external-chromium-profile-child-1-desenhos")
+                self.assertIn(f"--user-data-dir={profile}", command)
+                recursos = [a for a in command if a.startswith("--disable-features=")]
+                self.assertEqual(
+                    recursos,
+                    ["--disable-features=" + CHROMIUM_RECURSOS_DESLIGADOS + ",DownloadBubble"],
+                )
+                self.assertIn("--lang=pt-BR", command)
+                dados = json.loads((Path(profile) / "Default" / "Preferences").read_text())
+                self.assertNotIn("download_restrictions", dados)
+                self.assertIs(dados["download"]["prompt_for_download"], False)
+                self.assertEqual(dados["download"]["default_directory"], pasta)
+                self.assertIs(dados["download_bubble"]["partial_view_enabled"], False)
+                self.assertEqual(dados["profile"]["default_content_setting_values"], {"popups": 2})
+                self.assertNotIn("automatic_downloads", dados["profile"]["default_content_setting_values"])
+            # um perfil que já tinha o bloqueio: o desenho apaga a chave
+            velho = Path(root) / "external-chromium-profile-child-1-desenhos" / "Default" / "Preferences"
+            dados = json.loads(velho.read_text())
+            dados["download_restrictions"] = 3
+            velho.write_text(json.dumps(dados), encoding="utf-8")
+            external_browser_command("msedge.exe", "https://kleki.com/app", root, profile_id="child-1")
+            limpo = json.loads(velho.read_text())
+            self.assertNotIn("download_restrictions", limpo)
+            # o outro site continua sem pasta de download e no perfil de sempre
+            outro = external_browser_command(
+                "msedge.exe", "https://kiddogames.fun/", root, profile_id="child-1",
+            )
+            perfil_comum = os.path.join(root, "external-chromium-profile-child-1")
+            self.assertIn(f"--user-data-dir={perfil_comum}", outro)
+            self.assertFalse(any("desenhos" in a for a in outro))
+            comum = json.loads((Path(perfil_comum) / "Default" / "Preferences").read_text())
+            self.assertEqual(comum["download_restrictions"], 3)
+            if os.name == "nt":
+                self.assertEqual(comum["download"]["default_directory"], pasta)
+                self.assertIs(comum["download"]["prompt_for_download"], False)
+            else:
+                self.assertNotIn("download", comum)
+            self.assertEqual(
+                [a for a in outro if a.startswith("--disable-features=")],
+                [f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}"],
+            )
+            if os.name == "nt":
+                self.assertGreaterEqual(politica.call_count, 1)
+                self.assertTrue(all(c.args[0] == pasta for c in politica.call_args_list))
+            else:
+                politica.assert_not_called()
 
     def test_firefox_ignores_devtools_port(self):
         with tempfile.TemporaryDirectory() as root:

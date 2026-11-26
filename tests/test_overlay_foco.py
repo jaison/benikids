@@ -528,7 +528,7 @@ class PilulaSemFocoTests(unittest.TestCase):
         janela.lift.assert_called_once()
 
 class QuiosqueNaoAdotaTests(unittest.TestCase):
-    """A segunda janela do Edge não vira o app, e o vigia fecha só ela."""
+    """A segunda janela do Edge não vira o app. A bolha de download não fecha."""
 
     def test_esticar_trazer_e_o_vigia_ficam_com_a_do_quiosque(self):
         import tempfile
@@ -537,10 +537,12 @@ class QuiosqueNaoAdotaTests(unittest.TestCase):
         self.addCleanup(pasta.cleanup)
         popup = {"hwnd": "popup", "classe": "Chrome_WidgetWin_1", "titulo": "Powered by Ren'Py",
                  "dono": False, "area": 800 * 600, "visivel": True}
+        bolha = {"hwnd": "bolha", "classe": "Chrome_WidgetWin_1", "titulo": "",
+                 "dono": True, "area": 400 * 200, "visivel": True}
         quiosque = {"hwnd": "quiosque", "classe": "Chrome_WidgetWin_1", "titulo": "Jogo",
                     "dono": False, "area": 1920 * 1080, "visivel": True}
         falso = mock.Mock()
-        falso.descrever_janelas.return_value = [popup, quiosque]
+        falso.descrever_janelas.return_value = [popup, bolha, quiosque]
         falso.arvore.return_value = [10]
         falso.travada.return_value = False
         falso.esta_maximizada.return_value = True
@@ -575,7 +577,12 @@ class QuiosqueNaoAdotaTests(unittest.TestCase):
             log.count("quiosque: fechei janela extra do Edge (Chrome_WidgetWin_1, Powered by Ren'Py)"),
             1,
         )
+        self.assertEqual(
+            log.count("quiosque: deixei a bolha de download do Edge (Chrome_WidgetWin_1, (sem título))"),
+            1,
+        )
         self.assertNotIn("hwnd popup", log)
+        self.assertNotIn("hwnd bolha", log)
 
 
 if __name__ == "__main__":

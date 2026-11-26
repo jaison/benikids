@@ -169,6 +169,43 @@ class PoliticasTest(unittest.TestCase):
         self.assertEqual(registro.valores["PromptForDownloadLocation"], (registro.REG_DWORD, 0))
         self.assertEqual(registro.raiz, "HKCU")
 
+    def test_so_os_sites_de_desenho_salvam_na_pasta(self):
+        pasta = os.path.join("C:\\Users\\cria", "Pictures", "Desenhos")
+        base = {
+            "download_restrictions": 3,
+            "profile": {"password_manager_enabled": False, "default_content_setting_values": {
+                "popups": 2, "automatic_downloads": 2}},
+        }
+        for url in ("https://kleki.com/", "https://www.kleki.com/x", "https://autodraw.com/",
+                    "https://www.autodraw.com/", "https://colorir-online.com/",
+                    "https://www.colorir-online.com/pt"):
+            prefs = pe.preferencias_de_desenho(base, pasta)
+            self.assertTrue(pe.site_salva_em_desenhos(url), url)
+            self.assertNotIn("download_restrictions", prefs)
+            self.assertEqual(prefs["download"]["default_directory"], pasta)
+            self.assertIs(prefs["download"]["prompt_for_download"], False)
+            self.assertIs(prefs["download_bubble"]["partial_view_enabled"], False)
+            self.assertEqual(prefs["profile"]["default_content_setting_values"], {"popups": 2})
+        self.assertEqual(base["download_restrictions"], 3)  # o dicionário de origem fica
+        for url in ("https://kiddogames.fun/", "https://pt.khanacademy.org/", "https://escolagames.com.br/",
+                    "https://kleki.com.evil/", "", "nao-e-url"):
+            self.assertFalse(pe.site_salva_em_desenhos(url), url)
+
+    def test_falha_no_registro_vai_para_o_log(self):
+        class Registro:
+            HKEY_CURRENT_USER = "HKCU"
+
+            def CreateKey(self, _raiz, _caminho):
+                raise PermissionError("acesso negado")
+
+        with tempfile.TemporaryDirectory() as raiz, mock.patch.object(pe, "_log") as log:
+            destino = os.path.join(raiz, "Desenhos")
+            self.assertFalse(pe.gravar_politica_de_desenhos(destino, winreg=Registro()))
+        texto = log.call_args[0][0]
+        self.assertIn("HKCU", texto)
+        self.assertIn("acesso negado", texto)
+        self.assertIn("preferência do perfil", texto)
+
     def test_gerenciador_de_senhas_desligado(self):
         texto = "\n".join(pe.script_aplicar())
         self.assertIn(

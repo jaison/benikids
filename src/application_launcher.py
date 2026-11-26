@@ -136,18 +136,19 @@ def external_firefox_profile(cache_root, profile_id=""):
     return path
 
 
-def external_chromium_profile(cache_root, profile_id=""):
+def external_chromium_profile(cache_root, profile_id="", desenhos=False):
     """Pasta de dados do Edge/Chrome dos sites de cada criança.
 
     Como no Firefox: o perfil "default" fica na pasta antiga (quem já usava não
     perde os cookies) e cada outra criança tem a sua, para os logins e cookies
-    de irmãos não se misturarem.
+    de irmãos não se misturarem. O desenho (Kleki, Autodraw, Colorir) usa outra
+    pasta, com "-desenhos" no fim: o perfil dos outros sites bloqueia download
+    e esse bloqueio não pode vazar para o desenho.
     """
     base = os.path.join(os.fspath(cache_root), "external-chromium-profile")
     safe = _safe_profile_id(profile_id)
-    if not safe or safe == "default":
-        return base
-    return f"{base}-{safe}"
+    path = base if not safe or safe == "default" else f"{base}-{safe}"
+    return f"{path}-desenhos" if desenhos else path
 
 
 # Preferências do perfil do Edge/Chrome dos sites que o Benikids garante a cada
@@ -160,16 +161,19 @@ def external_chromium_profile(cache_root, profile_id=""):
 #   o login de cada criança). Logins já salvos não são apagados.
 # - download_restrictions=3: neste perfil, nenhum download (o valor do
 #   DownloadRestrictions; aqui é preferência do perfil, não política de
-#   máquina, que atingiria o Edge dos pais). Não há chave em Local State que
+#   máquina, que atingiria o Edge dos pais). O Kleki, o Autodraw e o Colorir
+#   usam outro perfil, sem esta chave. Não há chave em Local State que
 #   desligue o seletor de arquivos ou janela nova.
 # - popups=2 e automatic_downloads=2: o perfil bloqueia window.open e download
-#   automático (2 = bloquear). Ctrl+N e o menu "abrir em nova janela" não passam
-#   por essa chave: o vigia do quiosque fecha a janela.
+#   automático (2 = bloquear). O perfil do desenho tira só o automatic_downloads.
+#   Ctrl+N e o menu "abrir em nova janela" não passam por essa chave: o vigia
+#   do quiosque fecha a janela.
 # Um só --disable-features vale. Translate já estava. DnsOverHttps: o navegador
 # não troca o DNS do Windows (CleanBrowsing) por um DoH próprio.
 # DisableLoadExtensionCommandLineSwitch reabre o --load-extension (a extensão
 # dos sites). FileSystemAccessAPI é o seletor novo (showOpenFilePicker); o
 # diálogo clássico não tem flag — o vigia do quiosque fecha essa janela.
+# No desenho, DownloadBubble entra na mesma lista: o arquivo cai na pasta.
 CHROMIUM_RECURSOS_DESLIGADOS = (
     "Translate,DnsOverHttps,DisableLoadExtensionCommandLineSwitch,FileSystemAccessAPI"
 )
@@ -207,15 +211,18 @@ def _merge_prefs(current, wanted):
     return changed
 
 
-def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
+def ensure_chromium_preferences(profile, wanted=None, apagar=()):
     """Garante as preferências em <perfil>/Default/Preferences antes de abrir o navegador.
 
     O resto do arquivo fica como está. Sem o arquivo (perfil novo), cria só o
     mínimo; o navegador completa o resto. Se o arquivo não for um JSON válido
     (o navegador escrevendo naquela hora), não mexe: na próxima abertura dá. Se
     o Windows não deixar trocar o arquivo (navegador aberto), segue sem ele.
-    Devolve True se gravou.
+    `apagar` tira chaves do primeiro nível (o desenho não pode herdar
+    download_restrictions de um perfil antigo). Devolve True se gravou.
     """
+    if wanted is None:
+        wanted = CHROMIUM_PREFERENCES
     path = os.path.join(os.fspath(profile), "Default", "Preferences")
     try:
         with open(path, encoding="utf-8") as handle:
@@ -226,7 +233,12 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
         return False
     if not isinstance(data, dict):
         return False
-    if not _merge_prefs(data, wanted):
+    changed = _merge_prefs(data, wanted)
+    for chave in apagar:
+        if chave in data:
+            del data[chave]
+            changed = True
+    if not changed:
         return False
     tmp = f"{path}.benikids-tmp"
     try:
@@ -267,13 +279,18 @@ def pasta_extensao_sites(cache_root, url):
     return destino
 
 
-def flags_do_chromium(pastas=()):
+def flags_do_chromium(pastas=(), recursos_a_mais=()):
     """Um --disable-features e, se houver pasta, um --load-extension.
 
     O Chromium ignora a segunda flag de cada. As pastas vão juntas, separadas
     por vírgula. O controle acrescenta a pasta dele na lista; não monta flag.
+    recursos_a_mais entra na mesma lista (o desenho acrescenta DownloadBubble).
     """
-    flags = [f"--disable-features={CHROMIUM_RECURSOS_DESLIGADOS}"]
+    nomes = [parte for parte in CHROMIUM_RECURSOS_DESLIGADOS.split(",") if parte]
+    for extra in recursos_a_mais:
+        if extra and extra not in nomes:
+            nomes.append(extra)
+    flags = ["--disable-features=" + ",".join(nomes)]
     lista = []
     for pasta in pastas:
         if not pasta:
@@ -331,20 +348,33 @@ def external_browser_command(
     """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
-        profile = external_chromium_profile(cache_root, profile_id)
+        # Import local: no Linux o servidor não precisa deste módulo na subida.
+        import politicas_edge
+        desenho = politicas_edge.site_salva_em_desenhos(url)
+        profile = external_chromium_profile(cache_root, profile_id, desenhos=desenho)
         prefs = dict(CHROMIUM_PREFERENCES)
-        if os.name == "nt":
-            # Kleki e os outros sites: Imagens\Desenhos, sem perguntar a pasta e
-            # sem abrir o painel. A política do HKCU vale para o Edge desta conta;
-            # a preferência cobre o perfil que o Benikids abre. O import fica
-            # aqui: no Linux o servidor não precisa deste módulo na subida.
-            # download_restrictions=3 continua no mesmo perfil (quiosque): o
-            # navegador da criança não baixa arquivo.
-            import politicas_edge
+        apagar = ()
+        if desenho:
+            # Perfil próprio: salva em Imagens\Desenhos sem perguntar e sem a
+            # chave que bloqueia todo download. A política do HKCU, se o usuário
+            # puder gravar, aponta a mesma pasta; se não puder, o log avisa e a
+            # preferência deste perfil basta.
+            pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
+            try:
+                os.makedirs(pasta, exist_ok=True)
+            except OSError as erro:
+                politicas_edge._log(f"desenhos: não criei a pasta: {erro}")
+            if os.name == "nt":
+                politicas_edge.gravar_politica_de_desenhos(pasta)
+            prefs = politicas_edge.preferencias_de_desenho(CHROMIUM_PREFERENCES, pasta)
+            apagar = ("download_restrictions",)
+        elif os.name == "nt":
+            # Os outros sites continuam como já estavam: a pasta fica no perfil
+            # que bloqueia download, e o registro aponta o mesmo lugar.
             pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
             politicas_edge.gravar_politica_de_desenhos(pasta)
             prefs.update(politicas_edge.preferencias_downloads(pasta))
-        ensure_chromium_preferences(profile, prefs)
+        ensure_chromium_preferences(profile, prefs, apagar=apagar)
         command = [
             browser,
             f"--user-data-dir={profile}",
@@ -357,7 +387,10 @@ def external_browser_command(
         if extensao:
             extras.append(extensao)
         sites = pasta_extensao_sites(cache_root, url)
-        command += flags_do_chromium(([sites] if sites else []) + extras)
+        # A bolha some no desenho. O vigia ainda poupa a que nascer, senão o
+        # WM_CLOSE cancela o arquivo.
+        a_mais = ("DownloadBubble",) if desenho else ()
+        command += flags_do_chromium(([sites] if sites else []) + extras, a_mais)
         if os.name == "nt":
             _log_windows("navegador: DoH desligado; extensão sites-limpos no perfil do Edge")
         if devtools_port:

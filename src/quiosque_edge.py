@@ -6,6 +6,10 @@ Import/Export, Ctrl+O, Ctrl+S), o de impressão e o menu de contexto nascem
 como outra janela de nível superior da mesma árvore. A criança sai do quiosque
 por elas, e o overlay não pode passar a tratar essa janela como o app.
 
+A bolha de download do desenho também nasce assim (Chrome_WidgetWin_1, sem
+título, pendurada na janela do quiosque, pequena). Fechar essa bolha com
+WM_CLOSE cancela o arquivo. Ela fica; o resto continua fechando.
+
 Este módulo não usa ctypes: a decisão é testável fora do Windows. Quem fecha
 de verdade é o plataforma_windows, com PostMessage (não espera o outro app,
 sem AttachThreadInput), na thread de trabalho do overlay.
@@ -14,6 +18,11 @@ sem AttachThreadInput), na thread de trabalho do overlay.
 WM_CLOSE = 0x0010
 WM_COMMAND = 0x0111
 IDCANCEL = 2
+
+# A bolha cabe num canto (por volta de 400×300; uma lista longa chega perto
+# de 520×420). Uma janela de página, mesmo sem título e com dono, é maior
+# e continua fechando.
+BOLHA_AREA_MAXIMA = 520 * 420
 
 # O Edge hospeda a janela de digitação. Fechar isso tira o teclado do jogo
 # (o nome da boneca, um campo do site). O resto da árvore, visível e de nível
@@ -33,6 +42,26 @@ def titulo_curto(titulo, limite=40):
     if len(texto) <= limite:
         return texto
     return texto[: limite - 1] + "…"
+
+
+def e_bolha_de_download(janela):
+    """A bolha de download: Chrome sem título, com dono e pequena.
+
+    Janela nova sem título e sem dono, ou grande, continua sendo extra e fecha.
+    O diálogo Salvar como é #32770, não entra aqui.
+    """
+    classe = str(janela.get("classe") or "")
+    if not classe.startswith("Chrome_WidgetWin"):
+        return False
+    if " ".join(str(janela.get("titulo") or "").split()):
+        return False
+    if not janela.get("dono"):
+        return False
+    try:
+        area = int(janela.get("area") or 0)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= area <= BOLHA_AREA_MAXIMA
 
 
 def mensagens_para_fechar(classe):
@@ -59,21 +88,33 @@ def _maior(navegadores):
     return escolhida[1]["hwnd"]
 
 
+def _classificar(janela, principal, fechar, preservar):
+    """True se a janela não entra em fechar (é o quiosque, o IME ou a bolha)."""
+    if janela["hwnd"] == principal:
+        return True
+    if janela.get("classe") in CLASSES_INTOCADAS:
+        return True
+    if e_bolha_de_download(janela):
+        preservar.append(janela)
+        return True
+    return False
+
+
 def analisar(principal, janelas):
     """principal: hwnd já travado do quiosque, ou None.
 
     janelas: hwnd, classe, titulo, dono, area, visivel (faltou visivel = está).
     Ordem Z, a da frente primeiro.
 
-    Devolve (principal, fechar, edge).
+    Devolve (principal, fechar, edge, preservar).
     - edge False: não há janela Chrome_WidgetWin (Firefox, ou o Edge ainda não
       mostrou a dele). Não fecha nada; o overlay segue com as janelas sem dono.
     - Com a do quiosque ainda na lista: ela fica, e toda outra janela visível
       (segunda janela do navegador, #32770, menu) entra em fechar. A de digitar
-      (CLASSES_INTOCADAS) não.
+      (CLASSES_INTOCADAS) e a bolha de download não.
     - Se o hwnd travado sumiu e sobrou outra janela de navegador: não adota
-      nenhuma. Fecha todas. O hwnd antigo continua travado para a próxima volta
-      não eleger a que sobrou.
+      nenhuma. Fecha todas, menos a bolha. O hwnd antigo continua travado para
+      a próxima volta não eleger a que sobrou.
     - Se o hwnd sumiu e não há outra de navegador: espera (pode ser um pisca).
       Diálogo que tenha ficado ainda fecha.
     """
@@ -81,26 +122,25 @@ def analisar(principal, janelas):
     navegadores = [j for j in vivas if _navegador(j)]
     hwnds = {j["hwnd"] for j in navegadores}
     edge = principal is not None or bool(navegadores)
+    preservar = []
     if not edge:
-        return None, [], False
+        return None, [], False, preservar
     if principal is None:
         principal = navegadores[0]["hwnd"] if len(navegadores) == 1 else _maior(navegadores)
     fechar = []
     quiosque_na_lista = principal in hwnds
     if quiosque_na_lista or not navegadores:
         for janela in vivas:
-            if janela["hwnd"] == principal:
-                continue
-            if janela.get("classe") in CLASSES_INTOCADAS:
+            if _classificar(janela, principal, fechar, preservar):
                 continue
             fechar.append(janela)
     else:
-        # a do quiosque não está e há outras de navegador: fecha todas
+        # a do quiosque não está e há outras de navegador: fecha todas, menos a bolha
         for janela in vivas:
-            if janela.get("classe") in CLASSES_INTOCADAS:
+            if _classificar(janela, principal, fechar, preservar):
                 continue
             fechar.append(janela)
-    return principal, fechar, True
+    return principal, fechar, True, preservar
 
 
 class Estado:
@@ -109,10 +149,11 @@ class Estado:
     def __init__(self):
         self.principal = None
         self.edge = False
+        self.preservadas = []
 
     def observar(self, janelas):
         """Atualiza o hwnd travado. Devolve as janelas a fechar nesta volta."""
-        self.principal, fechar, self.edge = analisar(self.principal, janelas)
+        self.principal, fechar, self.edge, self.preservadas = analisar(self.principal, janelas)
         return fechar
 
     def para_cuidar(self, janelas):
