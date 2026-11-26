@@ -36,6 +36,8 @@ class EdgeCommandTest(unittest.TestCase):
             # o id vira nome de pasta: nada de "..", barras ou espaços
             self.assertEqual(external_chromium_profile(root, "../a b/c"), base + "-abc")
             self.assertEqual(external_chromium_profile(root, "/"), base)
+            self.assertEqual(external_chromium_profile(root, "child-1", desenhos=True), base + "-child-1-desenhos")
+            self.assertEqual(external_chromium_profile(root, "", desenhos=True), base + "-desenhos")
 
     def test_edge_command_per_child_without_remote_control(self):
         with tempfile.TemporaryDirectory() as root:
@@ -93,17 +95,57 @@ class EdgeCommandTest(unittest.TestCase):
                                  ["--disable-features=Translate"])
                 prefs = Path(external_chromium_profile(root, profile_id)) / "Default" / "Preferences"
                 dados = json.loads(prefs.read_text())
-                if os.name == "nt":
-                    # no Windows o comando também grava a pasta Imagens\Desenhos
-                    pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
-                    esperado = dict(MINIMO)
-                    esperado.update(politicas_edge.preferencias_downloads(pasta))
-                    self.assertEqual(dados, esperado)
-                else:
-                    self.assertEqual(dados, MINIMO)
+                self.assertEqual(dados, MINIMO)
+                self.assertNotIn("download", dados)
             # o Firefox não ganha nada disso
             firefox = external_browser_command("firefox", "https://x.org/", root)
             self.assertFalse(any("disable-features" in arg for arg in firefox))
+
+    def test_drawing_sites_save_and_the_others_cannot_download(self):
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(politicas_edge, "pasta_imagens", return_value=os.path.join(root, "Imagens")), \
+                mock.patch.object(politicas_edge, "gravar_politica_de_desenhos", return_value=False) as politica:
+            pasta = politicas_edge.pasta_desenhos(os.path.join(root, "Imagens"))
+            for url in ("https://kleki.com/", "https://www.autodraw.com/", "https://colorir-online.com/desenhos"):
+                command = external_browser_command("msedge.exe", url, root, profile_id="child-1")
+                profile = os.path.join(root, "external-chromium-profile-child-1-desenhos")
+                self.assertIn(f"--user-data-dir={profile}", command)
+                recursos = [a for a in command if a.startswith("--disable-features=")]
+                self.assertEqual(recursos, ["--disable-features=Translate,DownloadBubble,FileSystemAccessAPI"])
+                dados = json.loads((Path(profile) / "Default" / "Preferences").read_text())
+                self.assertNotIn("download_restrictions", dados)
+                self.assertIs(dados["download"]["prompt_for_download"], False)
+                self.assertEqual(dados["download"]["default_directory"], pasta)
+                self.assertIs(dados["download_bubble"]["partial_view_enabled"], False)
+                self.assertEqual(dados["profile"]["default_content_setting_values"], {"popups": 2})
+                self.assertNotIn("automatic_downloads", dados["profile"]["default_content_setting_values"])
+            # um perfil que já tinha o bloqueio: o desenho apaga a chave
+            velho = Path(root) / "external-chromium-profile-child-1-desenhos" / "Default" / "Preferences"
+            dados = json.loads(velho.read_text())
+            dados["download_restrictions"] = 3
+            velho.write_text(json.dumps(dados), encoding="utf-8")
+            external_browser_command("msedge.exe", "https://kleki.com/app", root, profile_id="child-1")
+            limpo = json.loads(velho.read_text())
+            self.assertNotIn("download_restrictions", limpo)
+            # o outro site continua sem pasta de download e no perfil de sempre
+            outro = external_browser_command(
+                "msedge.exe", "https://kiddogames.fun/", root, profile_id="child-1",
+            )
+            perfil_comum = os.path.join(root, "external-chromium-profile-child-1")
+            self.assertIn(f"--user-data-dir={perfil_comum}", outro)
+            self.assertFalse(any("desenhos" in a for a in outro))
+            comum = json.loads((Path(perfil_comum) / "Default" / "Preferences").read_text())
+            self.assertEqual(comum["download_restrictions"], 3)
+            self.assertNotIn("download", comum)
+            self.assertEqual(
+                [a for a in outro if a.startswith("--disable-features=")],
+                ["--disable-features=Translate"],
+            )
+            if os.name == "nt":
+                self.assertGreaterEqual(politica.call_count, 1)
+                self.assertTrue(all(c.args[0] == pasta for c in politica.call_args_list))
+            else:
+                politica.assert_not_called()
 
     def test_firefox_ignores_devtools_port(self):
         with tempfile.TemporaryDirectory() as root:
@@ -115,7 +157,11 @@ class EdgeCommandTest(unittest.TestCase):
 MINIMO = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
-    "profile": {"password_manager_enabled": False},
+    "download_restrictions": 3,
+    "profile": {
+        "password_manager_enabled": False,
+        "default_content_setting_values": {"popups": 2, "automatic_downloads": 2},
+    },
 }
 
 
@@ -151,7 +197,9 @@ class EdgePreferencesTest(unittest.TestCase):
         expected = json.loads(json.dumps(original))
         expected["translate"]["enabled"] = False
         expected["credentials_enable_service"] = False
+        expected["download_restrictions"] = 3
         expected["profile"]["password_manager_enabled"] = False  # name e exit_type ficam
+        expected["profile"]["default_content_setting_values"] = {"popups": 2, "automatic_downloads": 2}
         self.assertEqual(data, expected)
 
     def test_password_manager_is_turned_off_without_touching_saved_logins(self):
@@ -161,7 +209,10 @@ class EdgePreferencesTest(unittest.TestCase):
         self.assertTrue(ensure_chromium_preferences(self.profile))
         data = json.loads(self.prefs.read_text())
         self.assertIs(data["credentials_enable_service"], False)
-        self.assertEqual(data["profile"], {"password_manager_enabled": False, "name": "P"})
+        self.assertEqual(data["profile"]["password_manager_enabled"], False)
+        self.assertEqual(data["profile"]["name"], "P")
+        self.assertEqual(data["download_restrictions"], 3)
+        self.assertEqual(data["profile"]["default_content_setting_values"]["automatic_downloads"], 2)
         # o mantenedor decidiu não apagar o que o Edge já salvou
         self.assertEqual(login_data.read_bytes(), b"logins salvos")
 

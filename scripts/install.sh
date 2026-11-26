@@ -1629,6 +1629,8 @@ backup_if_exists "$APP_DESKTOP_FILE"
 render_template "$SRC_DIR/server.py" "$SERVER_FILE" 0644
 install -m 0644 "$SRC_DIR/app_detection.py" "$APP_ROOT/app_detection.py"
 install -m 0644 "$SRC_DIR/application_launcher.py" "$APP_ROOT/application_launcher.py"
+install -m 0644 "$SRC_DIR/politicas_edge.py" "$APP_ROOT/politicas_edge.py"
+install -m 0644 "$SRC_DIR/quiosque_edge.py" "$APP_ROOT/quiosque_edge.py"
 install -m 0644 "$SRC_DIR/activity_store.py" "$APP_ROOT/activity_store.py"
 install -m 0644 "$SRC_DIR/backup_store.py" "$APP_ROOT/backup_store.py"
 install -m 0644 "$SRC_DIR/browser_policy.py" "$APP_ROOT/browser_policy.py"

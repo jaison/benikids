@@ -127,18 +127,19 @@ def external_firefox_profile(cache_root, profile_id=""):
     return path
 
 
-def external_chromium_profile(cache_root, profile_id=""):
+def external_chromium_profile(cache_root, profile_id="", desenhos=False):
     """Pasta de dados do Edge/Chrome dos sites de cada criança.
 
     Como no Firefox: o perfil "default" fica na pasta antiga (quem já usava não
     perde os cookies) e cada outra criança tem a sua, para os logins e cookies
-    de irmãos não se misturarem.
+    de irmãos não se misturarem. O desenho (Kleki, Autodraw, Colorir) usa outra
+    pasta, com "-desenhos" no fim: o perfil dos outros sites bloqueia download
+    e esse bloqueio não pode vazar para o desenho.
     """
     base = os.path.join(os.fspath(cache_root), "external-chromium-profile")
     safe = _safe_profile_id(profile_id)
-    if not safe or safe == "default":
-        return base
-    return f"{base}-{safe}"
+    path = base if not safe or safe == "default" else f"{base}-{safe}"
+    return f"{path}-desenhos" if desenhos else path
 
 
 # Preferências do perfil do Edge/Chrome dos sites que o Benikids garante a cada
@@ -149,10 +150,22 @@ def external_chromium_profile(cache_root, profile_id=""):
 # - gerenciador de senhas desligado: o Edge não oferece salvar a senha nem
 #   preenche sozinho um login salvo à mão (quem entra é o login automático, com
 #   o login de cada criança). Logins já salvos não são apagados.
+# - download_restrictions=3: neste perfil, nenhum download (preferência do
+#   perfil, não política de máquina, que atingiria o Edge dos pais). O Kleki e
+#   os outros desenhos usam outro perfil, sem esta chave.
+# - popups=2 e automatic_downloads=2: bloqueia window.open e download automático
+#   (2 = bloquear). O perfil do desenho tira só o automatic_downloads.
 CHROMIUM_PREFERENCES = {
     "translate": {"enabled": False},
     "credentials_enable_service": False,
-    "profile": {"password_manager_enabled": False},
+    "download_restrictions": 3,
+    "profile": {
+        "password_manager_enabled": False,
+        "default_content_setting_values": {
+            "popups": 2,
+            "automatic_downloads": 2,
+        },
+    },
 }
 
 
@@ -171,15 +184,18 @@ def _merge_prefs(current, wanted):
     return changed
 
 
-def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
+def ensure_chromium_preferences(profile, wanted=None, apagar=()):
     """Garante as preferências em <perfil>/Default/Preferences antes de abrir o navegador.
 
     O resto do arquivo fica como está. Sem o arquivo (perfil novo), cria só o
     mínimo; o navegador completa o resto. Se o arquivo não for um JSON válido
     (o navegador escrevendo naquela hora), não mexe: na próxima abertura dá. Se
     o Windows não deixar trocar o arquivo (navegador aberto), segue sem ele.
-    Devolve True se gravou.
+    `apagar` tira chaves do primeiro nível (o desenho não pode herdar
+    download_restrictions de um perfil antigo). Devolve True se gravou.
     """
+    if wanted is None:
+        wanted = CHROMIUM_PREFERENCES
     path = os.path.join(os.fspath(profile), "Default", "Preferences")
     try:
         with open(path, encoding="utf-8") as handle:
@@ -190,7 +206,12 @@ def ensure_chromium_preferences(profile, wanted=CHROMIUM_PREFERENCES):
         return False
     if not isinstance(data, dict):
         return False
-    if not _merge_prefs(data, wanted):
+    changed = _merge_prefs(data, wanted)
+    for chave in apagar:
+        if chave in data:
+            del data[chave]
+            changed = True
+    if not changed:
         return False
     tmp = f"{path}.benikids-tmp"
     try:
@@ -218,25 +239,38 @@ def external_browser_command(
     """
     cache_root = os.fspath(cache_root)
     if browser_family(browser) == "chromium":
-        profile = external_chromium_profile(cache_root, profile_id)
-        prefs = dict(CHROMIUM_PREFERENCES)
-        if os.name == "nt":
-            # Kleki e os outros sites: Imagens\\Desenhos, sem perguntar a pasta e
-            # sem abrir o painel. A política do HKCU vale para o Edge desta conta;
-            # a preferência cobre o perfil que o Benikids abre.
+        desenho = politicas_edge.site_salva_em_desenhos(url)
+        profile = external_chromium_profile(cache_root, profile_id, desenhos=desenho)
+        prefs = CHROMIUM_PREFERENCES
+        apagar = ()
+        if desenho:
+            # Perfil próprio: salva em Imagens\Desenhos sem perguntar e sem a
+            # chave que bloqueia todo download. A política do HKCU, se o usuário
+            # puder gravar, aponta a mesma pasta; se não puder, o log avisa e a
+            # preferência deste perfil basta.
             pasta = politicas_edge.pasta_desenhos(politicas_edge.pasta_imagens())
-            politicas_edge.gravar_politica_de_desenhos(pasta)
-            prefs.update(politicas_edge.preferencias_downloads(pasta))
-        ensure_chromium_preferences(profile, prefs)
+            try:
+                os.makedirs(pasta, exist_ok=True)
+            except OSError as erro:
+                politicas_edge._log(f"desenhos: não criei a pasta: {erro}")
+            if os.name == "nt":
+                politicas_edge.gravar_politica_de_desenhos(pasta)
+            prefs = politicas_edge.preferencias_de_desenho(CHROMIUM_PREFERENCES, pasta)
+            apagar = ("download_restrictions",)
+        ensure_chromium_preferences(profile, prefs, apagar=apagar)
+        # Só um --disable-features vale. Translate reforça a preferência. No
+        # desenho, a bolha de download e o seletor novo de arquivo ficam
+        # desligados: o arquivo cai na pasta, sem janela e sem "Salvar como".
+        recursos = ["Translate"]
+        if desenho:
+            recursos += ["DownloadBubble", "FileSystemAccessAPI"]
         command = [
             browser,
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-session-crashed-bubble",
             f"--host-resolver-rules={chromium_host_resolver_rules()}",
-            # reforço da preferência translate.enabled=false (só um --disable-features
-            # vale: some outra função desligada aqui, na mesma lista)
-            "--disable-features=Translate",
+            "--disable-features=" + ",".join(recursos),
         ]
         if devtools_port:
             # login automático (site_logins.py, DevTools Protocol): só neste tile,

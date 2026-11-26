@@ -520,5 +520,64 @@ class PilulaSemFocoTests(unittest.TestCase):
         janela.winfo_id.assert_not_called()
         janela.lift.assert_called_once()
 
+
+class QuiosqueNaoAdotaTests(unittest.TestCase):
+    """A segunda janela do Edge não vira o app. A bolha de download não fecha."""
+
+    def test_esticar_trazer_e_o_vigia_ficam_com_a_do_quiosque(self):
+        import tempfile
+
+        pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(pasta.cleanup)
+        popup = {"hwnd": "popup", "classe": "Chrome_WidgetWin_1", "titulo": "Powered by Ren'Py",
+                 "dono": False, "area": 800 * 600, "visivel": True}
+        bolha = {"hwnd": "bolha", "classe": "Chrome_WidgetWin_1", "titulo": "",
+                 "dono": True, "area": 400 * 200, "visivel": True}
+        quiosque = {"hwnd": "quiosque", "classe": "Chrome_WidgetWin_1", "titulo": "Jogo",
+                    "dono": False, "area": 1920 * 1080, "visivel": True}
+        falso = mock.Mock()
+        falso.descrever_janelas.return_value = [popup, bolha, quiosque]
+        falso.arvore.return_value = [10]
+        falso.travada.return_value = False
+        falso.esta_maximizada.return_value = True
+        falso.retangulo.return_value = (-8, -8, 2568, 1048)
+        falso.areas_do_monitor.return_value = (TRABALHO, MONITOR)
+        falso.sem_moldura.return_value = False
+        falso.tela_cheia_sem_moldura.return_value = 1
+        falso.JANELAS = DePeFalso()
+        falso.ULTIMO_JEITO = ["direto"]
+        o = overlay.AppOverlay.__new__(overlay.AppOverlay)
+        o.closing = False
+        o.erros_logados = set()
+        o.quiosque = overlay.quiosque_edge.Estado()
+        o.quiosque_logados = set()
+        o.de_pe = overlay.janelas_seguras.DePe(segundos=0)
+        with mock.patch.object(overlay, "win", falso, create=True), \
+                mock.patch.object(overlay, "CACHE_DIR", pasta.name), \
+                mock.patch.object(overlay, "owned_process", return_value={"pid": 10}):
+            o.passo_da_tela_cheia(overlay.TelaCheia(), {})
+            o.trazer_app(10)
+            o.passo_do_quiosque()
+            o.passo_do_quiosque()
+            log = Path(pasta.name, "beni-windows.log").read_text(encoding="utf-8")
+        falso.tela_cheia_sem_moldura.assert_called_once()
+        self.assertEqual(falso.tela_cheia_sem_moldura.call_args[0][0], "quiosque")
+        falso.trazer_para_frente.assert_called_once_with("quiosque")
+        self.assertEqual(
+            [c.args for c in falso.fechar_extra.call_args_list],
+            [("popup", "Chrome_WidgetWin_1"), ("popup", "Chrome_WidgetWin_1")],
+        )
+        self.assertEqual(
+            log.count("quiosque: fechei janela extra do Edge (Chrome_WidgetWin_1, Powered by Ren'Py)"),
+            1,
+        )
+        self.assertEqual(
+            log.count("quiosque: deixei a bolha de download do Edge (Chrome_WidgetWin_1, (sem título))"),
+            1,
+        )
+        self.assertNotIn("hwnd popup", log)
+        self.assertNotIn("hwnd bolha", log)
+
+
 if __name__ == "__main__":
     unittest.main()

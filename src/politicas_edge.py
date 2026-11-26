@@ -21,10 +21,13 @@ Desfazer (não há desinstalador no Windows): `python politicas_edge.py desfazer
 pede o UAC e tira só o que o Benikids pôs.
 """
 
+import copy
 import os
 import subprocess
 import sys
 import tempfile
+import time
+from urllib.parse import urlparse
 
 RAIZ = r"HKLM:\SOFTWARE\Policies\Microsoft\Edge"
 RAIZ_WINREG = r"SOFTWARE\Policies\Microsoft\Edge"
@@ -112,6 +115,36 @@ def pasta_desenhos(imagens):
     return os.path.join(imagens, "Desenhos")
 
 
+# Sites de desenho que salvam em Imagens\Desenhos (o mesmo destino do Firefox no
+# Linux). Os outros sites do quiosque não baixam nada.
+SITES_DE_DESENHO = ("kleki.com", "autodraw.com", "colorir-online.com")
+
+
+def _log(texto):
+    """Uma linha no beni-windows.log. A falha da política não pode sumir calada."""
+    try:
+        caminho = os.path.join(os.path.expanduser("~"), ".cache", "cozy-kids-launcher", "beni-windows.log")
+        with open(caminho, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + texto + "\n")
+    except OSError:
+        pass
+
+
+def host_do_site(url):
+    """Host do site, sem www e em minúsculas. URL estranha vira texto vazio."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def site_salva_em_desenhos(url):
+    """True só para o Kleki, o Autodraw e o Colorir."""
+    host = host_do_site(url)
+    return any(host == dominio or host.endswith("." + dominio) for dominio in SITES_DE_DESENHO)
+
+
 def preferencias_downloads(pasta):
     """Preferências do perfil do Edge, o equivalente ao user.js do Firefox.
 
@@ -125,10 +158,31 @@ def preferencias_downloads(pasta):
     }
 
 
+def preferencias_de_desenho(base, pasta):
+    """Preferências do perfil só do desenho: salva em `pasta` sem perguntar.
+
+    Tira download_restrictions (3 bloqueia todo download) e o bloqueio de
+    download automático. O bloqueio de pop-up fica. Não mexe no dicionário base.
+    """
+    prefs = copy.deepcopy(base)
+    prefs.pop("download_restrictions", None)
+    perfil = prefs.get("profile")
+    if isinstance(perfil, dict):
+        ajustes = perfil.get("default_content_setting_values")
+        if isinstance(ajustes, dict):
+            ajustes.pop("automatic_downloads", None)
+            if not ajustes:
+                perfil.pop("default_content_setting_values", None)
+    prefs.update(preferencias_downloads(pasta))
+    return prefs
+
+
 def gravar_politica_de_desenhos(pasta, winreg=None):
     """HKCU do usuário atual: baixa em `pasta` sem perguntar. Não precisa de UAC.
 
     Devolve True se gravou. Fora do Windows, False (a preferência do perfil cobre).
+    Um usuário comum não consegue criar HKCU\\Software\\Policies: a falha vai
+    para o log, e o perfil do desenho salva mesmo assim.
     """
     if winreg is None:
         if os.name != "nt":
@@ -139,7 +193,11 @@ def gravar_politica_de_desenhos(pasta, winreg=None):
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RAIZ_USUARIO) as chave:
             winreg.SetValueEx(chave, "DownloadDirectory", 0, winreg.REG_SZ, pasta)
             winreg.SetValueEx(chave, "PromptForDownloadLocation", 0, winreg.REG_DWORD, 0)
-    except OSError:
+    except OSError as erro:
+        _log(
+            "desenhos: não gravei a pasta no registro do usuário "
+            f"(HKCU\\{RAIZ_USUARIO}): {erro}. O desenho usa a preferência do perfil."
+        )
         return False
     return True
 
