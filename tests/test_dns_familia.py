@@ -84,8 +84,11 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertIn("Benikids-DnsLog $resumo", texto)
         self.assertIn(dns.ANTERIOR, texto)
         self.assertLess(texto.index("-Value 0"), texto.index("$resto = Benikids-RestaurarPendentes"))
-        self.assertLess(texto.index("-Value 0"), texto.rindex("-ResetServerAddresses"))
-        self.assertLess(texto.index("Benikids-DnsLog $resumo"), texto.index("nao atualizou o script"))
+        self.assertIn("source=dhcp", texto)
+        self.assertIn("validate=no", texto)
+        resto = texto.index("$resto = Benikids-RestaurarPendentes")
+        self.assertLess(texto.index("nao atualizou o script"), resto)
+        self.assertLess(resto, texto.index("Benikids-DnsLog $resumo", resto))
         executado = texto.split("@'", 1)[0] + texto.split("\n'@", 1)[-1]
         self.assertNotIn("185.228.168.168", executado)
         self.assertNotIn("2a0d:2a00:1::", executado)
@@ -93,34 +96,40 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertIn("Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Google\\Chrome' -Name 'DnsOverHttpsMode'", texto)
         self.assertIn("Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Chromium' -Name 'DnsOverHttpsMode'", texto)
         self.assertNotIn("-Value 'off'", texto)
-        self.assertNotIn("Unregister-ScheduledTask", texto)
+        self.assertLess(texto.index("-Value 0"), texto.index("Unregister-ScheduledTask"))
+        self.assertLess(
+            texto.index("Unregister-ScheduledTask"),
+            texto.index("$resto = Benikids-RestaurarPendentes"),
+        )
         self.assertNotIn("exit-kids", texto)
-        self.assertNotIn("Exception.Message", texto)
+        self.assertIn("Exception.Message", texto)
 
     def test_ipv6_sem_cleanbrowsing_fica_sem_servidor(self):
         texto = dns.script_da_tarefa()
         self.assertNotIn("ipv6 ignorado", texto)
         # o reset automático devolveria o DNS do roteador; ao pôr o filtro, não
-        aplicar = texto[texto.index("-ServerAddresses $v4"):]
-        self.assertNotIn("-ResetServerAddresses", aplicar)
+        self.assertNotIn("-ResetServerAddresses", texto)
         self.assertIn("address=none", texto)
         self.assertIn("ipv6 sem cleanbrowsing", texto)
         self.assertIn("ipv6 sem servidor (o do roteador nao vale)", texto)
         self.assertIn("ipv6 continua com o dns anterior", texto)
         # só esvazia se não conseguiu pôr o CleanBrowsing, e não quando já está vazio à toa
-        self.assertLess(texto.index("ipv6 sem cleanbrowsing"), texto.index("address=none"))
-        self.assertLess(texto.index("$ok6 = $false"), texto.index("address=none"))
+        depois = texto.index("$ok6 = $false")
+        self.assertLess(texto.index("ipv6 sem cleanbrowsing"), texto.index("address=none", depois))
+        self.assertLess(depois, texto.index("address=none", depois))
 
-    def test_tarefa_restaura_se_sobrou_json_e_nao_poe_o_filtro(self):
+    def test_tarefa_desligada_nao_le_o_json_nem_poe_o_filtro(self):
         texto = dns.script_da_tarefa()
-        bloco = texto[texto.index("if ($ligado -ne 1)"):texto.index("-ServerAddresses $v4")]
-        self.assertIn("$resto = Benikids-RestaurarPendentes", bloco)
-        self.assertIn("Test-Path -LiteralPath $Anterior", bloco)
+        bloco = texto[texto.index("if ($ligado -ne 1)"):texto.index("Benikids-FixarIpv4 $i")]
         self.assertIn("exit 0", bloco)
-        self.assertIn("(uma rede nao voltou)", bloco)
-        self.assertNotIn("-ServerAddresses $v4", bloco)
-        self.assertIn("if ($r4 -eq 'erro' -or $r6 -eq 'erro') { $ficam[$guid] = $item }", texto)
-        self.assertIn("if (-not $vistos.ContainsKey($guid)) { $ficam[$guid] = $map[$guid] }", texto)
+        self.assertNotIn("RestaurarPendentes", bloco)
+        self.assertNotIn("Set-DnsClientServerAddress", bloco)
+        self.assertNotIn("netsh", bloco)
+        self.assertNotIn("$Anterior", bloco)
+        desligar = "\n".join(dns.linhas_desligar())
+        self.assertIn("if ($r4 -eq 'erro' -or $r6 -eq 'erro') { $ficam[$guid] = $item }", desligar)
+        self.assertIn("if (-not $vistos.ContainsKey($guid)) { $ficam[$guid] = $map[$guid] }", desligar)
+        self.assertIn("(uma rede nao voltou)", desligar)
 
     def test_leitura(self):
         self.assertEqual(dns.ler(WinregFalso(None)), {"ligado": False, "configurado": False})
@@ -143,17 +152,21 @@ class DnsFamiliaTest(unittest.TestCase):
         for ip in dns.IPV6_PLACEHOLDER:
             self.assertIn(ip, texto)
         self.assertNotIn("2a0d:2a00:1::1", texto)
-        self.assertNotIn("Exception.Message", texto)
+        self.assertIn("Exception.Message", texto)
+        self.assertIn("$script:BenikidsGravou", texto)
         self.assertNotIn("\n'@", texto)
-        gravar = texto.index("Benikids-GravarAnterior $map")
-        ipv4 = texto.index("Set-DnsClientServerAddress -InterfaceIndex $i -AddressFamily IPv4")
+        gravar = texto.index("Benikids-GravarAnterior $map | Out-Null")
+        fixar = texto.index("Benikids-FixarIpv4 $i $nome $guid $v4")
         ipv6 = texto.index("Set-DnsClientServerAddress -InterfaceIndex $i -AddressFamily IPv6")
-        self.assertLess(gravar, ipv4)
+        self.assertLess(gravar, fixar)
         self.assertLess(texto.index("$r6 = 'sem-ipv6'"), ipv6)
-        self.assertLess(ipv4, ipv6)
+        self.assertLess(fixar, ipv6)
         self.assertLess(texto.index("if ($ligado -ne 1)"), texto.index("if (-not (Benikids-Ligado))"))
-        self.assertLess(texto.index("\n  exit 0\n"), texto.index("-ServerAddresses $v4"))
+        self.assertLess(texto.index("\n  exit 0\n"), fixar)
         self.assertIn("if (-not $parou -and ($Marca -or $mudou))", texto)
+        self.assertIn("Tailscale|Wintun|WireGuard", texto)
+        self.assertIn("virtual, sem mexer", texto)
+        self.assertIn("validate=no", texto)
 
     def test_linha_de_log_nao_leva_ip_nem_resultado_velho(self):
         self.assertEqual(
@@ -207,13 +220,20 @@ class DnsFamiliaTest(unittest.TestCase):
     def test_nao_troca_o_dns_se_nao_gravou_o_anterior(self):
         texto = dns.script_da_tarefa()
         self.assertIn("$Anterior + '.tmp'", texto)
-        self.assertIn("Move-Item -LiteralPath $tmp -Destination $Anterior -Force -ErrorAction Stop", texto)
+        # 5.1: Move-Item -Force não substitui. Apaga o destino e aí move.
+        self.assertLess(
+            texto.index("Remove-Item -LiteralPath $Anterior -Force -ErrorAction Stop"),
+            texto.index("Move-Item -LiteralPath $tmp -Destination $Anterior -ErrorAction Stop"),
+        )
+        self.assertNotIn("Move-Item -LiteralPath $tmp -Destination $Anterior -Force", texto)
         self.assertIn("return $false", texto)
         self.assertLess(texto.index("acl do arquivo de dns falhou"), texto.index("return $false"))
-        gravar = texto.index("if (-not (Benikids-GravarAnterior $map))")
+        gravar = texto.index("if (-not $script:BenikidsGravou)")
+        self.assertLess(texto.index("Benikids-GravarAnterior $map | Out-Null"), gravar)
         self.assertLess(texto.index("if (-not $podeGuardar)"), gravar)
-        self.assertLess(texto.index("continue", gravar), texto.index("-ServerAddresses $v4"))
+        self.assertLess(texto.index("continue", gravar), texto.index("Benikids-FixarIpv4 $i"))
         self.assertIn("ipv4=erro ipv6=sem-ipv6", texto)
+        self.assertIn("nao guardou o dns anterior: ", texto)
 
     def test_aviso_e_log_quando_alguma_placa_fica_em_erro(self):
         resumo = "desligado Ethernet ipv4=erro ipv6=restaurado (uma rede nao voltou)"
@@ -221,7 +241,8 @@ class DnsFamiliaTest(unittest.TestCase):
         self.assertIn("nao voltou", linha)
         self.assertIn("ipv4=erro", linha)
         self.assertIn("não voltou", dns.aviso_para_os_pais(False, resumo))
-        self.assertIn("guardar", dns.aviso_para_os_pais(True, "ligado Wi-Fi ipv4=erro ipv6=sem-ipv6"))
+        self.assertIn("filtro não entrou", dns.aviso_para_os_pais(True, "ligado Wi-Fi ipv4=erro ipv6=sem-ipv6"))
+        self.assertNotIn("sozinho", dns.aviso_para_os_pais(False, resumo))
         self.assertEqual(
             dns.aviso_para_os_pais(False, "desligado Ethernet ipv4=restaurado ipv6=automatico"),
             "",
