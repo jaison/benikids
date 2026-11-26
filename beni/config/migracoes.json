@@ -279,6 +279,19 @@
           "perfis": "todos"
         }
       ]
+    },
+    {
+      "id": "2026-11-26-gcompris-aprender",
+      "descricao": "GCompris (Jogos educativos) passa de Passatempo para Aprender, para valer a pausa do Aprender parado",
+      "operacoes": [
+        {
+          "op": "atualizar_tile",
+          "id": "games",
+          "campos": {
+            "category": "educativo"
+          }
+        }
+      ]
     }
   ]
 }
