@@ -11,8 +11,11 @@ a não ser que a migração diga exatamente isso.
                                                       config novo (já veio com tudo)
 
 Operações (campo "op"); "perfis" = "todos" (padrão) ou lista de ids de perfil:
-  adicionar_tile  {tile:{id,label,emoji,cmd,visible,category}, depois_de?: id}
-                  não faz nada se o perfil já tem um tile com esse id
+  adicionar_tile  {tile:{id,label,emoji,cmd,visible,category}, depois_de?: id,
+                   pular_se_comando?: nome}
+                  não faz nada se o perfil já tem um tile com esse id, nem se
+                  algum tile já abre pular_se_comando (ex.: o Mint antigo abre
+                  o Tux Paint pelo tile Desenhar)
   remover_tile    {id}
   atualizar_tile  {id, campos:{...}}           ex.: {"visible": false} ou um cmd novo
   definir         {caminho:"categoryLimits.categories.passatempo", valor, so_se_ausente?: true}
@@ -66,6 +69,9 @@ def apply_op(cfg, op):
         if kind == "adicionar_tile":
             tile = op["tile"]
             if tile["id"] in ids:
+                continue
+            comando = op.get("pular_se_comando")
+            if comando and any((t.get("cmd") or [None])[0] == comando for t in tiles):
                 continue
             after = op.get("depois_de")
             index = ids.index(after) + 1 if after in ids else len(tiles)

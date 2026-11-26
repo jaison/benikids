@@ -115,10 +115,48 @@ class IdiomaEJogosTest(unittest.TestCase):
     def test_wayland_avisa_para_usar_o_xorg(self):
         texto = (RAIZ / "instalar.sh").read_text()
         self.assertIn("Ubuntu on Xorg", texto)
-        self.assertIn('XDG_SESSION_TYPE:-}" == "wayland"', texto)
+        self.assertIn("sessao_e_wayland", texto)
         tecnico = (RAIZ / "docs" / "benikids-tecnico.md").read_text()
         self.assertIn("wmctrl", tecnico)
         self.assertIn("Wayland", tecnico)
+
+    def test_deteccao_de_wayland_olha_a_variavel_da_sessao(self):
+        import subprocess
+        texto = (RAIZ / "instalar.sh").read_text()
+        inicio = texto.index("sessao_e_wayland() {")
+        fim = texto.index("\n}\n", inicio)
+        funcao = texto[inicio:fim + 2]
+        for tipo, codigo in (("wayland", 0), ("x11", 1), ("", 1)):
+            ambiente = os.environ.copy()
+            if tipo:
+                ambiente["XDG_SESSION_TYPE"] = tipo
+            else:
+                ambiente.pop("XDG_SESSION_TYPE", None)
+            proc = subprocess.run(
+                ["bash", "-c", funcao + "\nsessao_e_wayland"],
+                env=ambiente,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, codigo, tipo or "vazio")
+
+    def test_tuxpaint_entra_no_menu_e_pede_portugues_no_flatpak(self):
+        config = json.loads((RAIZ / "beni" / "config" / "config.json").read_text())
+        for perfil in config["profiles"]:
+            tile = next(t for t in perfil["tiles"] if t["id"] == "tuxpaint")
+            self.assertEqual(tile["cmd"], ["tuxpaint"])
+            self.assertTrue(tile["visible"])
+            paint = next(t for t in perfil["tiles"] if t["id"] == "paint")
+            self.assertIn("kleki.com", paint["cmd"][0])
+        migracoes = json.loads((RAIZ / "beni" / "config" / "migracoes.json").read_text())
+        nova = next(m for m in migracoes["migracoes"] if m["id"] == "2026-11-26-tuxpaint")
+        self.assertEqual(nova["operacoes"][0]["pular_se_comando"], "tuxpaint")
+        atalho = (BIN / "tuxpaint").read_text()
+        self.assertIn("--nolockfile", atalho)
+        self.assertIn("--lang pt_BR", atalho)
+        self.assertIn("--env=LANG=pt_BR.UTF-8", atalho)
+        self.assertIn("--env=LANGUAGE=pt_BR:pt", atalho)
+        self.assertIn("tuxpaint.cfg", atalho)
+        self.assertIn("lang=pt_BR", atalho)
 
 
 if __name__ == "__main__":

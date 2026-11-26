@@ -279,6 +279,28 @@
           "perfis": "todos"
         }
       ]
+    },
+    {
+      "id": "2026-11-26-tuxpaint",
+      "descricao": "Tile do Tux Paint ao lado do Desenhar (Kleki). Notebook que já abre o Tux Paint por outro tile (o Mint antigo, no Desenhar) não ganha um segundo.",
+      "operacoes": [
+        {
+          "op": "adicionar_tile",
+          "perfis": "todos",
+          "depois_de": "paint",
+          "pular_se_comando": "tuxpaint",
+          "tile": {
+            "id": "tuxpaint",
+            "label": "Tux Paint",
+            "emoji": "🐧",
+            "cmd": [
+              "tuxpaint"
+            ],
+            "visible": true,
+            "category": "passatempo"
+          }
+        }
+      ]
     }
   ]
 }

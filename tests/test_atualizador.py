@@ -115,6 +115,18 @@ class CatalogMigrationTest(unittest.TestCase):
             {"id": "bea", "tiles": [{"id": "a"}]},
         ]}
 
+    def test_pula_tile_quando_outro_ja_abre_o_mesmo_comando(self):
+        cfg = {"profiles": [{"id": "default", "tiles": [
+            {"id": "paint", "cmd": ["tuxpaint"]},
+        ]}]}
+        op = {"op": "adicionar_tile", "depois_de": "paint", "pular_se_comando": "tuxpaint",
+              "tile": {"id": "tuxpaint", "cmd": ["tuxpaint"]}}
+        self.assertEqual(migrar.apply_op(cfg, op), 0)
+        self.assertEqual([t["id"] for t in cfg["profiles"][0]["tiles"]], ["paint"])
+        cfg["profiles"][0]["tiles"][0]["cmd"] = ["special:external-browser:https://kleki.com/"]
+        self.assertEqual(migrar.apply_op(cfg, op), 1)
+        self.assertEqual([t["id"] for t in cfg["profiles"][0]["tiles"]], ["paint", "tuxpaint"])
+
     def test_add_after_and_skip_existing(self):
         cfg = self.cfg()
         op = {"op": "adicionar_tile", "depois_de": "a", "tile": {"id": "novo"}}

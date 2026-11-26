@@ -525,7 +525,8 @@ A lista detalhada, arquivo por arquivo, está em [beni/MUDANCAS.md](../beni/MUDA
 - Sessão **X11** (no Ubuntu, na tela de entrar: engrenagem → **Ubuntu on Xorg**). Wayland não serve; veja abaixo.
 - Internet na instalação.
 - Um usuário comum para as crianças, com login automático.
-- Idioma: se o `pt_BR` não estiver instalado, o instalador pede o `language-pack-pt`. Os atalhos usam português quando esse locale existe.
+- Idioma: se o `pt_BR` não estiver instalado, o instalador pede o `language-pack-pt`. Os atalhos usam português quando esse locale existe. A sessão e o Firefox da família ficam no idioma da conta (no Ubuntu, muitas vezes `en_US`). O instalador não troca isso.
+- Os atalhos dos jogos ficam em `~/.local/bin`. O servidor acrescenta essa pasta ao próprio PATH ao subir, porque a sessão gráfica do LightDM não lê o `~/.profile`.
 
 Em Mint Cinnamon/MATE quase tudo funciona, mas os ajustes de barra e bloqueio são específicos do XFCE. No Ubuntu (GNOME) o instalador desliga o bloqueio de tela da conta da criança.
 

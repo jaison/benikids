@@ -45,6 +45,16 @@
           "category": "passatempo"
         },
         {
+          "id": "tuxpaint",
+          "label": "Tux Paint",
+          "emoji": "🐧",
+          "cmd": [
+            "tuxpaint"
+          ],
+          "visible": true,
+          "category": "passatempo"
+        },
+        {
           "id": "autodraw",
           "label": "Autodraw",
           "emoji": "✏️",
@@ -746,6 +756,16 @@
           "emoji": "🎨",
           "cmd": [
             "special:external-browser:https://kleki.com/"
+          ],
+          "visible": true,
+          "category": "passatempo"
+        },
+        {
+          "id": "tuxpaint",
+          "label": "Tux Paint",
+          "emoji": "🐧",
+          "cmd": [
+            "tuxpaint"
           ],
           "visible": true,
           "category": "passatempo"

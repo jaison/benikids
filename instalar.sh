@@ -256,7 +256,10 @@ if [[ "$DESKTOP" == *[Gg][Nn][Oo][Mm][Ee]* || "$DESKTOP" == *[Uu]buntu* ]]; then
   gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false 2>/dev/null || true
   gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
 fi
-if [[ $ATUALIZACAO -eq 0 && "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
+sessao_e_wayland() {
+  [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]
+}
+if [[ $ATUALIZACAO -eq 0 ]] && sessao_e_wayland; then
   aviso "Esta sessão é Wayland. O Benikids usa o X11 para a tela cheia, a pílula e o controle."
   aviso "Na tela de entrar, clique na engrenagem e escolha \"Ubuntu on Xorg\" (sessão Xorg)."
 fi
