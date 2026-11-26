@@ -16,10 +16,10 @@ desligar, cada placa volta exatamente ao que estava. Placa sem esse registro
 Placa que aparecer mais tarde (Wi-Fi novo, outro adaptador): a tarefa
 "Benikids DNS Familia" roda como SYSTEM (sem UAC) na subida do Windows e
 quando uma rede conecta (evento 10000 do NetworkProfile). O mesmo script
-guarda o DNS daquela placa e aplica o filtro. Com o registro em 1 ela
-aplica o filtro. Com o registro em 0 ela não põe o filtro: se ainda houver
-dns-familia-anterior.json (a volta falhou, ou a placa não estava na hora),
-restaura essas placas e apaga o GUID que voltou.
+guarda o DNS daquela placa e aplica o filtro. Só com o registro em 1. Com
+o registro em 0 a tarefa não existe (o desligar tira) e o script, se ainda
+rodar, não lê o JSON: não recoloca o DNS antigo. Placa virtual (Tailscale)
+não entra no filtro.
 
 O DNS de uma placa só muda depois que o JSON foi gravado e a ACL fechou.
 Se a gravação falhar, a placa fica como está.
@@ -122,12 +122,12 @@ def aviso_para_os_pais(ligado, resumo):
         return ""
     if ligado:
         return (
-            "Uma rede ficou como estava: não deu para guardar o DNS de antes, "
-            "então o filtro não entrou nela."
+            "Uma rede ficou como estava: o filtro não entrou nela. "
+            "Pode tentar de novo."
         )
     return (
         "O filtro foi desligado, mas uma rede não voltou ao DNS de antes. "
-        "O Windows tenta de novo sozinho, quando ligar ou quando a rede aparecer."
+        "Pode tentar de novo."
     )
 
 
@@ -161,13 +161,39 @@ def _linhas_funcoes_comuns():
         "    Add-Content -LiteralPath $Log -Value $linha -Encoding UTF8 -ErrorAction Stop",
         "  } catch { }",
         "}",
+        "function Benikids-Motivo($err) {",
+        "  $t = ''",
+        "  try {",
+        "    if ($err -and $err.Exception -and $err.Exception.Message) { $t = [string]$err.Exception.Message }",
+        "  } catch { }",
+        "  if (-not $t) { try { $t = [string]$err } catch { $t = '' } }",
+        "  $t = ($t -replace '[\\r\\n;=]', ' ').Trim()",
+        "  if ($t.Length -gt 120) { $t = $t.Substring(0, 120).Trim() }",
+        "  if ($t -eq '') { $t = 'sem mensagem' }",
+        "  return $t",
+        "}",
+        # O if (-not (funcao)) junta tudo o que a funcao escreveu. Um comando no
+        # meio (icacls, Copy-Item) vira array: o bool do fim se perde. O ultimo
+        # valor e a bandeira $script: sao o que vale.
+        "function Benikids-Ultimo($valor) {",
+        "  $arr = @($valor)",
+        "  if ($arr.Count -eq 0) { return $null }",
+        "  return $arr[$arr.Count - 1]",
+        "}",
         "function Benikids-Proteger($caminho) {",
-        "  & icacls \"$caminho\" /inheritance:r /grant:r "
-        f"'*{_SID_SYSTEM}:(F)' '*{_SID_ADMINS}:(F)' '*{_SID_USUARIOS}:(R)' | Out-Null",
-        "  if ($LASTEXITCODE -ne 0) {",
-        "    Benikids-DnsLog 'acl do arquivo de dns falhou'",
+        "  $script:BenikidsProtegeu = $false",
+        "  $saida = & icacls \"$caminho\" /inheritance:r /grant:r "
+        f"'*{_SID_SYSTEM}:(F)' '*{_SID_ADMINS}:(F)' '*{_SID_USUARIOS}:(R)' 2>&1 | Out-String",
+        "  $codigo = $LASTEXITCODE",
+        "  $texto = ([string]$saida).Trim()",
+        "  $ok = $false",
+        "  if ($codigo -eq 0) { $ok = $true }",
+        "  elseif ($null -eq $codigo -and $texto -match 'Successfully processed') { $ok = $true }",
+        "  if (-not $ok) {",
+        "    Benikids-DnsLog ('acl do arquivo de dns falhou: ' + (Benikids-Motivo $texto))",
         "    return $false",
         "  }",
+        "  $script:BenikidsProtegeu = $true",
         "  return $true",
         "}",
         "function Benikids-Esc($s) {",
@@ -199,7 +225,13 @@ def _linhas_funcoes_comuns():
         "}",
         "function Benikids-GravarAnterior($map) {",
         # Arquivo temporário, ACL, e só então o nome definitivo. Se a ACL não
-        # fechar, o JSON antigo volta e a função devolve falso: o DNS não muda.
+        # fechar, o JSON antigo volta e a bandeira fica falsa: o DNS não muda.
+        # O return sozinho não basta: outro comando no meio da função escreve no
+        # output e o if (-not (funcao)) vê um array. A bandeira é o resultado.
+        # Move-Item -Force não substitui arquivo no Windows PowerShell 5.1: na
+        # segunda placa o JSON novo não entrava e a função caía no catch.
+        "  $script:BenikidsGravou = $false",
+        "  $script:BenikidsErro = ''",
         "  $tmp = $Anterior + '.tmp'",
         "  $bak = $Anterior + '.bak'",
         "  try {",
@@ -210,35 +242,34 @@ def _linhas_funcoes_comuns():
         "      $i6 = $item.ipv6",
         "      $s4 = Benikids-JsonServidores $i4.servidores",
         "      $s6 = Benikids-JsonServidores $i6.servidores",
-        "      $linhas.Add('{\"guid\":\"' + (Benikids-Esc $guid) + '\",\"ipv4\":{\"modo\":\"' + (Benikids-Esc $i4.modo) + '\",\"servidores\":' + $s4 + '},\"ipv6\":{\"modo\":\"' + (Benikids-Esc $i6.modo) + '\",\"servidores\":' + $s6 + '}}')",
+        "      [void]$linhas.Add('{\"guid\":\"' + (Benikids-Esc $guid) + '\",\"ipv4\":{\"modo\":\"' + (Benikids-Esc $i4.modo) + '\",\"servidores\":' + $s4 + '},\"ipv6\":{\"modo\":\"' + (Benikids-Esc $i6.modo) + '\",\"servidores\":' + $s6 + '}}')",
         "    }",
         "    $json = '{\"versao\":1,\"placas\":[' + ($linhas -join ',') + ']}'",
-        "    Set-Content -LiteralPath $tmp -Value $json -Encoding UTF8 -ErrorAction Stop",
-        "    $acl = Benikids-Proteger $tmp",
-        "    if (-not $acl) {",
-        "      Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue",
-        "      Benikids-DnsLog 'nao guardou o dns anterior'",
-        "      return $false",
-        "    }",
+        "    $utf = New-Object System.Text.UTF8Encoding $true",
+        "    [System.IO.File]::WriteAllText($tmp, $json, $utf)",
+        "    Benikids-Proteger $tmp | Out-Null",
+        "    if (-not $script:BenikidsProtegeu) { throw 'acl do arquivo de dns falhou' }",
         "    $tinha = Test-Path -LiteralPath $Anterior",
-        "    if ($tinha) { Copy-Item -LiteralPath $Anterior -Destination $bak -Force -ErrorAction Stop }",
-        "    Move-Item -LiteralPath $tmp -Destination $Anterior -Force -ErrorAction Stop",
-        "    $acl2 = Benikids-Proteger $Anterior",
-        "    if (-not $acl2) {",
-        "      if ($tinha) {",
-        "        Move-Item -LiteralPath $bak -Destination $Anterior -Force -ErrorAction SilentlyContinue",
-        "        Benikids-Proteger $Anterior | Out-Null",
-        "      } else {",
-        "        Remove-Item -LiteralPath $Anterior -Force -ErrorAction SilentlyContinue",
-        "      }",
-        "      Benikids-DnsLog 'nao guardou o dns anterior'",
-        "      return $false",
+        "    if ($tinha) {",
+        "      [System.IO.File]::Copy($Anterior, $bak, $true)",
+        "      Remove-Item -LiteralPath $Anterior -Force -ErrorAction Stop",
         "    }",
+        "    Move-Item -LiteralPath $tmp -Destination $Anterior -ErrorAction Stop",
+        "    Benikids-Proteger $Anterior | Out-Null",
+        "    if (-not $script:BenikidsProtegeu) { throw 'acl do arquivo de dns falhou' }",
         "    if ($tinha) { Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue }",
+        "    $script:BenikidsErro = ''",
+        "    $script:BenikidsGravou = $true",
         "    return $true",
         "  } catch {",
         "    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue",
-        "    Benikids-DnsLog 'nao guardou o dns anterior'",
+        "    if (-not (Test-Path -LiteralPath $Anterior) -and (Test-Path -LiteralPath $bak)) {",
+        "      Move-Item -LiteralPath $bak -Destination $Anterior -ErrorAction SilentlyContinue",
+        "      Benikids-Proteger $Anterior | Out-Null",
+        "    }",
+        "    $script:BenikidsErro = Benikids-Motivo $_",
+        "    Benikids-DnsLog ('nao guardou o dns anterior: ' + $script:BenikidsErro)",
+        "    $script:BenikidsGravou = $false",
         "    return $false",
         "  }",
         "}",
@@ -269,6 +300,33 @@ def _linhas_funcoes_comuns():
         "  if ($n -eq '') { $n = 'placa' }",
         "  if ($n.Length -gt 60) { $n = $n.Substring(0, 60) }",
         "  return $n",
+        "}",
+        # Tailscale, Wintun e outras virtuais não aceitam o DNS do Windows.
+        # O erro delas não pode fazer a placa real (Wi-Fi, Ethernet) parecer que falhou.
+        "function Benikids-Virtual($placa) {",
+        "  try {",
+        "    if ($placa.HardwareInterface -eq $false) { return $true }",
+        "    if ($placa.Virtual -eq $true) { return $true }",
+        "  } catch { }",
+        "  $n = ([string]$placa.InterfaceDescription) + ' ' + ([string]$placa.Name)",
+        "  if ($n -match 'Tailscale|Wintun|WireGuard') { return $true }",
+        "  return $false",
+        "}",
+        "function Benikids-NetshEstatico($nome, $familia, $lista) {",
+        "  $arr = @(Benikids-Lista $lista)",
+        "  if ($arr.Count -eq 0) {",
+        "    & netsh interface $familia set dnsservers name=\"$nome\" source=static address=none validate=no | Out-Null",
+        "    return ($LASTEXITCODE -eq 0)",
+        "  }",
+        "  $primeiro = [string]$arr[0]",
+        "  & netsh interface $familia set dnsservers name=\"$nome\" source=static address=\"$primeiro\" validate=no | Out-Null",
+        "  if ($LASTEXITCODE -ne 0) { return $false }",
+        "  $n = 2",
+        "  foreach ($extra in ($arr | Select-Object -Skip 1)) {",
+        "    & netsh interface $familia add dnsservers name=\"$nome\" address=\"$extra\" index=$n validate=no | Out-Null",
+        "    $n++",
+        "  }",
+        "  return $true",
         "}",
     ]
 
@@ -334,6 +392,33 @@ def _linhas_funcoes_aplicar():
         "      Select-Object -ExpandProperty ServerAddresses)",
         "  } catch { return @() }",
         "}",
+        # Set-DnsClientServerAddress às vezes recusa (placa já no estado, ou o
+        # cmdlet falha) e o DNS não muda. O netsh com validate=no é o plano B.
+        # Se o registro já está certo, não é erro.
+        "function Benikids-FixarIpv4($i, $nome, $guid, $esperados) {",
+        "  $script:BenikidsErro = ''",
+        "  try {",
+        "    Set-DnsClientServerAddress -InterfaceIndex $i -AddressFamily IPv4 -ServerAddresses $esperados -ErrorAction Stop",
+        "  } catch {",
+        "    $script:BenikidsErro = Benikids-Motivo $_",
+        "    Benikids-DnsLog ('placa ' + $nome + ' ipv4: ' + $script:BenikidsErro)",
+        "  }",
+        "  $o = Benikids-Origem $guid 4",
+        "  if (($o.modo -eq 'manual') -and (Benikids-EhFamilia $o.servidores $esperados)) {",
+        "    $script:BenikidsErro = ''",
+        "    return 'ok'",
+        "  }",
+        "  $net = Benikids-Ultimo (Benikids-NetshEstatico $nome 'ipv4' $esperados)",
+        "  if ($net -eq $true) {",
+        "    $o = Benikids-Origem $guid 4",
+        "    if (($o.modo -eq 'manual') -and (Benikids-EhFamilia $o.servidores $esperados)) {",
+        "      $script:BenikidsErro = ''",
+        "      return 'ok'",
+        "    }",
+        "  }",
+        "  if ($script:BenikidsErro -eq '') { $script:BenikidsErro = 'nao aplicou o dns' }",
+        "  return 'erro'",
+        "}",
     ]
 
 
@@ -341,10 +426,9 @@ def script_da_tarefa():
     """PowerShell que a tarefa agendada roda como SYSTEM. Idempotente.
 
     Com o registro em 1, guarda o DNS novo e aplica o filtro. Com o registro
-    em 0 (ou ausente), não põe o filtro: se sobrou dns-familia-anterior.json,
-    restaura as placas que voltaram a aparecer e as que ficaram em erro, e
-    apaga o GUID que voltou. Placa que ainda não está na lista continua no
-    arquivo. Com -Marca (ligar da área dos pais ou da instalação), deixa o
+    em 0 (ou ausente), não põe o filtro e não lê o JSON: uma tarefa antiga
+    recolocava o DNS manual por cima do automático que a pessoa acabou de
+    escolher. Com -Marca (ligar da área dos pais ou da instalação), deixa o
     resumo para o Python. Sem -Marca, a linha de "ligado" só sai se mudou
     alguma placa — a tarefa roda em toda rede nova e não enche o log à toa.
     """
@@ -354,24 +438,13 @@ def script_da_tarefa():
         *_linhas_variaveis(),
         *_linhas_funcoes_comuns(),
         *_linhas_funcoes_aplicar(),
-        *_linhas_restaurar(),
         "$ligado = 0",
         "try {",
         f"  $ligado = [int](Get-ItemProperty -Path {_ps(CHAVE)} -Name {_ps(VALOR)} -ErrorAction Stop).{VALOR}",
         "} catch { $ligado = 0 }",
+        # Desligado: não restaura o JSON. Isso recolocava o DNS antigo (manual
+        # 1.1.1.1, por exemplo) depois que a pessoa voltou a placa ao automático.
         "if ($ligado -ne 1) {",
-        "  if (Test-Path -LiteralPath $Anterior) {",
-        "    $resto = Benikids-RestaurarPendentes",
-        "    if ($resto) {",
-        "      $linha = 'desligado ' + $resto",
-        "      if ($resto -match '=erro') {",
-        "        if ($linha.Length -gt 330) { $linha = $linha.Substring(0, 330).TrimEnd() }",
-        "        $linha = $linha + ' (uma rede nao voltou)'",
-        "      }",
-        "      if ($linha.Length -gt 360) { $linha = $linha.Substring(0, 360) }",
-        "      Benikids-DnsLog $linha",
-        "    }",
-        "  }",
         "  exit 0",
         "}",
         f"$v4 = {_lista_ps(IPV4)}",
@@ -389,9 +462,13 @@ def script_da_tarefa():
         "$parou = $false",
         "foreach ($placa in $placas) {",
         "  if (-not (Benikids-Ligado)) { $parou = $true; break }",
+        "  $nome = Benikids-Nome $placa",
+        "  if ((Benikids-Ultimo (Benikids-Virtual $placa)) -eq $true) {",
+        "    if ($Marca) { Benikids-DnsLog ('placa ' + $nome + ' virtual, sem mexer') }",
+        "    continue",
+        "  }",
         "  $i = $placa.ifIndex",
         "  $guid = Benikids-Guid $placa",
-        "  $nome = Benikids-Nome $placa",
         "  if ($guid -eq '') { continue }",
         "  $atual4 = Benikids-DnsAtual $i 'IPv4'",
         "  $atual6 = Benikids-DnsAtual $i 'IPv6'",
@@ -405,23 +482,24 @@ def script_da_tarefa():
         "      continue",
         "    }",
         "    $map[$guid] = @{ ipv4 = (Benikids-Origem $guid 4); ipv6 = (Benikids-Origem $guid 6) }",
-        "    if (-not (Benikids-GravarAnterior $map)) {",
+        "    Benikids-GravarAnterior $map | Out-Null",
+        "    if (-not $script:BenikidsGravou) {",
         "      $map.Remove($guid) | Out-Null",
-        "      $partes.Add($nome + ' ipv4=erro ipv6=sem-ipv6')",
-        "      Benikids-DnsLog ('placa ' + $nome + ' ipv4 erro')",
+        "      $linha = $nome + ' ipv4=erro ipv6=sem-ipv6'",
+        "      if ($script:BenikidsErro) { $linha = $linha + ' (' + $script:BenikidsErro + ')' }",
+        "      $partes.Add($linha)",
+        "      Benikids-DnsLog ('placa ' + $nome + ' ipv4 erro: ' + $script:BenikidsErro)",
         "      continue",
         "    }",
         "  }",
         "  if (-not (Benikids-Ligado)) { $parou = $true; break }",
         "  $r4 = 'ok'",
+        "  $e4 = ''",
         "  if (-not $ja4) {",
         "    $mudou = $true",
-        "    try {",
-        "      Set-DnsClientServerAddress -InterfaceIndex $i -AddressFamily IPv4 -ServerAddresses $v4 -ErrorAction Stop",
-        "    } catch {",
-        "      $r4 = 'erro'",
-        "      Benikids-DnsLog ('placa ' + $nome + ' ipv4 erro')",
-        "    }",
+        "    $r4 = [string](Benikids-Ultimo (Benikids-FixarIpv4 $i $nome $guid $v4))",
+        "    $e4 = [string]$script:BenikidsErro",
+        "    if ($r4 -ne 'ok') { $r4 = 'erro' }",
         "  }",
         "  $r6 = 'sem-ipv6'",
         "  $temIpv6 = Benikids-TemIpv6 $i $atual6",
@@ -435,7 +513,7 @@ def script_da_tarefa():
         "        Set-DnsClientServerAddress -InterfaceIndex $i -AddressFamily IPv6 -ServerAddresses $v6 -ErrorAction Stop",
         "        $ok6 = $true",
         "      } catch {",
-        "        Benikids-DnsLog ('placa ' + $nome + ' ipv6 sem cleanbrowsing')",
+        "        Benikids-DnsLog ('placa ' + $nome + ' ipv6 sem cleanbrowsing: ' + (Benikids-Motivo $_))",
         "      }",
         "      if (-not $ok6) {",
         "        & netsh interface ipv6 set dnsservers name=\"$nome\" source=static address=\"$($v6[0])\" validate=no | Out-Null",
@@ -466,7 +544,9 @@ def script_da_tarefa():
         "      }",
         "    }",
         "  }",
-        "  $partes.Add($nome + ' ipv4=' + $r4 + ' ipv6=' + $r6)",
+        "  $p4 = $r4",
+        "  if ($r4 -eq 'erro' -and $e4 -ne '') { $p4 = 'erro (' + $e4 + ')' }",
+        "  $partes.Add($nome + ' ipv4=' + $p4 + ' ipv6=' + $r6)",
         "}",
         "$resumo = 'ligado nenhuma placa ativa'",
         "if ($partes.Count -gt 0) { $resumo = 'ligado ' + ($partes -join '; ') }",
@@ -595,13 +675,21 @@ def linhas_atualizar_script():
 
     Um PC que já tem DnsFamilia em 0 ou 1 não passa por linhas_ligar de novo.
     Sem isto a tarefa continua com o script antigo até os pais ligarem outra vez.
-    Rodar o script no fim aplica o filtro se estiver em 1, ou restaura o que
-    sobrou se estiver em 0. Não usa -Marca: não mistura com o resumo da área dos pais.
+    Com o filtro em 1, roda o script (aplica nas placas reais). Com o filtro em 0,
+    tira a tarefa: ela não recoloca o DNS do JSON. Não usa -Marca.
     """
     return [
         *_linhas_gravar_ps1(),
+        "try {",
+        f"  $ligado = [int](Get-ItemProperty -Path {_ps(CHAVE)} -Name {_ps(VALOR)} -ErrorAction Stop).{VALOR}",
+        "} catch { $ligado = 0 }",
+        # Desligado: não recria a tarefa. Ela reaplicaria o JSON antigo.
+        "if ($ligado -eq 1) {",
         *_linhas_agendar(),
-        f"& {_ps(SCRIPT)}",
+        f"  & {_ps(SCRIPT)}",
+        "} else {",
+        f"  Unregister-ScheduledTask -TaskName {_ps(TAREFA)} -Confirm:$false -ErrorAction SilentlyContinue",
+        "}",
     ]
 
 
@@ -613,22 +701,62 @@ def _linhas_restaurar():
     Não mexe em placa que não está no JSON.
     """
     return [
-        "function Benikids-AplicarSalvo($ifIndex, $nome, $af, $info) {",
-        "  if (-not $info -or [string]$info.modo -ne 'manual') {",
-        "    try {",
-        "      Set-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily $af -ResetServerAddresses -ErrorAction Stop",
-        "      return 'automatico'",
-        "    } catch { return 'erro' }",
-        "  }",
-        "  $lista = Benikids-Lista $info.servidores",
-        "  try {",
-        "    if ($lista.Count -eq 0) {",
-        "      Set-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily $af -ServerAddresses @() -ErrorAction Stop",
-        "      return 'sem-servidor'",
-        "    }",
-        "    Set-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily $af -ServerAddresses $lista -ErrorAction Stop",
+        "function Benikids-AplicarSalvo($ifIndex, $nome, $af, $info, $guid) {",
+        # Já está no estado guardado: não chama o cmdlet. No Windows sem IPv6,
+        # o reset do IPv6 falha e o desligar marcava erro mesmo com o IPv4 certo.
+        "  $script:BenikidsErro = ''",
+        "  $familia = 6",
+        "  $net = 'ipv6'",
+        "  if ($af -eq 'IPv4') { $familia = 4; $net = 'ipv4' }",
+        "  $manual = ($info -and [string]$info.modo -eq 'manual')",
+        "  $lista = @()",
+        "  if ($manual) { $lista = @(Benikids-Lista $info.servidores) }",
+        "  $origem = Benikids-Origem $guid $familia",
+        "  if (-not $manual) {",
+        "    if ($origem.modo -eq 'dhcp') { return 'automatico' }",
+        "  } elseif ($origem.modo -eq 'manual' -and (Benikids-EhFamilia $origem.servidores $lista)) {",
+        "    if ($lista.Count -eq 0) { return 'sem-servidor' }",
         "    return 'restaurado'",
-        "  } catch { return 'erro' }",
+        "  }",
+        "  try {",
+        "    if (-not $manual) {",
+        "      Set-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily $af -ResetServerAddresses -ErrorAction Stop",
+        "    } else {",
+        "      Set-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily $af -ServerAddresses $lista -ErrorAction Stop",
+        "    }",
+        "  } catch {",
+        "    $script:BenikidsErro = Benikids-Motivo $_",
+        "    Benikids-DnsLog ('placa ' + $nome + ' ' + $net + ': ' + $script:BenikidsErro)",
+        "  }",
+        "  $origem = Benikids-Origem $guid $familia",
+        "  if (-not $manual -and $origem.modo -eq 'dhcp') { $script:BenikidsErro = ''; return 'automatico' }",
+        "  if ($manual -and $origem.modo -eq 'manual' -and (Benikids-EhFamilia $origem.servidores $lista)) {",
+        "    $script:BenikidsErro = ''",
+        "    if ($lista.Count -eq 0) { return 'sem-servidor' }",
+        "    return 'restaurado'",
+        "  }",
+        "  $netOk = $false",
+        "  if (-not $manual) {",
+        "    & netsh interface $net set dnsservers name=\"$nome\" source=dhcp | Out-Null",
+        "    $netOk = ($LASTEXITCODE -eq 0)",
+        "  } else {",
+        "    $netOk = ((Benikids-Ultimo (Benikids-NetshEstatico $nome $net $lista)) -eq $true)",
+        "  }",
+        "  if ($netOk) {",
+        "    $origem = Benikids-Origem $guid $familia",
+        "    if (-not $manual -and $origem.modo -eq 'dhcp') { $script:BenikidsErro = ''; return 'automatico' }",
+        "    if ($manual -and $origem.modo -eq 'manual' -and (Benikids-EhFamilia $origem.servidores $lista)) {",
+        "      $script:BenikidsErro = ''",
+        "      if ($lista.Count -eq 0) { return 'sem-servidor' }",
+        "      return 'restaurado'",
+        "    }",
+        "  }",
+        "  if ($af -eq 'IPv6') {",
+        "    $tem = Benikids-Ultimo (Benikids-TemIpv6 $ifIndex $null)",
+        "    if ($tem -ne $true) { $script:BenikidsErro = ''; return 'sem-ipv6' }",
+        "  }",
+        "  if ($script:BenikidsErro -eq '') { $script:BenikidsErro = 'nao voltou' }",
+        "  return 'erro'",
         "}",
         "function Benikids-RestaurarPendentes {",
         "  $partes = New-Object System.Collections.Generic.List[string]",
@@ -641,15 +769,36 @@ def _linhas_restaurar():
         "  foreach ($placa in $placas) {",
         "    if (-not $placa) { continue }",
         "    $guid = Benikids-Guid $placa",
+        "    $nome = Benikids-Nome $placa",
+        "    if ((Benikids-Ultimo (Benikids-Virtual $placa)) -eq $true) {",
+        # Tenta devolver, mas não segura o JSON nem o resumo: o erro da
+        # Tailscale não pode fazer o Wi-Fi parecer que não voltou.
+        "      if ($guid -ne '' -and $map.ContainsKey($guid)) {",
+        "        $vistos[$guid] = $true",
+        "        $item = $map[$guid]",
+        "        $i = $placa.ifIndex",
+        "        $rv4 = [string](Benikids-Ultimo (Benikids-AplicarSalvo $i $nome 'IPv4' $item.ipv4 $guid))",
+        "        $rv6 = [string](Benikids-Ultimo (Benikids-AplicarSalvo $i $nome 'IPv6' $item.ipv6 $guid))",
+        "        Benikids-DnsLog ('placa ' + $nome + ' virtual ipv4=' + $rv4 + ' ipv6=' + $rv6)",
+        "      }",
+        "      continue",
+        "    }",
         "    if ($guid -eq '' -or -not $map.ContainsKey($guid)) { continue }",
         "    $vistos[$guid] = $true",
         "    $item = $map[$guid]",
-        "    $nome = Benikids-Nome $placa",
         "    $i = $placa.ifIndex",
-        "    $r4 = Benikids-AplicarSalvo $i $nome 'IPv4' $item.ipv4",
-        "    $r6 = Benikids-AplicarSalvo $i $nome 'IPv6' $item.ipv6",
+        "    $script:BenikidsErro = ''",
+        "    $r4 = [string](Benikids-Ultimo (Benikids-AplicarSalvo $i $nome 'IPv4' $item.ipv4 $guid))",
+        "    $e4 = [string]$script:BenikidsErro",
+        "    $script:BenikidsErro = ''",
+        "    $r6 = [string](Benikids-Ultimo (Benikids-AplicarSalvo $i $nome 'IPv6' $item.ipv6 $guid))",
+        "    $e6 = [string]$script:BenikidsErro",
         "    if ($r4 -eq 'erro' -or $r6 -eq 'erro') { $ficam[$guid] = $item }",
-        "    $partes.Add($nome + ' ipv4=' + $r4 + ' ipv6=' + $r6)",
+        "    $p4 = $r4",
+        "    $p6 = $r6",
+        "    if ($r4 -eq 'erro' -and $e4 -ne '') { $p4 = 'erro (' + $e4 + ')' }",
+        "    if ($r6 -eq 'erro' -and $e6 -ne '') { $p6 = 'erro (' + $e6 + ')' }",
+        "    [void]$partes.Add($nome + ' ipv4=' + $p4 + ' ipv6=' + $p6)",
         "  }",
         "  foreach ($guid in @($map.Keys)) {",
         "    if (-not $vistos.ContainsKey($guid)) { $ficam[$guid] = $map[$guid] }",
@@ -668,10 +817,10 @@ def _linhas_restaurar():
 def linhas_desligar(marca=None):
     """Linhas do PowerShell elevado: desliga o filtro e devolve o DNS de antes.
 
-    A tarefa fica (sem UAC na próxima vez que ligar). O registro vai a 0 antes
-    de restaurar, para a tarefa não recolocar o filtro no meio. Placa com
-    registro volta ao que era (manual ou automático). Placa ativa sem registro
-    volta ao automático. Placa desligada sem registro não é mexida.
+    O registro vai a 0 e a tarefa sai antes de restaurar, para ela não recolocar
+    o DNS no meio. Placa com registro volta ao que era (manual ou automático).
+    Placa ativa sem registro volta ao automático. Placa virtual não entra.
+    Placa desligada sem registro não é mexida.
     """
     marca = _marca(marca)
     return [
@@ -679,12 +828,23 @@ def linhas_desligar(marca=None):
         "$ErrorActionPreference = 'Continue'",
         *_linhas_variaveis(),
         *_linhas_funcoes_comuns(),
+        *_linhas_funcoes_aplicar(),
         *_linhas_restaurar(),
         f"$Marca = {_ps(marca)}",
         _linhas_chave(),
         f"New-ItemProperty -Path {_ps(CHAVE)} -Name {_ps(VALOR)} -Value 0 -PropertyType DWord -Force -ErrorAction Stop | Out-Null",
         f"Stop-ScheduledTask -TaskName {_ps(TAREFA)} -ErrorAction SilentlyContinue",
+        f"Unregister-ScheduledTask -TaskName {_ps(TAREFA)} -Confirm:$false -ErrorAction SilentlyContinue",
         "Start-Sleep -Milliseconds 500",
+        # Troca o .ps1 antes de restaurar. Se a tarefa não saiu, o script novo
+        # vê o registro em 0 e não recoloca o DNS do JSON.
+        "try {",
+        "  New-Item -ItemType Directory -Force -Path " + _ps(PASTA) + " | Out-Null",
+        "@'\n" + script_da_tarefa() + "\n'@ | Set-Content -LiteralPath " + _ps(SCRIPT) + " -Encoding UTF8 -ErrorAction Stop",
+        *linhas_acl_do_script(),
+        "} catch {",
+        "  Benikids-DnsLog 'nao atualizou o script'",
+        "}",
         *linhas_doh_navegador(False),
         "$map = Benikids-LerAnterior",
         "$ilegivel = $false",
@@ -697,16 +857,23 @@ def linhas_desligar(marca=None):
         "$placas = @(Get-NetAdapter -ErrorAction SilentlyContinue)",
         "foreach ($placa in $placas) {",
         "  if (-not $placa) { continue }",
-        "  $guid = Benikids-Guid $placa",
         "  $nome = Benikids-Nome $placa",
+        "  if ((Benikids-Ultimo (Benikids-Virtual $placa)) -eq $true) { continue }",
+        "  $guid = Benikids-Guid $placa",
         "  $i = $placa.ifIndex",
         "  if ($guid -eq '' -or $map.ContainsKey($guid)) { continue }",
         "  if ([string]$placa.Status -ne 'Up') { continue }",
-        "  $r = 'automatico'",
-        "  try {",
-        "    Set-DnsClientServerAddress -InterfaceIndex $i -ResetServerAddresses -ErrorAction Stop",
-        "  } catch { $r = 'erro' }",
-        "  $partes.Add($nome + ' ipv4=' + $r + ' ipv6=' + $r)",
+        "  $script:BenikidsErro = ''",
+        "  $r4 = [string](Benikids-Ultimo (Benikids-AplicarSalvo $i $nome 'IPv4' $null $guid))",
+        "  $e4 = [string]$script:BenikidsErro",
+        "  $script:BenikidsErro = ''",
+        "  $r6 = [string](Benikids-Ultimo (Benikids-AplicarSalvo $i $nome 'IPv6' $null $guid))",
+        "  $e6 = [string]$script:BenikidsErro",
+        "  $p4 = $r4",
+        "  $p6 = $r6",
+        "  if ($r4 -eq 'erro' -and $e4 -ne '') { $p4 = 'erro (' + $e4 + ')' }",
+        "  if ($r6 -eq 'erro' -and $e6 -ne '') { $p6 = 'erro (' + $e6 + ')' }",
+        "  $partes.Add($nome + ' ipv4=' + $p4 + ' ipv6=' + $p6)",
         "}",
         "$resto = ''",
         "if (-not $ilegivel) { $resto = Benikids-RestaurarPendentes }",
@@ -726,16 +893,6 @@ def linhas_desligar(marca=None):
         "  Set-Content -LiteralPath $Resultado -Value ($Marca + ' ' + $resumo) -Encoding UTF8 -ErrorAction Stop",
         "  Benikids-Proteger $Resultado | Out-Null",
         "} catch { }",
-        # O script da tarefa, no disco, é o desta versão. O registro já está em 0:
-        # se a gravação falhar, a restauração desta vez não se desfaz.
-        "try {",
-        "  New-Item -ItemType Directory -Force -Path " + _ps(PASTA) + " | Out-Null",
-        "@'\n" + script_da_tarefa() + "\n'@ | Set-Content -LiteralPath " + _ps(SCRIPT) + " -Encoding UTF8 -ErrorAction Stop",
-        *linhas_acl_do_script(),
-        "} catch {",
-        "  Benikids-DnsLog 'nao atualizou o script'",
-        "}",
-        f"Stop-ScheduledTask -TaskName {_ps(TAREFA)} -ErrorAction SilentlyContinue",
     ]
 
 
