@@ -476,6 +476,16 @@ mod testes_config_e_abertura {
         assert!(!precisa_repintar_sem_foco(true, false, true));
         assert!(!precisa_repintar_sem_foco(false, false, false));
     }
+
+    #[test]
+    fn relogio_espera_a_virada_e_nao_gira_em_claro() {
+        assert_eq!(espera_do_relogio(0, 0), Duration::from_millis(60_150));
+        assert_eq!(espera_do_relogio(30, 0), Duration::from_millis(30_150));
+        assert_eq!(espera_do_relogio(59, 900), Duration::from_millis(250));
+        assert_eq!(espera_do_relogio(59, 999), Duration::from_millis(151));
+        assert!(espera_do_relogio(59, 999) >= Duration::from_millis(150));
+        assert!(espera_do_relogio(0, 0) <= Duration::from_millis(60_150));
+    }
 }
 
 // ---------------------------------------------------------------- estado
@@ -680,24 +690,28 @@ impl Menu {
                 m.redesenhar(cx);
             }
         });
-        // relógio: redesenha quando o minuto vira. Com a tela "Acabou o tempo!"
-        // e a janela sem foco (vigia Tk na frente), pede repaint mesmo assim.
+        // Relógio e contagens (minutos do timer, uso): um quadro na virada do
+        // minuto, com ou sem foco. redesenhar não pede quadro sem foco, para
+        // não gastar CPU atrás de um jogo, e o Windows estaciona o vsync até
+        // alguém pedir. Acordar a cada 5 s não mudava o número na tela.
         let mut minuto = agora_local().1;
         cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(Duration::from_secs(5)).await;
-            let agora = agora_local().1;
-            if agora == minuto {
+            let (_, minuto_agora, segundo, millis) = relogio_partes();
+            let espera = if minuto_agora != minuto {
+                Duration::from_millis(150)
+            } else {
+                espera_do_relogio(segundo, millis)
+            };
+            cx.background_executor().timer(espera).await;
+            let (h, m, _, _) = relogio_partes();
+            if m == minuto {
                 continue;
             }
-            minuto = agora;
+            minuto = m;
             let ok = this.update_in(cx, |menu, window, cx| {
-                let dialogo = matches!(menu.janela, Some(Janela::TimerEsgotado { .. }));
-                if dialogo && !menu.ativa {
-                    menu.sujo = false;
-                    cx.notify();
-                    window.refresh();
-                } else {
-                    menu.redesenhar(cx);
+                menu.pedir_quadro(window, cx);
+                if !menu.ativa {
+                    log::info!("menu: relógio {h}:{m:02} repintado sem foco");
                 }
             });
             if ok.is_err() && this.update(cx, |menu, cx| menu.redesenhar(cx)).is_err() {
@@ -756,10 +770,11 @@ impl Menu {
             self.corrigir_pagina();
             // mesmo sem foco: a grade mudou (sincronização do itch.io) e o
             // menu pode estar visível atrás de outra janela
-            self.sujo = false;
-            cx.notify();
             if let Some(window) = window {
-                window.refresh();
+                self.pedir_quadro(window, cx);
+            } else {
+                self.sujo = false;
+                cx.notify();
             }
             if !primeira {
                 log::info!("menu: configuração mudou; tiles recarregados");
@@ -849,9 +864,7 @@ impl Menu {
             self.redesenhar(cx);
         }
         if precisa_repintar_sem_foco(tinha, tem, self.ativa) {
-            self.sujo = false;
-            cx.notify();
-            window.refresh();
+            self.pedir_quadro(window, cx);
         }
         if tinha && !tem {
             log::info!(
@@ -2971,14 +2984,26 @@ impl Menu {
             .into_any_element()
     }
 
-    /// Atrás de um jogo a janela não está visível: só marca para redesenhar
-    /// quando voltar para a frente (economiza CPU enquanto a criança joga).
+    /// Atrás de um jogo a janela não está visível: não pede quadro (economiza
+    /// CPU enquanto a criança joga). O relógio não passa por aqui: na virada
+    /// do minuto, `pedir_quadro` pinta mesmo sem foco.
     fn redesenhar(&mut self, cx: &mut Context<Self>) {
         if self.ativa || self.web.is_some() {
             cx.notify();
         } else {
             self.sujo = true;
         }
+    }
+
+    /// Pede um quadro agora, mesmo sem foco e com o vsync estacionado.
+    /// `refresh` acorda o worker do Windows. `on_next_frame` acorda o Wayland,
+    /// que fica parado sem `schedule_frame`. No X11 o timer da tela já vê a
+    /// janela suja. O callback vazio não pede outro quadro.
+    fn pedir_quadro(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sujo = false;
+        cx.notify();
+        window.refresh();
+        window.on_next_frame(|_, _| {});
     }
 
     pub fn janela_ativada(&mut self, ativa: bool, cx: &mut Context<Self>) {
@@ -3156,11 +3181,26 @@ fn cor_hex(s: &str) -> Option<u32> {
     }
 }
 
-/// Hora e minuto locais.
-pub fn agora_local() -> (u32, u32) {
+/// Hora, minuto, segundo e milissegundo locais.
+fn relogio_partes() -> (u32, u32, u32, u32) {
     use chrono::Timelike;
     let agora = chrono::Local::now();
-    (agora.hour(), agora.minute())
+    (agora.hour(), agora.minute(), agora.second(), agora.nanosecond() / 1_000_000)
+}
+
+/// Hora e minuto locais.
+pub fn agora_local() -> (u32, u32) {
+    let (h, m, _, _) = relogio_partes();
+    (h, m)
+}
+
+/// Quanto esperar até logo depois da próxima virada de minuto.
+/// `segundo` e `millis` são o relógio agora. Os 150 ms a mais evitam pintar
+/// ainda no minuto que está acabando, e a espera nunca é zero (senão o laço
+/// pediria quadros sem parar).
+fn espera_do_relogio(segundo: u32, millis: u32) -> Duration {
+    let passado = u64::from(segundo.min(59)) * 1000 + u64::from(millis.min(999));
+    Duration::from_millis(60_000u64.saturating_sub(passado) + 150)
 }
 
 fn ler_bateria() -> Option<(u32, bool)> {
